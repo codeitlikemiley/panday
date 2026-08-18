@@ -50,6 +50,10 @@ time = { version = "0.3", features = ["serde-well-known", "macros"] }
 # Router policy files are YAML (docs/12). Upstream serde_yaml is deprecated;
 # serde_yaml_ng is its maintained continuation with the same derive API.
 serde_yaml_ng = "0.10"
+# Content-addressed artifact refs — docs/03 specifies sha256.
+sha2 = "0.10"
+# grep tool (docs/13 native set) and the reducer's error-line matching.
+regex = "1"
 # Optional in panday-types (feature `schema`), so the near-zero-dependency rule
 # in docs/02 still holds for every normal build; only `cargo xtask schemas`
 # turns it on.

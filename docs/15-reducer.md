@@ -110,7 +110,37 @@ argument.
 
 ## Milestones
 
-- **M15.1** Trait ✅ + generic fallback (head/tail + error-float) + artifact spill + `expand_artifact` tool; fixtures for 5 output types.
+- **M15.1** Trait ✅ + generic fallback (head/tail + error-float) + artifact spill + `expand_artifact` tool; fixtures for 5 output types. ✅ *(shipped: `panday_reducer::artifact` (content-addressed store, sha256 per docs/03) and `::spill` (`SpillingReducer`); `panday_harness::ExpandArtifact`; corpus in `crates/panday-reducer/tests/fixtures/`.)*
+
+  **Error-float now carries context.** The seeded version floated only the
+  line matching an error marker, which kept `error[E0308]: mismatched types`
+  and dropped the very next line, `--> gateway.rs:142:23`. A compiler error's
+  location, a Python traceback's assertion and a test runner's
+  `left`/`right` all sit *below* the matched line, so single-line floating
+  keeps the word "error" and loses the fact. `error_context_lines` (default
+  3) fixes it; the `cargo_build_error` fixture is the regression test.
+
+  **Spill is conditional.** A result is only spilled when it was actually
+  reduced *and* is over `min_spill_bytes` — the model never calls
+  `expand_artifact` on output it can already see in full, so a blob there is
+  pure cost.
+
+  **Recorded baseline for M15.2**, generic fallback over the corpus:
+
+  | fixture | raw → kept | cut |
+  |---|---|---|
+  | cargo test (1 fail in 260) | 1967 → 481 | 76% |
+  | cargo build (E0308) | 822 → 529 | 36% |
+  | git status (120 paths) | 1091 → 561 | 49% |
+  | pytest (1 fail in 340) | 6235 → 1241 | 80% |
+  | large clean file read | 9346 → 705 | 92% |
+  | **overall** | **19461 → 3517** | **82%** |
+
+  M15.2's structural compressors must beat these *without* failing any
+  retention assertion. Note `cargo build` is the weakest at 36% — diagnostics
+  are mostly signal, which is the right outcome, and the structural compressor
+  should improve it by dropping the dependency-compile preamble rather than by
+  trimming the error.
 - **M15.2** Structural: cargo + git + pytest/jest compressors with retention fixtures; measured ≥60% token cut on the fixture corpus at zero retention failures.
 - **M15.3** File-read dedup/diff-awareness wired into read/grep tools.
 - **M15.4** Dollar accounting with cache-state input; per-session savings report event; dashboard tile.

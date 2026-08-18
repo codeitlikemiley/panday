@@ -21,6 +21,12 @@ pub struct ReduceCtx {
     pub aggressive: bool,
 }
 
+pub mod artifact;
+pub mod spill;
+
+pub use artifact::{expand, ArtifactError, ArtifactStore, LineRange, MemoryArtifactStore};
+pub use spill::{Reduction, SpillingReducer};
+
 pub trait Reducer: Send + Sync {
     fn reduce(&self, raw: &str, ctx: &ReduceCtx) -> ReducedOutput;
 }
@@ -36,6 +42,15 @@ pub struct GenericReducer {
     pub head_lines: usize,
     pub tail_lines: usize,
     pub max_kept_error_lines: usize,
+    /// Lines kept *after* a matched error line.
+    ///
+    /// Errors are almost never one line. A Rust diagnostic puts its location
+    /// on the following line (`--> file.rs:142:23`), a Python traceback puts
+    /// the assertion under the header, and a test runner puts `left`/`right`
+    /// below the panic. Floating only the matching line keeps the word
+    /// "error" and drops the part an engineer actually needed — the exact
+    /// failure docs/15 calls "negative value at any compression ratio".
+    pub error_context_lines: usize,
 }
 
 impl Default for GenericReducer {
@@ -44,6 +59,7 @@ impl Default for GenericReducer {
             head_lines: 30,
             tail_lines: 30,
             max_kept_error_lines: 40,
+            error_context_lines: 3,
         }
     }
 }
@@ -83,11 +99,36 @@ impl Reducer for GenericReducer {
         }
 
         let middle = &lines[head_n..lines.len() - tail_n];
+
+        // Float error lines *with the lines that explain them*, preserving
+        // original order and never keeping a line twice when two errors sit
+        // close together.
+        let mut keep = vec![false; middle.len()];
+        let mut kept_count = 0usize;
+        for (i, line) in middle.iter().enumerate() {
+            if !looks_like_error(line) {
+                continue;
+            }
+            let end = (i + 1 + self.error_context_lines).min(middle.len());
+            for slot in keep.iter_mut().take(end).skip(i) {
+                if !*slot {
+                    if kept_count >= self.max_kept_error_lines {
+                        break;
+                    }
+                    *slot = true;
+                    kept_count += 1;
+                }
+            }
+            if kept_count >= self.max_kept_error_lines {
+                break;
+            }
+        }
+
         let floated: Vec<&str> = middle
             .iter()
             .copied()
-            .filter(|l| looks_like_error(l))
-            .take(self.max_kept_error_lines)
+            .zip(keep.iter())
+            .filter_map(|(l, k)| k.then_some(l))
             .collect();
 
         let elided = middle.len() - floated.len();

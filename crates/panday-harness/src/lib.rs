@@ -12,11 +12,13 @@ use panday_types::{CallId, Json, SessionId};
 use serde::{Deserialize, Serialize};
 
 pub mod actor;
+pub mod expand;
 pub mod permissions;
 pub mod testing;
 pub mod tools;
 
 pub use actor::{CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, TurnOutcome};
+pub use expand::ExpandArtifact;
 pub use permissions::{Gate, PermissionEngine, Profile};
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 
