@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub mod actor;
 pub mod context;
 pub mod expand;
+pub mod hooks;
 pub mod native;
 pub mod permissions;
 pub mod testing;
@@ -24,6 +25,7 @@ pub use actor::{
     SubagentResult, TurnOutcome, MAX_SUBAGENT_DEPTH, SPAWN_SUBAGENT,
 };
 pub use expand::ExpandArtifact;
+pub use hooks::{CollectFailures, Hook, HookEngine, HookReporter, PreTool};
 pub use permissions::{Gate, PermissionEngine, Profile};
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 

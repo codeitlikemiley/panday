@@ -12,6 +12,7 @@
 //! those events, never a parallel truth.
 
 use crate::context::{ContextBuilder, ReducerSummarizer, Summarizer};
+use crate::hooks::{HookEngine, PreTool};
 use crate::permissions::Gate;
 use crate::tools::{SideEffects, ToolCtx, ToolRegistry};
 use crate::{fold, EventStore, PermissionEngine, Phase, SessionState, StoreError, TurnBudget};
@@ -195,6 +196,8 @@ pub struct SessionActor {
     depth: u8,
     /// How many transcript messages have been folded into summaries.
     compacted_upto: usize,
+    /// Extension points (docs/13 §hooks). Empty by default.
+    hooks: HookEngine,
 }
 
 impl SessionActor {
@@ -234,7 +237,15 @@ impl SessionActor {
             compacted_upto: 0,
             subagents: None,
             depth: 0,
+            hooks: HookEngine::new(),
         }
+    }
+
+    /// Install hooks. They run inside the loop and their failures are
+    /// contained (docs/13: "log, skip, continue").
+    pub fn with_hooks(mut self, hooks: HookEngine) -> Self {
+        self.hooks = hooks;
+        self
     }
 
     /// Allow this session to spawn children.
@@ -356,6 +367,7 @@ impl SessionActor {
     }
 
     async fn run_loop(&mut self) -> Result<TurnOutcome, HarnessError> {
+        self.hooks.pre_turn();
         let started = Instant::now();
         let mut steps: u32 = 0;
         let mut turn_usage = Usage::default();
@@ -382,9 +394,11 @@ impl SessionActor {
             steps += 1;
 
             // --- Streaming ---
-            let req = self.assemble().await?;
+            let mut req = self.assemble().await?;
+            self.hooks.pre_model(&mut req);
             let mut stream = self.model.chat(req).await?;
             let streamed = self.consume_stream(&mut stream).await?;
+            self.hooks.post_model(&streamed.text);
             turn_usage.add(streamed.usage);
 
             self.commit(Event::AssistantMessage {
@@ -403,7 +417,40 @@ impl SessionActor {
             let mut queued: Vec<PendingCall> = Vec::new();
             let mut parked: Vec<CallId> = Vec::new();
 
-            for call in streamed.calls {
+            for mut call in streamed.calls {
+                // Hooks see the call first: docs/13 puts DLP and command
+                // rewrites here, and a redaction must happen before a human is
+                // asked to approve the *original* arguments.
+                match self.hooks.pre_tool(&call.name, &call.args) {
+                    PreTool::Proceed => {}
+                    PreTool::Rewrite(args) => call.args = args,
+                    PreTool::Veto(reason) => {
+                        // A veto is recorded like any other refusal, so the
+                        // model learns and the log explains why.
+                        self.commit(Event::ToolCall {
+                            call_id: call.id,
+                            tool: call.name.clone(),
+                            args: call.args.clone(),
+                            provider_call_id: call.provider_id.clone(),
+                        })
+                        .await?;
+                        self.commit(Event::ToolResult {
+                            call_id: call.id,
+                            output: ReducedOutput {
+                                text: format!("vetoed by hook: {reason}"),
+                                tokens_raw: 0,
+                                tokens_kept: 0,
+                                strategy: "hook_veto".into(),
+                            },
+                            raw_ref: None,
+                            duration_ms: 0,
+                            is_error: true,
+                        })
+                        .await?;
+                        continue;
+                    }
+                }
+
                 let req = self
                     .tools
                     .get(&call.name)
@@ -677,6 +724,8 @@ impl SessionActor {
             },
         );
 
+        self.hooks.post_tool(&call.name, &reduced);
+
         self.commit(Event::ToolResult {
             call_id: call.id,
             output: reduced,
@@ -837,6 +886,7 @@ impl SessionActor {
         reason: StopReason,
         usage: Usage,
     ) -> Result<TurnOutcome, HarnessError> {
+        self.hooks.on_stop(reason);
         self.commit(Event::TurnFinished {
             reason,
             usage,
@@ -882,6 +932,7 @@ impl SessionActor {
             let live = &full[self.compacted_upto.min(full.len())..];
             ctx = self.context.build(live, hot_from.saturating_sub(split));
 
+            self.hooks.on_compaction(before, ctx.approx_tokens());
             self.commit(Event::Compaction {
                 from_seq: 0,
                 to_seq: self.seq,

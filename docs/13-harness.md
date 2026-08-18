@@ -299,7 +299,29 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   The golden event log changed shape here, deliberately: both `tool_call`
   events for a concurrent group now precede either `tool_result`, which is the
   honest record that both were dispatched before either finished.
-- **M13.7** Hook engine with in-process hooks; pre_tool veto demonstrated.
+- **M13.7** Hook engine with in-process hooks; pre_tool veto demonstrated. ✅ *(shipped: `panday_harness::hooks` — `Hook`, `HookEngine`, `PreTool`, `HookReporter`; wired into every point on the loop.)*
+
+  **Containment is the design.** A hook is other people's code inside our loop,
+  so a panic is caught, attributed to the named hook, reported, and **skipped**
+  — the turn continues. Containment stops at `Veto`, deliberately: a hook
+  refusing a call is doing its job, not misbehaving.
+
+  A hook that panics in `pre_tool` gets **no say**. Treating a crash as a veto
+  would let a bug silently disable tools; treating it as approval is equally
+  wrong. It is skipped and reported.
+
+  **Failures are reported, never merely swallowed** — a contained panic is
+  otherwise indistinguishable from a hook that chose to do nothing, which would
+  hide broken hooks forever.
+
+  `pre_tool` runs **before the permission gate**, so a redaction happens before
+  a human is asked to approve the original arguments. The first veto stops the
+  chain (a later `Rewrite` must not override a refusal); rewrites compose in
+  order, so two hooks can each redact a different field.
+
+  Timeouts are not enforced for in-process hooks: they are ours and trusted,
+  and a synchronous call cannot be interrupted without a thread. Timeout
+  enforcement belongs with the WASM tier, where hooks are untrusted (M16.4).
 
 Acceptance stance: the harness suite runs **without network** using the fake
 client; every invariant above has a named test.
