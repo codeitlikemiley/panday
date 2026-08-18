@@ -133,9 +133,6 @@ dependencies = [
  "ferrum-router",
  "ferrum-sdk",
  "ferrum-types",
- "futures-core",
- "futures-util",
- "reqwest",
  "serde",
  "serde_json",
  "thiserror",
@@ -231,9 +228,13 @@ dependencies = [
  "async-trait",
  "ferrum-types",
  "futures-core",
+ "futures-util",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

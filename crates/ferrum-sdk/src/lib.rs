@@ -1,8 +1,23 @@
 //! # ferrum-sdk
 //!
-//! The typed face of the platform (docs/10-sdk.md). This seed defines the
-//! client trait and the error vocabulary; transports (M10.2), sessions
-//! (M10.3) and the embedded agent (M10.5) build on these.
+//! The typed face of the platform (docs/10-sdk.md).
+//!
+//! Layout follows docs/02 ("client library: providers, middleware, agent
+//! builder"):
+//!
+//! - [`providers`] — provider dialects and the HTTP seam (the wire layer the
+//!   gateway's adapters share, docs/10: "write once, use both sides");
+//! - [`middleware`] — composable retry/timeout over any [`ModelClient`];
+//! - [`gateway`] — the transport to a `ferrum-gateway` instance (M10.2).
+//!
+//! Sessions (M10.3) and the embedded agent (M10.5) build on these.
+
+pub mod gateway;
+pub mod middleware;
+pub mod providers;
+
+pub use gateway::{connect, GatewayTransport};
+pub use middleware::{ModelClientExt, Retry, RetryPolicy, Timeout};
 
 use async_trait::async_trait;
 use ferrum_types::model::{ChatRequest, StreamItem};

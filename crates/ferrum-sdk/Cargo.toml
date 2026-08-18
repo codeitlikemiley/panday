@@ -13,3 +13,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 futures-core.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "time"] }
+uuid.workspace = true

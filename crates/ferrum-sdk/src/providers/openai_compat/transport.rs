@@ -5,7 +5,7 @@
 //! lets the whole adapter be tested without a model running — tests supply a
 //! `MockTransport` and the suite never opens a connection.
 
-use ferrum_sdk::FerrumError;
+use crate::FerrumError;
 use futures_core::Stream;
 use std::pin::Pin;
 

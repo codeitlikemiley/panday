@@ -19,8 +19,7 @@ pub mod sse;
 pub mod transport;
 pub mod wire;
 
-use crate::{AdapterCaps, CacheStyle, ProviderAdapter};
-use ferrum_sdk::{FerrumError, ItemStream};
+use crate::{FerrumError, ItemStream, ModelClient};
 use ferrum_types::id::CallId;
 use ferrum_types::model::{ChatRequest, StopReason, StreamItem};
 use std::collections::BTreeMap;
@@ -159,7 +158,7 @@ impl ChunkTranslator {
 // ---------------------------------------------------------------------------
 
 /// `openai_compat` — one adapter, many bases.
-pub struct OpenAiCompat {
+pub struct OpenAiCompatClient {
     /// Base URL of the server, e.g. `http://127.0.0.1:8080`.
     base_url: String,
     /// `None` for the `local` tier: loopback llama-server takes no auth.
@@ -167,7 +166,7 @@ pub struct OpenAiCompat {
     http: Arc<dyn HttpStreamTransport>,
 }
 
-impl OpenAiCompat {
+impl OpenAiCompatClient {
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Self {
         Self::with_transport(base_url, api_key, Arc::new(ReqwestTransport::default()))
     }
@@ -197,26 +196,7 @@ impl OpenAiCompat {
 }
 
 #[async_trait::async_trait]
-impl ProviderAdapter for OpenAiCompat {
-    fn name(&self) -> &'static str {
-        "openai_compat"
-    }
-
-    fn capabilities(&self, _model: &str) -> AdapterCaps {
-        AdapterCaps {
-            // Context length is a property of the loaded GGUF, not the
-            // dialect, and this family exposes no reliable way to ask. The
-            // router must not treat this as authoritative; a real catalog
-            // arrives with the local model registry (docs/18).
-            max_context: 0,
-            tools: true,
-            vision: false,
-            // Automatic prefix caching where the server supports it; never
-            // explicit breakpoints (ADR-007/008).
-            cache_style: CacheStyle::AutomaticPrefix,
-        }
-    }
-
+impl ModelClient for OpenAiCompatClient {
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, FerrumError> {
         let body = serde_json::to_vec(&wire::WireRequest::from_ir(&req))
             .map_err(|e| FerrumError::Protocol(format!("openai_compat: encode request: {e}")))?;
@@ -616,7 +596,7 @@ data: [DONE]
         }
     }
 
-    async fn collect(adapter: &OpenAiCompat) -> Vec<Result<StreamItem, FerrumError>> {
+    async fn collect(adapter: &OpenAiCompatClient) -> Vec<Result<StreamItem, FerrumError>> {
         adapter
             .chat(a_request())
             .await
@@ -628,7 +608,8 @@ data: [DONE]
     #[tokio::test]
     async fn streams_a_completion_from_a_local_llama_server() {
         let http = MockTransport::streaming(vec![TEXT_STREAM]);
-        let adapter = OpenAiCompat::with_transport("http://127.0.0.1:8080", None, http.clone());
+        let adapter =
+            OpenAiCompatClient::with_transport("http://127.0.0.1:8080", None, http.clone());
 
         let items: Vec<StreamItem> = collect(&adapter)
             .await
@@ -656,7 +637,8 @@ data: [DONE]
     async fn posts_to_the_chat_completions_endpoint_without_auth_on_loopback() {
         let http = MockTransport::streaming(vec![TEXT_STREAM]);
         // Trailing slash must not produce a double slash in the path.
-        let adapter = OpenAiCompat::with_transport("http://127.0.0.1:8080/", None, http.clone());
+        let adapter =
+            OpenAiCompatClient::with_transport("http://127.0.0.1:8080/", None, http.clone());
         let _ = collect(&adapter).await;
 
         let seen = http.seen();
@@ -671,7 +653,7 @@ data: [DONE]
     #[tokio::test]
     async fn sends_a_bearer_token_when_one_is_configured() {
         let http = MockTransport::streaming(vec![TEXT_STREAM]);
-        let adapter = OpenAiCompat::with_transport(
+        let adapter = OpenAiCompatClient::with_transport(
             "https://api.together.xyz",
             Some("sk-test".into()),
             http.clone(),
@@ -690,7 +672,7 @@ data: [DONE]
             &TEXT_STREAM[7..mid],
             &TEXT_STREAM[mid..],
         ]);
-        let adapter = OpenAiCompat::with_transport("http://127.0.0.1:8080", None, http);
+        let adapter = OpenAiCompatClient::with_transport("http://127.0.0.1:8080", None, http);
 
         let items: Vec<StreamItem> = collect(&adapter)
             .await
@@ -712,7 +694,7 @@ data: [DONE]
         let http = MockTransport::failing(FerrumError::RateLimited {
             retry_after_ms: 250,
         });
-        let adapter = OpenAiCompat::with_transport("http://127.0.0.1:8080", None, http);
+        let adapter = OpenAiCompatClient::with_transport("http://127.0.0.1:8080", None, http);
 
         let err = adapter.chat(a_request()).await.err().expect("must fail");
         assert!(matches!(err, FerrumError::RateLimited { .. }));
@@ -722,22 +704,12 @@ data: [DONE]
     #[tokio::test]
     async fn a_malformed_chunk_ends_the_stream_with_an_error() {
         let http = MockTransport::streaming(vec![b"data: {not json\n\n"]);
-        let adapter = OpenAiCompat::with_transport("http://127.0.0.1:8080", None, http);
+        let adapter = OpenAiCompatClient::with_transport("http://127.0.0.1:8080", None, http);
 
         let items = collect(&adapter).await;
         assert!(
             items.iter().any(|i| i.is_err()),
             "a malformed chunk must not be silently dropped"
         );
-    }
-
-    #[test]
-    fn advertises_automatic_prefix_caching_and_tool_support() {
-        let adapter = OpenAiCompat::local("http://127.0.0.1:8080");
-        let caps = adapter.capabilities("qwen3.5-4b");
-        assert_eq!(adapter.name(), "openai_compat");
-        assert!(caps.tools);
-        // Never explicit breakpoints — those are Anthropic's (ADR-008).
-        assert_eq!(caps.cache_style, CacheStyle::AutomaticPrefix);
     }
 }

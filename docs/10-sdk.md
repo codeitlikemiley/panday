@@ -59,8 +59,24 @@ let mut stream = client.chat(req).await?;       // impl Stream<Item = StreamItem
 let vecs = client.embed(EmbedRequest { .. }).await?;
 ```
 
-Everything is a `tower::Service` under the hood; middleware composes, and the
-same stack runs inside the gateway's adapters (write once, use both sides).
+Middleware composes, and the same stack runs inside the gateway's adapters
+(write once, use both sides) — the wire layer lives in
+`ferrum_sdk::providers`, which `ferrum-gateway`'s adapters wrap.
+
+**Implemented as `ModelClient` decorators, not `tower::Service`** (M10.2).
+Retry can only ever wrap the call that *establishes* a stream, never the
+stream itself: docs/11 requires that a mid-stream failure emit
+`Error{retryable:true}` and let the harness decide, because it holds turn
+semantics. That puts the retry boundary exactly at `ModelClient::chat` — one
+`async fn` returning `Result<ItemStream, _>` — where `poll_ready`/`call` buys
+nothing and tower's `Retry` would need a response it can inspect, which a
+boxed stream is not. Tower stays on the HTTP ingress side (axum + tower,
+docs/02), which is where M11.5 uses it.
+
+Layering order is `.with_timeout(..).with_retry(..)`: retry outside the
+timeout, so every attempt gets its own deadline. The timeout bounds
+time-to-first-stream, not the stream's lifetime — a model generating for two
+minutes is working, a gateway silent for ten seconds is not.
 
 ## Layer 3 — Sessions (the platform surface)
 
@@ -112,7 +128,7 @@ method, not a guess.
 ## Milestones
 
 - **M10.1** Model IR + streaming trait compile ✅ *(in workspace)*; round-trip serde tests.
-- **M10.2** Gateway transport with retry/timeout middleware; streams a real completion end to end via one provider.
+- **M10.2** Gateway transport with retry/timeout middleware; streams a real completion end to end via one provider. ✅ *(shipped: `ferrum_sdk::gateway::GatewayTransport` + `connect()`, `ferrum_sdk::middleware::{Retry, Timeout}`. The wire layer moved from `ferrum-gateway` to `ferrum_sdk::providers` so both sides share it.)*
 - **M10.3** Sessions client over WS with resume-after-seq; used by ferrum-cli (dogfood — the CLI has no private APIs).
 - **M10.4** `#[ferrum::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures.
 - **M10.5** Embedded Agent runs a 3-tool loop offline against `ferrum local`.
