@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ferrum-types",
+    "crates/ferrum-sdk",
+    "crates/ferrum-router",
+    "crates/ferrum-reducer",
+    "crates/ferrum-sandbox",
+    "crates/ferrum-harness",
+    "crates/ferrum-harnessd",
+    "crates/ferrum-plugins",
+    "crates/ferrum-gateway",
+    "crates/ferrum-platform",
+    "crates/ferrum-local",
+    "crates/ferrum-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "UNLICENSED"          # decide before anything is public
+repository = ""
+
+[workspace.dependencies]
+ferrum-types = { path = "crates/ferrum-types" }
+ferrum-sdk = { path = "crates/ferrum-sdk" }
+ferrum-router = { path = "crates/ferrum-router" }
+ferrum-reducer = { path = "crates/ferrum-reducer" }
+ferrum-sandbox = { path = "crates/ferrum-sandbox" }
+ferrum-harness = { path = "crates/ferrum-harness" }
+ferrum-plugins = { path = "crates/ferrum-plugins" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+async-trait = "0.1"
+futures-core = "0.3"
+uuid = { version = "1", features = ["v7", "serde"] }
+time = { version = "0.3", features = ["serde-well-known", "macros"] }
+
+[profile.release]
+lto = "thin"

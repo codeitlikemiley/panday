@@ -1,0 +1,11 @@
+[package]
+name = "ferrum-plugins"
+description = "Plugin packaging, skills, MCP host, hooks. Spec: docs/16-plugins.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+serde.workspace = true
+thiserror.workspace = true

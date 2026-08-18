@@ -1,0 +1,13 @@
+[package]
+name = "ferrum-gateway"
+description = "The model plane: one egress for all model calls. Spec: docs/11-gateway.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+ferrum-sdk.workspace = true
+ferrum-router.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true

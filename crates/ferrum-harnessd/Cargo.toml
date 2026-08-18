@@ -1,0 +1,11 @@
+[package]
+name = "ferrum-harnessd"
+description = "The hosted session service: WS/SSE AEP endpoint over ferrum-harness session actors. Specs: docs/03 (M3.3), docs/13, docs/22"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+ferrum-harness.workspace = true
+ferrum-sdk.workspace = true

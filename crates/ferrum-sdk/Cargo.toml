@@ -1,0 +1,14 @@
+[package]
+name = "ferrum-sdk"
+description = "Client library: model IR client traits, errors, (later) transports, sessions, embedded agent. Spec: docs/10-sdk.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true

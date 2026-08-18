@@ -1,0 +1,13 @@
+[package]
+name = "ferrum-sandbox"
+description = "Tiered execution: T0 in-proc, T1 WASM, T2 OS jail, T3 microVM. Spec: docs/14-sandbox.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true

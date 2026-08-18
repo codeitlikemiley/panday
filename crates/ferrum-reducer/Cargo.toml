@@ -1,0 +1,10 @@
+[package]
+name = "ferrum-reducer"
+description = "Token economy: tool-output reduction with cache-aware dollar accounting. Spec: docs/15-reducer.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+serde.workspace = true

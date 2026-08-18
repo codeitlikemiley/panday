@@ -1,0 +1,11 @@
+[package]
+name = "ferrum-router"
+description = "Model routing: policy engine + classifier trait. Spec: docs/12-router.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrum-types.workspace = true
+serde.workspace = true
+thiserror.workspace = true
