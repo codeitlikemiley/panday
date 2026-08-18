@@ -111,7 +111,24 @@ horizontally behind any LB.
   are split by TTL tier because they price differently (1.25x at 5m, 2x at
   1h); the flat `cache_creation_input_tokens` form is attributed to the 5m
   tier, since over-charging a tenant on a guess is worse than under-charging.
-- **M11.3** Router integration (12) with chain-failover; kill-a-provider chaos test passes (session degrades, never errors to user).
+- **M11.3** Router integration (12) with chain-failover; kill-a-provider chaos test passes (session degrades, never errors to user). ✅ *(shipped: `Gateway::resolve_chain` + failover in `Gateway::chat`; `crates/panday-gateway/tests/failover_chaos.rs`.)*
+
+  The chaos test runs a six-turn session, kills the head provider a third of
+  the way through and revives it near the end, and asserts every turn was
+  served with content and every one was billed. "Never errors to user" is the
+  property, which is stronger than "eventually succeeds".
+
+  **Failover covers establishment only.** Once a stream exists a mid-stream
+  failure is surfaced, never retried — the harness holds turn semantics, and
+  re-prompting would double-bill the caller for tokens they already saw. A
+  test asserts the next leg is not touched after partial content has flowed.
+
+  **A non-retryable failure does not walk the chain.** A 400 fails identically
+  on every target, so trying the rest would turn one clear error into several
+  confusing ones while spending the caller's quota to do it.
+
+  An exhausted chain reports every leg it tried with the upstream reason, so an
+  operator can tell one bad provider from a global outage.
 - **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures.
 - **M11.5** OpenAI-compat ingress; aider-against-panday smoke test.
 - **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core.

@@ -100,7 +100,7 @@ impl Gateway {
     /// Returns the routing decision alongside it so the caller can report
     /// which rule fired — the audit record docs/12 asks for. Persisting it is
     /// M12.2.
-    pub fn resolve(&self, req: &ChatRequest) -> Result<Resolved, PandayError> {
+    pub fn resolve_chain(&self, req: &ChatRequest) -> Result<Vec<Resolved>, PandayError> {
         let query = RouteQuery {
             requested: req.model.clone(),
             task: req.metadata.task,
@@ -123,10 +123,9 @@ impl Gateway {
             .route(&query)
             .map_err(|e| PandayError::Protocol(format!("route: {e}")))?;
 
-        // Take the first target we can actually call. Trying the *rest* of the
-        // chain on failure is M11.3; this only skips entries that are
-        // unusable by construction.
+        // Every target we could call, in order. Failover walks this list.
         let mut skipped: Vec<String> = Vec::new();
+        let mut usable: Vec<Resolved> = Vec::new();
         for target in &decision.chain {
             // Pool entries may be globs (docs/12 M12.1 note). Without a model
             // catalog there is nothing to expand them against, and guessing a
@@ -140,18 +139,30 @@ impl Gateway {
                 continue;
             };
             if let Some(adapter) = self.adapters.get(provider) {
-                return Ok(Resolved {
+                usable.push(Resolved {
                     model: target.clone(),
                     provider: provider.to_string(),
                     adapter: adapter.clone(),
                     matched_rule: decision.matched_rule.clone(),
                     pool: decision.pool.clone(),
                 });
+                continue;
             }
             skipped.push(format!("{} (no adapter configured)", target.0));
         }
 
-        Err(PandayError::ModelUnavailable { tried: skipped })
+        if usable.is_empty() {
+            return Err(PandayError::ModelUnavailable { tried: skipped });
+        }
+        Ok(usable)
+    }
+
+    /// The single best target — the head of the chain.
+    pub fn resolve(&self, req: &ChatRequest) -> Result<Resolved, PandayError> {
+        self.resolve_chain(req)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| PandayError::ModelUnavailable { tried: vec![] })
     }
 }
 
@@ -164,29 +175,82 @@ pub struct Resolved {
     pub pool: String,
 }
 
+/// One leg that failed while establishing a stream, for the audit trail.
+#[derive(Debug, Clone)]
+pub struct FailedLeg {
+    pub model: ModelRef,
+    pub provider: String,
+    pub error: String,
+    pub retryable: bool,
+}
+
 #[async_trait::async_trait]
 impl ModelClient for Gateway {
-    async fn chat(&self, mut req: ChatRequest) -> Result<ItemStream, PandayError> {
-        let resolved = self.resolve(&req)?;
-
-        // The adapter must see the model the router chose, not `auto`.
-        req.model = resolved.model.clone();
+    /// Try the chain in order (docs/11 §failover: "Route returns a **chain**,
+    /// not a single target. On 5xx/timeout/overload: next target, with the
+    /// *same* request").
+    ///
+    /// Failover covers **establishment only**. Once a stream exists, a
+    /// mid-stream failure is surfaced rather than retried: docs/11 is explicit
+    /// that the gateway "does not re-prompt on its own" because the harness
+    /// holds turn semantics — and re-prompting would double-bill the caller
+    /// for tokens they already saw.
+    async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
+        let chain = self.resolve_chain(&req)?;
         let account = req.metadata.account;
         let request = req.metadata.request;
 
-        let stream = resolved.adapter.chat(req).await?;
+        let mut failed: Vec<FailedLeg> = Vec::new();
 
-        Ok(Box::pin(capture_usage(
-            stream,
-            self.usage.clone(),
-            UsageRecord {
-                account,
-                request,
-                model: resolved.model,
-                provider: resolved.provider,
-                usage: Usage::default(),
-            },
-        )))
+        for leg in chain {
+            let mut attempt = req.clone();
+            // The adapter must see the model the router chose, not `auto`.
+            attempt.model = leg.model.clone();
+
+            match leg.adapter.chat(attempt).await {
+                Ok(stream) => {
+                    return Ok(Box::pin(capture_usage(
+                        stream,
+                        self.usage.clone(),
+                        UsageRecord {
+                            account,
+                            request,
+                            model: leg.model,
+                            provider: leg.provider,
+                            usage: Usage::default(),
+                        },
+                    )));
+                }
+                Err(e) => {
+                    let retryable = e.is_retryable();
+                    failed.push(FailedLeg {
+                        model: leg.model.clone(),
+                        provider: leg.provider.clone(),
+                        error: e.to_string(),
+                        retryable,
+                    });
+
+                    // A non-retryable failure is the caller's problem, not the
+                    // chain's: a malformed request or a denied entitlement will
+                    // fail identically on every target, and walking the chain
+                    // would turn one clear error into N confusing ones — while
+                    // spending the caller's quota to do it.
+                    if !retryable {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        // Every leg was tried and every one was retryable. The chain is
+        // exhausted; the error names each attempt so an operator can see
+        // whether this was one bad provider or a global outage.
+        Err(PandayError::ModelUnavailable {
+            tried: failed
+                .iter()
+                .map(|f| format!("{} via {} ({})", f.model.0, f.provider, f.error))
+                .collect(),
+        })
     }
 }
 
