@@ -117,6 +117,10 @@ pub enum SandboxError {
     Internal(String),
 }
 
+pub mod t0;
+
+pub use t0::{Access, T0Sandbox};
+
 pub type ExecStream =
     std::pin::Pin<Box<dyn futures_core::Stream<Item = Result<ExecChunk, SandboxError>> + Send>>;
 

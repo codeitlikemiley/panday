@@ -626,6 +626,7 @@ dependencies = [
  "panday-types",
  "serde",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

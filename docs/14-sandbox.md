@@ -78,7 +78,22 @@ type error.
 
 ## Milestones
 
-- **M14.1** Trait ✅ + T0 (path-policied native tools) + policy types; unit-tested FS scoping.
+- **M14.1** Trait ✅ + T0 (path-policied native tools) + policy types; unit-tested FS scoping. ✅ *(shipped: `panday_sandbox::t0::T0Sandbox`; 17-case scoping suite in `crates/panday-sandbox/tests/t0_scoping.rs`.)*
+
+  **What T0 does and does not defend against.** It constrains *our own* code
+  acting on behalf of a model — a model asking for `../../etc/shadow` is
+  stopped here. It is not a defence against hostile native code, which would
+  never route through this API; that is T2/T3's job (ADR-004).
+
+  Paths are canonicalised *before* the root check, which is what defeats the
+  symlink bypass (a path textually inside the workspace whose link resolves
+  outside). Both the file-symlink and directory-symlink cases are in the
+  suite, each asserting the target really was reachable otherwise — an escape
+  test that would pass against a no-op is worthless.
+
+  Known, documented gap: a TOCTOU window remains between resolving a path and
+  opening it. Closing it needs `openat2(RESOLVE_BENEATH)` or a real jail —
+  M14.2.
 - **M14.2** T2 Linux: namespaces + seccomp + egress proxy; escape suite green; `bash` tool runs through it.
 - **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite.
 - **M14.4** T1 wasmtime: WIT world for plugin tools (`panday:plugin/tool`), fuel + epoch limits; a demo plugin tool runs.
