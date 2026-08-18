@@ -141,6 +141,13 @@ pub struct SessionActor {
     subs: Vec<Arc<dyn EventSink>>,
     /// Set for the duration of a turn so every event it emits correlates.
     current_turn: Option<TurnId>,
+    /// Calls parked awaiting a decision, kept with their arguments so an
+    /// `Allow` can dispatch exactly what was gated — re-deriving it from the
+    /// log would risk dispatching something subtly different from what the
+    /// human approved.
+    parked: Vec<PendingCall>,
+    /// Set by [`SessionActor::cancel`]; checked at every transition.
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SessionActor {
@@ -170,7 +177,26 @@ impl SessionActor {
             budget,
             subs: Vec::new(),
             current_turn: None,
+            parked: Vec::new(),
+            cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
+    }
+
+    /// A handle that can request cancellation from another task — the client
+    /// pressing ctrl-c is not on the actor's task.
+    pub fn cancel_handle(&self) -> CancelHandle {
+        CancelHandle(self.cancelled.clone())
+    }
+
+    /// Request cancellation. docs/13: "Cancellation is a first-class
+    /// transition from every state."
+    pub fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn subscribe(&mut self, sink: Arc<dyn EventSink>) {
@@ -254,6 +280,9 @@ impl SessionActor {
             }
             if started.elapsed().as_millis() as u64 >= self.budget.max_wall_ms {
                 return self.finalize(StopReason::BudgetExceeded, turn_usage).await;
+            }
+            if self.is_cancelled() {
+                return self.finalize(StopReason::Cancelled, turn_usage).await;
             }
 
             self.current_turn = Some(TurnId::new());
@@ -340,6 +369,7 @@ impl SessionActor {
                         })
                         .await?;
                         parked.push(call.id);
+                        self.parked.push(call.clone());
                     }
                 }
             }
@@ -350,8 +380,17 @@ impl SessionActor {
                 return Ok(TurnOutcome::AwaitingPermission(parked));
             }
 
+            if self.is_cancelled() {
+                return self.finalize(StopReason::Cancelled, turn_usage).await;
+            }
+
             // --- Executing ---
             for call in queued {
+                if self.is_cancelled() {
+                    // Stop dispatching immediately; anything already running
+                    // is killed when its stream is dropped.
+                    return self.finalize(StopReason::Cancelled, turn_usage).await;
+                }
                 self.commit(Event::ToolCall {
                     call_id: call.id,
                     tool: call.name.clone(),
@@ -362,6 +401,70 @@ impl SessionActor {
                 self.execute(call).await?;
             }
         }
+    }
+
+    /// Answer a parked permission request and continue the turn.
+    ///
+    /// docs/13: decisions are events, "so grants are auditable and replayable
+    /// like everything else". The decision is committed before anything is
+    /// dispatched, so a crash between consent and execution leaves the
+    /// consent on the record rather than losing it.
+    pub async fn decide(
+        &mut self,
+        call_id: CallId,
+        decision: panday_types::event::PermDecision,
+        by: panday_types::event::Actor,
+    ) -> Result<TurnOutcome, HarnessError> {
+        use panday_types::event::PermDecision;
+
+        let Some(index) = self.parked.iter().position(|c| c.id == call_id) else {
+            return Err(HarnessError::Model(PandayError::Protocol(format!(
+                "no parked call {call_id} awaiting a decision"
+            ))));
+        };
+        let call = self.parked.remove(index);
+
+        self.commit(Event::PermissionDecision {
+            call_id,
+            decision,
+            by,
+        })
+        .await?;
+
+        match decision {
+            PermDecision::Deny => {
+                // The model must see the refusal, or it will simply try again.
+                self.commit(Event::ToolResult {
+                    call_id,
+                    output: ReducedOutput {
+                        text: format!("denied by the user: {}", call.name),
+                        tokens_raw: 0,
+                        tokens_kept: 0,
+                        strategy: "permission_denied".into(),
+                    },
+                    raw_ref: None,
+                    duration_ms: 0,
+                    is_error: true,
+                })
+                .await?;
+            }
+            PermDecision::Allow | PermDecision::AllowRemember => {
+                if decision == PermDecision::AllowRemember {
+                    self.permissions.remember(&call.name, decision);
+                }
+                self.execute(call).await?;
+            }
+        }
+
+        // Other calls from the same step may still be waiting; the turn
+        // resumes only once every gate has an answer.
+        if !self.parked.is_empty() {
+            return Ok(TurnOutcome::AwaitingPermission(
+                self.parked.iter().map(|c| c.id).collect(),
+            ));
+        }
+
+        self.run_loop().await
     }
 
     /// Run one tool and fold its (reduced) observation back in.
@@ -375,7 +478,18 @@ impl SessionActor {
                     session: self.session,
                     turn: TurnId::new(),
                 };
-                tool.call(ctx, call.args.clone()).await
+                let cancelled = self.cancelled.clone();
+                tokio::select! {
+                    outcome = tool.call(ctx, call.args.clone()) => outcome,
+                    // Dropping the tool future drops its ExecStream, which is
+                    // what kills the child process (see the sandbox note on
+                    // receiver-drop). Polling a flag is enough here because a
+                    // cancelled session is being torn down either way.
+                    _ = wait_for_cancel(cancelled) => crate::tools::ToolOutcome {
+                        raw: "cancelled".into(),
+                        is_error: true,
+                    },
+                }
             }
             // An unknown tool is the model's mistake, not a crash: report it
             // as a tool error so the loop can continue and correct.
@@ -501,6 +615,26 @@ impl SessionActor {
             });
         }
         Ok(out)
+    }
+}
+
+/// Requests cancellation of a running session from another task.
+#[derive(Clone)]
+pub struct CancelHandle(Arc<std::sync::atomic::AtomicBool>);
+
+impl CancelHandle {
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Resolve once cancellation is requested.
+async fn wait_for_cancel(flag: Arc<std::sync::atomic::AtomicBool>) {
+    loop {
+        if flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 }
 

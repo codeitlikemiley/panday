@@ -369,14 +369,35 @@ impl Sandbox for T2MacosSandbox {
 
                     n = stdout.read(&mut out_buf), if !out_done => match n {
                         Ok(0) => out_done = true,
-                        Ok(n) => { let _ = tx.send(Ok(ExecChunk::Stdout(out_buf[..n].to_vec()))).await; }
+                        Ok(n) => {
+                            // A send failure means the consumer dropped the
+                            // stream — i.e. the caller cancelled. Killing the
+                            // child here is what makes cancellation actually
+                            // stop work rather than merely stop listening to
+                            // it (docs/13 §cancellation).
+                            if tx.send(Ok(ExecChunk::Stdout(out_buf[..n].to_vec()))).await.is_err() {
+                                let _ = child.kill().await;
+                                return;
+                            }
+                        }
                         Err(_) => out_done = true,
                     },
                     n = stderr.read(&mut err_buf), if !err_done => match n {
                         Ok(0) => err_done = true,
-                        Ok(n) => { let _ = tx.send(Ok(ExecChunk::Stderr(err_buf[..n].to_vec()))).await; }
+                        Ok(n) => {
+                            if tx.send(Ok(ExecChunk::Stderr(err_buf[..n].to_vec()))).await.is_err() {
+                                let _ = child.kill().await;
+                                return;
+                            }
+                        }
                         Err(_) => err_done = true,
                     },
+                    // A command that produces no output would otherwise never
+                    // notice the consumer is gone, so poll for closure too.
+                    _ = tx.closed() => {
+                        let _ = child.kill().await;
+                        return;
+                    }
                     _ = &mut deadline => {
                         // docs/13 §cancellation: SIGKILL is the backstop. The
                         // graceful SIGTERM path belongs with cancellation

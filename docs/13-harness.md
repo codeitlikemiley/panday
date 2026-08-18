@@ -193,7 +193,33 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   `web_fetch` (needs the egress proxy, M14.2) and `spawn_subagent` (M13.6) are
   deliberately absent rather than stubbed — a tool the model can call but that
   cannot work is worse than one it never sees.
-- **M13.3** Permission engine + Ask flow over WS; cancellation kills a sleeping bash cleanly.
+- **M13.3** Permission engine + Ask flow over WS; cancellation kills a sleeping bash cleanly. ✅ *(shipped: `Rule` argument patterns in `panday_harness::permissions`; `SessionActor::decide`; `SessionActor::cancel` / `cancel_handle`.)*
+
+  **Gate order is the security model**, and it is not the obvious one:
+
+  1. explicit `deny` rules — nothing overrides an operator's "never";
+  2. `Irreversible` forces Ask;
+  3. remaining `ask`/`allow` rules;
+  4. remembered grants;
+  5. profile default.
+
+  Denies run *before* both the irreversible-Ask and remembered grants. If a
+  remembered "always allow bash" outranked a deny rule, it would silently
+  authorise `bash(rm -rf /)` later in the same session; and if Ask outranked
+  deny, an operator's hard limit would degrade into a dialog someone can click
+  through. Rules match a canonical, lowercased, key-sorted rendering of the
+  arguments, so they cannot be evaded by case or JSON key order.
+
+  **The Ask flow is tested at `decide`, not over a WebSocket** — the WS
+  endpoint is M3.3 and the transport carries the same events either way. The
+  decision is committed *before* the call it authorises, so a crash between
+  consent and execution leaves the consent on the record.
+
+  **Cancellation is real, not cooperative bookkeeping.** Dropping an
+  `ExecStream` closes its channel, which the sandbox's reader task treats as
+  "the caller is gone" and kills the child. The test starts a genuinely
+  sleeping `bash`, cancels it, and then proves the process died by checking a
+  marker file the command would have written had it survived.
 - **M13.4** Cache-aligned assembly + compaction; measured: ≥70% cache-read ratio on a 30-turn session replay.
 - **M13.5** Crash-kill during Executing → resume replays correctly (idempotent) and refuses (irreversible) — both proven by tests.
 - **M13.6** Subagents with budget split; parallel independent tools.
