@@ -36,6 +36,14 @@ serde_json = "1"
 thiserror = "2"
 async-trait = "0.1"
 futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# rustls only — docs/02: "no openssl linkage".
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "stream",
+    "json",
+] }
 uuid = { version = "1", features = ["v7", "serde"] }
 time = { version = "0.3", features = ["serde-well-known", "macros"] }
 # Optional in ferrum-types (feature `schema`), so the near-zero-dependency rule

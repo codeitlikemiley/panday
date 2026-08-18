@@ -26,6 +26,10 @@ allow = [
     "Zlib",
     "Unicode-3.0",
     "CC0-1.0",
+    # webpki-roots — the Mozilla CA root bundle that rustls ships. CDLA-P-2.0
+    # is a permissive *data* licence covering the certificate list itself
+    # (no copyleft, no attribution burden on our binaries).
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 # Our own crates carry `license = "UNLICENSED"`, which is not an SPDX id.

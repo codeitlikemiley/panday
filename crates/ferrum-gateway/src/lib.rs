@@ -4,6 +4,8 @@
 //! set — deliberately NOT a plugin surface. First real adapter: M11.1
 //! (openai_compat → llama-server).
 
+pub mod adapters;
+
 use async_trait::async_trait;
 use ferrum_sdk::{FerrumError, ItemStream};
 use ferrum_types::model::ChatRequest;
