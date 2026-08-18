@@ -1,0 +1,41 @@
+# Default routing policy (docs/12 §Policy file v1).
+#
+# Evaluation is FIRST MATCH, top to bottom. Order is the whole semantics:
+# put hard overrides first and the catch-all last, or `cargo test` will tell
+# you about the rules you made unreachable.
+version: 1
+
+pools:
+  frontier:   [anthropic/claude-opus-*, openai/gpt-5*]
+  workhorse:  [anthropic/claude-sonnet-*, together/qwen3.5-*-instruct]
+  cheap:      [together/qwen3.5-9b, local/qwen3.5-4b]
+  local-only: [local/qwen3.5-4b, local/gpt-oss-20b]
+
+rules:
+  # Hard override, always first: offline can never reach a network provider.
+  - match: { offline: true }
+    use: local-only
+
+  # Never spend frontier tokens deciding where to spend tokens.
+  - match: { task: route }
+    use: cheap
+
+  - match: { task: summarize, context_tokens: { lt: 8000 } }
+    use: cheap
+
+  # Code is the product's reason to exist; paid plans get the good models,
+  # with workhorse as the failover leg rather than a hard failure.
+  - match: { task: code, plan: [pro, max] }
+    use: frontier
+    fallback: workhorse
+
+  # Default.
+  - match: {}
+    use: workhorse
+
+constraints:
+  # Privacy is an ALLOWLIST, not a denylist. Denying only `frontier` would
+  # still leak to workhorse/cheap providers (docs/12).
+  privacy_strict: { restrict_to: [local-only] }
+  # >80% of ceiling: demote non-code tasks.
+  budget_soft: { demote_to: cheap }

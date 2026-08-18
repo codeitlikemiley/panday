@@ -9,4 +9,5 @@ publish.workspace = true
 [dependencies]
 ferrum-types.workspace = true
 serde.workspace = true
+serde_yaml_ng.workspace = true
 thiserror.workspace = true

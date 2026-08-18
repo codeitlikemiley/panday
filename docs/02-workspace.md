@@ -53,6 +53,7 @@ Rules that keep a workspace this size sane:
 | ids | uuid v7 | time-ordered; sortable in PG |
 | time | time or chrono | pick ONE (we pick `time`), enforce with clippy |
 | tracing | tracing + opentelemetry | span per event, see 21 |
+| config | serde_yaml_ng | YAML policy files (docs/12). Upstream `serde_yaml` is deprecated; this is its maintained continuation |
 | schemas | schemars | derive JSON Schema for tool params; in `ferrum-types` it is **optional** behind the `schema` feature so the near-zero-dependency rule above still holds — only `cargo xtask schemas` enables it |
 | MCP | rmcp (official) | client + server features |
 | ACP | agent-client-protocol | official Rust crate |

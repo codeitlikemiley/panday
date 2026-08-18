@@ -46,6 +46,9 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 uuid = { version = "1", features = ["v7", "serde"] }
 time = { version = "0.3", features = ["serde-well-known", "macros"] }
+# Router policy files are YAML (docs/12). Upstream serde_yaml is deprecated;
+# serde_yaml_ng is its maintained continuation with the same derive API.
+serde_yaml_ng = "0.10"
 # Optional in ferrum-types (feature `schema`), so the near-zero-dependency rule
 # in docs/02 still holds for every normal build; only `cargo xtask schemas`
 # turns it on.

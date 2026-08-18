@@ -84,7 +84,21 @@ is, so it stops promising what it can't do (18).
 
 ## Milestones
 
-- **M12.1** Policy file parse + first-match engine + unreachable-rule linter; table-driven tests. Traits ✅ in workspace.
+- **M12.1** Policy file parse + first-match engine + unreachable-rule linter; table-driven tests. ✅ *(shipped: `ferrum_router::policy` — `Policy`/`PolicyRouter`, the shipped default at `crates/ferrum-router/policy/default.yaml`, and `Policy::lint()`.)*
+
+  Two notes from the implementation:
+
+  - **Pool entries are globs, but `RouteDecision.chain` is `Vec<ModelRef>`.**
+    Nothing yet resolves `anthropic/claude-opus-*` to a concrete model, so
+    v1 chains carry the pattern through. Resolution needs the adapter
+    registry (docs/11) and the local catalog (docs/18) — it lands with M12.2,
+    when the router is wired into the gateway.
+  - **`BudgetPressure::Hard` filters the chain to `local/` and can empty it**,
+    yielding `NoRoute`. That is deliberate — a hit ceiling must never fall
+    through to a paid call — but it means a policy whose pools contain no
+    local model will hard-fail at the ceiling instead of degrading. The
+    gateway turns that into a typed `budget_exceeded` and a graceful session
+    pause (docs/11 §Quotas), rather than a 500.
 - **M12.2** Wired into gateway: `auto` resolves through rules; RouteDecision audit rows land in PG.
 - **M12.3** Heuristic classifier + confidence; misclassification harness with labeled fixtures.
 - **M12.4** Scorecard generator from eval runs; the weekly review is a generated PR against the YAML.

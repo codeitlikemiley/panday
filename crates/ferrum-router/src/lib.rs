@@ -62,6 +62,10 @@ pub enum RouteError {
     Policy(String),
 }
 
+pub mod policy;
+
+pub use policy::{Policy, PolicyRouter};
+
 pub trait Router: Send + Sync {
     fn route(&self, q: &RouteQuery) -> Result<RouteDecision, RouteError>;
 }
