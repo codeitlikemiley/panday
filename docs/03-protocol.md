@@ -135,6 +135,32 @@ display encoding, not a second id.
 
 - **M3.1** `panday-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(shipped: 17 fixtures in `crates/panday-types/tests/fixtures/`, harness in `tests/golden.rs`, plus the versioning-discipline suite — additive fields, unknown-kind tolerance, version pin.)*
 - **M3.2** `cargo xtask schemas` exports JSON Schema to `proto/`; CI diffs it (a schema change without a version note fails). ✅ *(shipped: `xtask/`, `proto/aep-envelope.schema.json`, `cargo xtask schemas --check` in CI.)*
-- **M3.3** WS endpoint in harnessd: create session, stream events, resume-after-seq proven by killing the connection mid-turn.
+- **M3.3** WS endpoint in harnessd: create session, stream events, resume-after-seq proven by killing the connection mid-turn. ✅ *(shipped: `panday-harnessd` — `POST /v1/sessions`, `GET /v1/sessions/{id}/ws?after_seq=`, `GET /v1/sessions/{id}/events?after_seq=`.)*
+
+  The test kills a real TCP connection mid-turn, lets work continue while
+  nobody is listening, reconnects with the last `seq` the client actually saw,
+  and asserts it receives exactly the missed events in order.
+
+  **Two ordering rules the implementation turns on:**
+
+  - The live subscription is taken **before** the log is read, so an event
+    appended between replay and tail is delivered rather than lost. A
+    duplicate is filtered by `seq`; a gap could never be recovered.
+  - Events are made durable **before** fan-out. A client must never see an
+    event that is not in the log, or a later resume would appear to *lose* it.
+
+  **`after_seq` beyond the log's head is refused with 409.** It used to be
+  accepted, and then every future event was filtered as "already sent" — the
+  client sat receiving nothing, forever, with no error. A resume point that
+  does not exist means the client's state is impossible, and saying so beats
+  hiding it.
+
+  A lagging client is disconnected rather than skipped: it can reconnect with
+  `after_seq` and recover everything from the log, whereas a skipped event is
+  a gap it could never detect.
+
+  Storage here is the in-memory `EventStore`. The Postgres-backed store needs
+  a live database and belongs to **M2.3** (the integration lane with PG+MinIO
+  compose), which is where `sqlx`'s compile-time-checked queries land.
 - **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events.
 - **M3.5** Ledger-rebuild-from-log: property test that replaying any session yields the ledger totals the live path recorded.

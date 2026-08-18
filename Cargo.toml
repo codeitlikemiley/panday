@@ -44,6 +44,8 @@ futures-core = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # rustls only — docs/02: "no openssl linkage".
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "stream",
