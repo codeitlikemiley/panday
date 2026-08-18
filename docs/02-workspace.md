@@ -102,7 +102,17 @@ commercial product; know your license graph early.
 - **M2.1** Workspace compiles with all crates stubbed (✅ shipped: `cargo test --workspace` green, clippy clean); CI workflow file shipped — first green *run* happens on your remote.
 - **M2.2** nextest + cargo-deny wired; golden-file harness for `panday-types` fixtures. ✅ *(shipped: `.config/nextest.toml`, `deny.toml`, `crates/panday-types/tests/golden.rs`; CI runs nextest + a cargo-deny lane.)*
 - **M2.3** Integration lane with PG+MinIO compose; first sqlx query compiles against a real schema.
-- **M2.4** Release builds for linux x86_64/aarch64 + macOS arm64; binaries under 25MB.
+- **M2.4** Release builds for linux x86_64/aarch64 + macOS arm64; binaries under 25MB. ✅ *(shipped: `.github/workflows/release.yml`, `scripts/check-binary-sizes.sh`.)*
+
+  Linux x86_64 and aarch64 build on every push; macOS is tag-only, per the CI
+  shape above. aarch64 needs both a cross linker *and* a cross C compiler,
+  because `ring` (via rustls) compiles C — `--target` alone is not enough.
+
+  The 25MB budget is **enforced, not printed**: size creeps one dependency at a
+  time and nobody notices until a release is 80MB. The script fails the build,
+  and it also fails when it finds *no* binaries — a passing size check over
+  zero files is not a pass. Current sizes (macOS arm64): `panday` 6.2MB,
+  `panday-gateway` 6.9MB, `panday-harnessd` 2.1MB.
 
 Acceptance for all: a fresh `git clone` + `cargo check` succeeds on stable
 with no system deps beyond a C linker.

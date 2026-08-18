@@ -1,0 +1,70 @@
+name: release
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# docs/02 §CI shape item 4: "cargo build --release for linux-x86_64 + aarch64
+# (cross), macOS on tag". Linux builds run on every push so a break is caught
+# immediately; the macOS leg is tag-only because it needs a different runner and
+# nothing about it can regress from a Linux-only change.
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "release-${{ matrix.target }}" }
+
+      # aarch64 needs a cross linker; `ring` (via rustls) also needs a cross C
+      # compiler, which is why this is not just `--target`.
+      - if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - run: cargo build --release --workspace --target ${{ matrix.target }}
+      - run: ./scripts/check-binary-sizes.sh target/${{ matrix.target }}/release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: panday-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/panday
+            target/${{ matrix.target }}/release/panday-gateway
+            target/${{ matrix.target }}/release/panday-harnessd
+          if-no-files-found: error
+
+  macos:
+    # Tag-only, per docs/02.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-darwin" }
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "release-macos" }
+      - run: cargo build --release --workspace --target aarch64-apple-darwin
+      - run: ./scripts/check-binary-sizes.sh target/aarch64-apple-darwin/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: panday-aarch64-apple-darwin
+          path: |
+            target/aarch64-apple-darwin/release/panday
+            target/aarch64-apple-darwin/release/panday-gateway
+            target/aarch64-apple-darwin/release/panday-harnessd
+          if-no-files-found: error
