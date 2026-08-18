@@ -6,8 +6,10 @@
 
 pub mod adapters;
 pub mod gateway;
+pub mod ingress;
 
 pub use gateway::{CollectUsage, DiscardUsage, Gateway, UsageRecord, UsageSink};
+pub use ingress::{IngressRequest, IngressState};
 
 use async_trait::async_trait;
 use panday_sdk::{ItemStream, PandayError};

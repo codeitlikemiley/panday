@@ -130,5 +130,31 @@ horizontally behind any LB.
   An exhausted chain reports every leg it tried with the upstream reason, so an
   operator can tell one bad provider from a global outage.
 - **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures.
-- **M11.5** OpenAI-compat ingress; aider-against-panday smoke test.
+- **M11.5** OpenAI-compat ingress; aider-against-panday smoke test. ✅ *(shipped: `panday_gateway::ingress` — `POST /v1/chat/completions`, streaming and buffered; served by the `panday-gateway` binary.)*
+
+  The A/B property is why the surface must be *exactly* the standard dialect: a
+  client has to be redirectable by changing a base URL and nothing else, or the
+  comparison is not like-for-like. So the tests speak **raw HTTP**, not a typed
+  client — that is what aider and a curl script actually do, and it is the only
+  way to catch a response our own types would round-trip happily and a real
+  parser would reject. Every SSE frame is asserted to be valid JSON, `stop`
+  accepts both a string and an array, and an assistant message with no
+  `content` is accepted (any transcript that used tools has one).
+
+  Verified live against a local server with `curl`, not only in tests.
+
+  **Two things this milestone exposed.** `auto` never reached a task rule,
+  because the ingress leaves `metadata.task` unset and the gateway passed that
+  straight through — so M12.3's classifier existed but nothing called it, and
+  every external request fell to the default pool. The gateway now classifies
+  when the caller did not declare, which is precisely how an external client
+  inherits routing without knowing it exists.
+
+  And an exhausted chain of rate limits used to surface as `ModelUnavailable`
+  (503), stripping the one signal a client can act on. If **every** leg was
+  rate-limited the gateway now returns `RateLimited` (429) so back-off still
+  works; a mixed set of failures stays 503.
+
+  *Not done:* the literal aider smoke test needs aider installed. `curl` and the
+  raw-HTTP suite exercise the same surface.
 - **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core.

@@ -18,7 +18,8 @@
 
 use crate::ProviderAdapter;
 use futures_util::StreamExt;
-use panday_router::{RouteQuery, Router};
+use panday_router::classify::{classify_or_default, HeuristicClassifier};
+use panday_router::{Classifier, RouteQuery, Router};
 use panday_sdk::{ItemStream, ModelClient, PandayError};
 use panday_types::model::{ChatRequest, ModelRef, StreamItem, Usage};
 use std::collections::BTreeMap;
@@ -79,6 +80,13 @@ pub struct Gateway {
     adapters: BTreeMap<String, Arc<dyn ProviderAdapter>>,
     router: Arc<dyn Router>,
     usage: Arc<dyn UsageSink>,
+    /// Guesses a task class when the caller did not declare one.
+    ///
+    /// Without this an external client — anything arriving through the
+    /// OpenAI-compat ingress — would never match a task rule and every request
+    /// would fall to the default pool, which silently defeats routing for the
+    /// very callers the wedge exists to attract.
+    classifier: Arc<dyn Classifier>,
 }
 
 impl Gateway {
@@ -87,6 +95,7 @@ impl Gateway {
             adapters: BTreeMap::new(),
             router,
             usage: Arc::new(DiscardUsage),
+            classifier: Arc::new(HeuristicClassifier),
         }
     }
 
@@ -101,9 +110,18 @@ impl Gateway {
     /// which rule fired — the audit record docs/12 asks for. Persisting it is
     /// M12.2.
     pub fn resolve_chain(&self, req: &ChatRequest) -> Result<Vec<Resolved>, PandayError> {
+        // A declared class wins; otherwise classify, and fall back to `Chat`
+        // when the guess is not trusted (docs/12: confidence "gates whether we
+        // trust it").
+        let (task, _confidence, _trusted) = classify_or_default(
+            self.classifier.as_ref(),
+            req,
+            panday_types::model::TaskClass::Chat,
+        );
+
         let query = RouteQuery {
             requested: req.model.clone(),
-            task: req.metadata.task,
+            task: Some(task),
             // Real token counting arrives with the reducer (docs/15); a rough
             // proxy is honest here because no Phase 0 rule keys on it
             // narrowly, and inventing precision would be worse.
@@ -182,6 +200,9 @@ pub struct FailedLeg {
     pub provider: String,
     pub error: String,
     pub retryable: bool,
+    /// Tracked separately from `retryable` so an all-rate-limited chain can
+    /// preserve the back-off signal instead of reporting an outage.
+    pub rate_limited: bool,
 }
 
 #[async_trait::async_trait]
@@ -228,6 +249,7 @@ impl ModelClient for Gateway {
                         provider: leg.provider.clone(),
                         error: e.to_string(),
                         retryable,
+                        rate_limited: matches!(e, PandayError::RateLimited { .. }),
                     });
 
                     // A non-retryable failure is the caller's problem, not the
@@ -245,6 +267,15 @@ impl ModelClient for Gateway {
         // Every leg was tried and every one was retryable. The chain is
         // exhausted; the error names each attempt so an operator can see
         // whether this was one bad provider or a global outage.
+        //
+        // One exception: if EVERY leg was rate-limited, say so. Collapsing that
+        // into `ModelUnavailable` would strip the one signal the caller can act
+        // on — back off and retry — and turn a 429 into a 503 that reads like
+        // an outage.
+        if !failed.is_empty() && failed.iter().all(|f| f.rate_limited) {
+            return Err(PandayError::RateLimited { retry_after_ms: 0 });
+        }
+
         Err(PandayError::ModelUnavailable {
             tried: failed
                 .iter()
@@ -299,6 +330,7 @@ pub struct GatewayBuilder {
     adapters: BTreeMap<String, Arc<dyn ProviderAdapter>>,
     router: Arc<dyn Router>,
     usage: Arc<dyn UsageSink>,
+    classifier: Arc<dyn Classifier>,
 }
 
 impl GatewayBuilder {
@@ -322,11 +354,18 @@ impl GatewayBuilder {
         self
     }
 
+    /// Swap the classifier — the seam the trained model drops into (M12.5).
+    pub fn classifier(mut self, classifier: Arc<dyn Classifier>) -> Self {
+        self.classifier = classifier;
+        self
+    }
+
     pub fn build(self) -> Gateway {
         Gateway {
             adapters: self.adapters,
             router: self.router,
             usage: self.usage,
+            classifier: self.classifier,
         }
     }
 }

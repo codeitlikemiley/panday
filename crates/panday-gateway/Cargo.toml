@@ -12,12 +12,12 @@ panday-sdk.workspace = true
 panday-router.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+axum.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
 futures-core.workspace = true
 futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 uuid.workspace = true
-panday-router.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
