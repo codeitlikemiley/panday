@@ -1,0 +1,47 @@
+# cargo-deny — license and advisory gating (docs/02-workspace.md).
+#
+# "You are building a commercial product; know your license graph early."
+# This runs in CI from day one. Adding a dependency that trips it is a
+# conversation, not a `skip`.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+ignore = []
+
+[licenses]
+version = 2
+# Permissive only. Anything copyleft entering the graph must be a deliberate,
+# discussed decision — the workspace itself ships UNLICENSED (see Cargo.toml).
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.93
+# Our own crates carry `license = "UNLICENSED"`, which is not an SPDX id.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Our own `path` deps inside the workspace carry no version req; that is the
+# intended shape, not a wildcard from crates.io.
+allow-wildcard-paths = true
+# docs/02: "time or chrono — pick ONE (we pick `time`), enforce with clippy".
+# Enforcing it here too: cheaper than a lint, and it catches transitive pulls.
+deny = [{ crate = "chrono", reason = "docs/02 picks `time`; chrono must not enter the graph" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

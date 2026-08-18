@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "session_id": "01930000-0000-7000-8000-000000000001",
+  "seq": 8,
+  "turn_id": "01930000-0000-7000-8000-000000000002",
+  "at": "2026-01-15T12:00:00Z",
+  "event": "permission_request",
+  "call_id": "01930000-0000-7000-8000-000000000003",
+  "tool": "edit_file",
+  "action": "write crates/ferrum-types/src/event.rs",
+  "options": [
+    "allow",
+    "allow_remember",
+    "deny"
+  ]
+}

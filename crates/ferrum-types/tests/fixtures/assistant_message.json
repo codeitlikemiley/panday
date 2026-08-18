@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "session_id": "01930000-0000-7000-8000-000000000001",
+  "seq": 4,
+  "turn_id": "01930000-0000-7000-8000-000000000002",
+  "at": "2026-01-15T12:00:00Z",
+  "event": "assistant_message",
+  "content": [
+    {
+      "type": "text",
+      "text": "The assertion compares stale state."
+    }
+  ],
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 300,
+    "cache_read_tokens": 900,
+    "cache_write_tokens": 200,
+    "cache_write_1h_tokens": 0
+  }
+}

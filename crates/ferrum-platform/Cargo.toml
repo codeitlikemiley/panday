@@ -4,6 +4,7 @@ description = "Accounts, entitlements, ledger, billing. Spec: docs/17-platform.m
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 ferrum-types.workspace = true

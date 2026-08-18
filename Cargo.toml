@@ -20,6 +20,7 @@ version = "0.0.1"
 edition = "2021"
 license = "UNLICENSED"          # decide before anything is public
 repository = ""
+publish = false                 # nothing here goes to a registry (docs/00 §Naming)
 
 [workspace.dependencies]
 ferrum-types = { path = "crates/ferrum-types" }

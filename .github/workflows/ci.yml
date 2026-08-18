@@ -3,6 +3,7 @@ on:
   push: { branches: [main] }
   pull_request:
 jobs:
+  # Lane 1 — fast fail: fmt + clippy (docs/02 §CI shape).
   check:
     runs-on: ubuntu-latest
     steps:
@@ -12,7 +13,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+
+  # Lane 1b — license + advisory graph. Runs from day one (docs/02).
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  # Lane 2 — unit suite via nextest. No network, no docker; budget: 3 minutes.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-nextest }
+      - run: cargo nextest run --workspace --profile ci
+      # nextest does not run doctests; docs/02 wants them gated too.
+      - run: cargo test --workspace --doc
+
   docs:
     runs-on: ubuntu-latest
     steps:

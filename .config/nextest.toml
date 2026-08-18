@@ -1,0 +1,24 @@
+# cargo-nextest configuration (docs/02-workspace.md §Toolchain, §CI shape).
+#
+# The default profile is the unit suite: no network, no docker, and it must
+# stay under 3 minutes. Anything needing Postgres/MinIO is `#[ignore]`d and
+# belongs to the integration lane.
+
+[profile.default]
+# Surface slow tests early — the 3-minute budget is per suite, not per test.
+slow-timeout = { period = "20s", terminate-after = 6 }
+# A test that fails is worth seeing immediately, but don't stop the run.
+fail-fast = false
+failure-output = "immediate-final"
+status-level = "pass"
+
+[profile.ci]
+# CI wants the full picture in one pass plus machine-readable output.
+fail-fast = false
+failure-output = "immediate-final"
+status-level = "skip"
+final-status-level = "flaky"
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.ci.junit]
+path = "junit.xml"

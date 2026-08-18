@@ -4,6 +4,7 @@ description = "The offline composition: harness + gateway-lite + local model sup
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 ferrum-types.workspace = true

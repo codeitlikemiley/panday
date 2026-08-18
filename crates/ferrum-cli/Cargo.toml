@@ -4,6 +4,7 @@ description = "The terminal client (ratatui) + ACP server. Spec: docs/16-plugins
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 ferrum-types.workspace = true

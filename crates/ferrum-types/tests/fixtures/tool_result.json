@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "session_id": "01930000-0000-7000-8000-000000000001",
+  "seq": 6,
+  "turn_id": "01930000-0000-7000-8000-000000000002",
+  "at": "2026-01-15T12:00:00Z",
+  "event": "tool_result",
+  "call_id": "01930000-0000-7000-8000-000000000003",
+  "output": {
+    "text": "1 failed: envelope_round_trips",
+    "tokens_raw": 10240,
+    "tokens_kept": 460,
+    "strategy": "cargo_test_digest"
+  },
+  "raw_ref": {
+    "hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "size": 40960,
+    "media_type": "text/plain"
+  },
+  "duration_ms": 8412,
+  "is_error": true
+}

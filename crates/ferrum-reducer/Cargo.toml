@@ -4,6 +4,7 @@ description = "Token economy: tool-output reduction with cache-aware dollar acco
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 ferrum-types.workspace = true

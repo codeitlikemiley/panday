@@ -4,6 +4,7 @@ description = "Model routing: policy engine + classifier trait. Spec: docs/12-ro
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 ferrum-types.workspace = true
