@@ -39,7 +39,15 @@ jobs:
       # bwrap installs fine and then every jail dies with
       # `loopback: Failed RTM_NEWADDR`. The sandbox needs them.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-      - run: bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib -- /usr/bin/true && echo "bwrap jails work"
+      # /lib64 matters: without it the dynamic loader is missing and execvp
+      # reports ENOENT, which reads as "binary not found" rather than
+      # "interpreter not found".
+      - run: |
+          bwrap --unshare-all \
+            --ro-bind /usr /usr \
+            --symlink usr/bin /bin --symlink usr/lib /lib \
+            --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
+            -- /usr/bin/true && echo "bwrap jails work"
       - run: cargo nextest run --workspace --profile ci
       # nextest does not run doctests; docs/02 wants them gated too.
       - run: cargo test --workspace --doc
