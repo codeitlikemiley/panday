@@ -32,6 +32,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
+      # T2 Linux (docs/14 M14.2) jails through bubblewrap; its escape suite
+      # skips itself without it, which would silently stop gating isolation.
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: bwrap --version
       - run: cargo nextest run --workspace --profile ci
       # nextest does not run doctests; docs/02 wants them gated too.
       - run: cargo test --workspace --doc

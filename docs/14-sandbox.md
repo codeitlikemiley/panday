@@ -94,7 +94,34 @@ type error.
   Known, documented gap: a TOCTOU window remains between resolving a path and
   opening it. Closing it needs `openat2(RESOLVE_BENEATH)` or a real jail —
   M14.2.
-- **M14.2** T2 Linux: namespaces + seccomp + egress proxy; escape suite green; `bash` tool runs through it.
+- **M14.2** T2 Linux: namespaces + seccomp + egress proxy; escape suite green; `bash` tool runs through it. ✅ *(shipped: `panday_sandbox::t2_linux::T2LinuxSandbox` via bubblewrap; suite in `crates/panday-sandbox/tests/t2_linux_escape.rs`, gated to Linux and run by CI.)*
+
+  **Reads here are a real allowlist**, which is the parity gap M14.3 recorded
+  from the macOS side: nothing is visible inside the jail unless it was bound
+  in, so `/etc/shadow` is not *denied* — it does not exist. Mount namespaces
+  express what Seatbelt could not.
+
+  | Guarantee | Mechanism | Status |
+  |---|---|---|
+  | No read outside the bound set | mount namespace | **strict** |
+  | No write outside the workspace | only the workspace bound `rw` | **strict** |
+  | No network egress | `--unshare-net` | **strict** |
+  | Wall-clock ceiling | us (SIGKILL) | **strict** |
+  | No parent env inherited | `--clearenv` | **strict** |
+  | pid ceiling | pid namespace + `--die-with-parent` | *partial* |
+  | Memory ceiling | needs cgroup v2 delegation | **not enforced** |
+
+  `bwrap` is invoked rather than reimplemented — docs/14 lists it first, and
+  it keeps `unsafe` out of the crate whose whole job is containment. **Verified
+  in CI, not locally**: this was written on macOS, so ubuntu-latest is the only
+  machine that has ever run the suite. CI installs bubblewrap explicitly,
+  because a suite that skips itself when the tool is missing would silently
+  stop gating isolation.
+
+  The egress *proxy* (for a non-empty allowlist) is not built: with
+  `--unshare-net` there is no network to filter, and default-deny is the
+  stronger guarantee. A per-domain allowlist needs the proxy component and is
+  deferred with it.
 - **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite. ✅ *(shipped: `panday_sandbox::t2_macos` — `SeatbeltProfile`, `T2MacosSandbox`; 15-case suite in `crates/panday-sandbox/tests/t2_macos_escape.rs`.)*
 
   Taken **out of roadmap order**, ahead of M14.2: the roadmap assumes a Linux

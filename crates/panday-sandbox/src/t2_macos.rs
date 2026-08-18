@@ -36,8 +36,8 @@
 //! code belongs in T3, which is Linux-only.
 
 use crate::{
-    ExecChunk, ExecSpec, ExecStream, FsPolicy, Limits, NetPolicy, Sandbox, SandboxError,
-    SandboxHandle, SandboxPolicy, SandboxTier, SessionSpec, SnapshotRef,
+    ExecSpec, ExecStream, FsPolicy, Limits, NetPolicy, Sandbox, SandboxError, SandboxHandle,
+    SandboxPolicy, SandboxTier, SessionSpec, SnapshotRef,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -299,8 +299,6 @@ impl Sandbox for T2MacosSandbox {
     }
 
     async fn exec(&self, h: &SandboxHandle, cmd: ExecSpec) -> Result<ExecStream, SandboxError> {
-        use tokio::io::AsyncReadExt;
-
         let session = self
             .sessions
             .lock()
@@ -321,109 +319,19 @@ impl Sandbox for T2MacosSandbox {
             .arg(&session.profile_path)
             .args(&cmd.cmd)
             .current_dir(&cwd)
-            // Secrets are never inherited (docs/20 T4): the child gets a
-            // deliberately minimal environment, not ours.
+            // Secrets are never inherited (docs/20 T4).
             .env_clear()
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("HOME", &session.workspace)
             .env("TMPDIR", &session.workspace);
 
         // Explicit injection last, so a policy may deliberately widen PATH
-        // (a toolchain lives outside the workspace) without the jail ever
-        // inheriting our environment.
+        // without the jail ever inheriting our environment.
         for (k, v) in &session.env {
             command.env(k, v);
         }
 
-        command
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-
-        let mut child = command
-            .spawn()
-            .map_err(|e| SandboxError::Internal(format!("spawn sandbox-exec: {e}")))?;
-
-        let mut stdout = child.stdout.take().expect("piped");
-        let mut stderr = child.stderr.take().expect("piped");
-        let wall_ms = session.limits.wall_clock_ms;
-
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<ExecChunk, SandboxError>>(64);
-
-        tokio::spawn(async move {
-            let began = std::time::Instant::now();
-            let mut out_buf = [0u8; 8192];
-            let mut err_buf = [0u8; 8192];
-            let mut out_done = false;
-            let mut err_done = false;
-
-            let deadline = tokio::time::sleep(std::time::Duration::from_millis(wall_ms));
-            tokio::pin!(deadline);
-
-            loop {
-                tokio::select! {
-                    // Biased so output already buffered is drained before the
-                    // deadline arm can fire — otherwise a command that
-                    // finishes exactly at the limit loses its last chunk.
-                    biased;
-
-                    n = stdout.read(&mut out_buf), if !out_done => match n {
-                        Ok(0) => out_done = true,
-                        Ok(n) => {
-                            // A send failure means the consumer dropped the
-                            // stream — i.e. the caller cancelled. Killing the
-                            // child here is what makes cancellation actually
-                            // stop work rather than merely stop listening to
-                            // it (docs/13 §cancellation).
-                            if tx.send(Ok(ExecChunk::Stdout(out_buf[..n].to_vec()))).await.is_err() {
-                                let _ = child.kill().await;
-                                return;
-                            }
-                        }
-                        Err(_) => out_done = true,
-                    },
-                    n = stderr.read(&mut err_buf), if !err_done => match n {
-                        Ok(0) => err_done = true,
-                        Ok(n) => {
-                            if tx.send(Ok(ExecChunk::Stderr(err_buf[..n].to_vec()))).await.is_err() {
-                                let _ = child.kill().await;
-                                return;
-                            }
-                        }
-                        Err(_) => err_done = true,
-                    },
-                    // A command that produces no output would otherwise never
-                    // notice the consumer is gone, so poll for closure too.
-                    _ = tx.closed() => {
-                        let _ = child.kill().await;
-                        return;
-                    }
-                    _ = &mut deadline => {
-                        // docs/13 §cancellation: SIGKILL is the backstop. The
-                        // graceful SIGTERM path belongs with cancellation
-                        // (M13.3); a wall-clock breach is already a failure.
-                        let _ = child.kill().await;
-                        let _ = tx.send(Err(SandboxError::LimitExceeded(format!(
-                            "wall clock exceeded {wall_ms}ms"
-                        )))).await;
-                        return;
-                    }
-                    status = child.wait(), if out_done && err_done => {
-                        let code = status.ok().and_then(|s| s.code()).unwrap_or(-1);
-                        let _ = tx.send(Ok(ExecChunk::Exit {
-                            code,
-                            wall_ms: began.elapsed().as_millis() as u64,
-                        })).await;
-                        return;
-                    }
-                }
-            }
-        });
-
-        Ok(Box::pin(futures_util::stream::unfold(
-            rx,
-            |mut rx| async move { rx.recv().await.map(|item| (item, rx)) },
-        )))
+        crate::exec_stream::spawn_and_stream(command, session.limits.wall_clock_ms)
     }
 
     async fn put(

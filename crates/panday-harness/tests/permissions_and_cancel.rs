@@ -9,12 +9,11 @@
 //! a genuinely sleeping `bash` inside a real jail and checks the process is
 //! gone.
 
-use panday_harness::native::{register_native, Workspace};
 use panday_harness::permissions::{render_call, Rule};
 use panday_harness::testing::{EchoTool, ScriptedClient, ScriptedTurn};
 use panday_harness::tools::{SideEffects, ToolRegistry, ToolReq};
 use panday_harness::{
-    Gate, MemoryStore, PermissionEngine, Phase, Profile, SessionActor, TurnBudget, TurnOutcome,
+    Gate, MemoryStore, PermissionEngine, Profile, SessionActor, TurnBudget, TurnOutcome,
 };
 use panday_types::event::{Actor, Event, PermDecision};
 use panday_types::model::{ModelRef, StopReason};
@@ -344,6 +343,10 @@ async fn a_policy_decision_is_attributed_to_the_policy_not_the_user() {
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn cancellation_kills_a_sleeping_bash_cleanly() {
+    // Imported here rather than at module scope: these are only used by this
+    // macOS-gated test, and an unused import fails `-D warnings` on Linux.
+    use panday_harness::native::{register_native, Workspace};
+    use panday_harness::Phase;
     use panday_sandbox::{
         FsPolicy, Limits, NetPolicy, Sandbox, SandboxPolicy, SandboxTier, SessionSpec,
         T2MacosSandbox,

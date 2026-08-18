@@ -117,10 +117,15 @@ pub enum SandboxError {
     Internal(String),
 }
 
+pub mod exec_stream;
 pub mod path;
 pub mod t0;
+#[cfg(target_os = "linux")]
+pub mod t2_linux;
 #[cfg(target_os = "macos")]
 pub mod t2_macos;
+#[cfg(target_os = "linux")]
+pub use t2_linux::T2LinuxSandbox;
 #[cfg(target_os = "macos")]
 pub use t2_macos::{SeatbeltProfile, T2MacosSandbox};
 
