@@ -80,16 +80,15 @@ fn a_deny_rule_outranks_a_remembered_grant() {
     // Otherwise "always allow bash" earlier in the session would quietly
     // authorise `rm -rf` later.
     let mut e = PermissionEngine::new(Profile::Dev).with_rule(Rule::deny("bash(*rm -rf*)"));
-    e.remember("bash", PermDecision::AllowRemember);
+    // Remembering is scoped to the CALL, not the tool: this grant is for
+    // `git push origin main` and nothing else.
+    let granted = serde_json::json!({"cmd": "git push origin main"});
+    e.remember("bash", &granted, PermDecision::AllowRemember);
 
     assert_eq!(
-        e.gate(
-            "bash",
-            &req(SideEffects::Idempotent),
-            &serde_json::json!({"cmd": "cargo test"})
-        ),
+        e.gate("bash", &req(SideEffects::Idempotent), &granted),
         Gate::Allow,
-        "the remembered grant should still work for ordinary commands"
+        "the remembered call should stop asking"
     );
     assert_eq!(
         e.gate(
@@ -98,7 +97,7 @@ fn a_deny_rule_outranks_a_remembered_grant() {
             &serde_json::json!({"cmd": "rm -rf /"})
         ),
         Gate::Deny,
-        "a remembered grant must not override an explicit deny"
+        "a remembered grant must not leak to other calls, let alone past a deny"
     );
 }
 
@@ -242,10 +241,13 @@ async fn denying_a_parked_call_records_a_refusal_the_model_can_see() {
 }
 
 #[tokio::test]
-async fn allow_remember_stops_asking_for_that_tool() {
+async fn allow_remember_stops_asking_for_the_same_call() {
+    // `dev` asks before anything outbound (docs/13), so a push is what
+    // actually parks — an ordinary edit or test run does not.
+    let push = serde_json::json!({"cmd": "git push origin main"});
     let store = Arc::new(MemoryStore::new());
     let mut registry = ToolRegistry::default();
-    registry.register(EchoTool::mutating("write_config", "written"));
+    registry.register(EchoTool::mutating("bash", "pushed"));
 
     let mut actor = SessionActor::new(
         SessionId::new(),
@@ -253,10 +255,60 @@ async fn allow_remember_stops_asking_for_that_tool() {
         ModelRef("local/test".into()),
         store.clone(),
         Arc::new(ScriptedClient::new(vec![
-            ScriptedTurn::calling("first", vec![("write_config", serde_json::json!({"k": 1}))]),
+            ScriptedTurn::calling("pushing", vec![("bash", push.clone())]),
+            ScriptedTurn::calling("pushing again", vec![("bash", push.clone())]),
+            ScriptedTurn::text("done"),
+        ])),
+        registry,
+        PermissionEngine::new(Profile::Dev),
+        Box::new(panday_reducer::GenericReducer::default()),
+        TurnBudget::default(),
+    );
+
+    let TurnOutcome::AwaitingPermission(ids) = actor.handle_user_input("push it").await.unwrap()
+    else {
+        panic!("dev must park an outbound command");
+    };
+
+    let outcome = actor
+        .decide(ids[0], PermDecision::AllowRemember, Actor::User)
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        TurnOutcome::Finished(StopReason::EndTurn),
+        "the second identical call should not have parked after AllowRemember"
+    );
+
+    let asks = store
+        .all()
+        .iter()
+        .filter(|e| matches!(e.event, Event::PermissionRequest { .. }))
+        .count();
+    assert_eq!(asks, 1, "the user should have been asked exactly once");
+}
+
+#[tokio::test]
+async fn a_remembered_grant_does_not_authorise_a_different_command() {
+    // The narrowness that makes remembering safe: "always allow this push"
+    // must not become "always allow any shell command".
+    let store = Arc::new(MemoryStore::new());
+    let mut registry = ToolRegistry::default();
+    registry.register(EchoTool::mutating("bash", "ran"));
+
+    let mut actor = SessionActor::new(
+        SessionId::new(),
+        AccountId::new(),
+        ModelRef("local/test".into()),
+        store.clone(),
+        Arc::new(ScriptedClient::new(vec![
             ScriptedTurn::calling(
-                "second",
-                vec![("write_config", serde_json::json!({"k": 2}))],
+                "push",
+                vec![("bash", serde_json::json!({"cmd": "git push origin main"}))],
+            ),
+            ScriptedTurn::calling(
+                "now delete",
+                vec![("bash", serde_json::json!({"cmd": "rm -rf /tmp/x"}))],
             ),
             ScriptedTurn::text("done"),
         ])),
@@ -266,27 +318,22 @@ async fn allow_remember_stops_asking_for_that_tool() {
         TurnBudget::default(),
     );
 
-    let TurnOutcome::AwaitingPermission(ids) = actor.handle_user_input("go").await.unwrap() else {
-        panic!("expected a park");
+    let TurnOutcome::AwaitingPermission(first) = actor.handle_user_input("go").await.unwrap()
+    else {
+        panic!("expected a park on the push");
     };
 
-    // Remembering must carry the turn to completion without parking again.
     let outcome = actor
-        .decide(ids[0], PermDecision::AllowRemember, Actor::User)
+        .decide(first[0], PermDecision::AllowRemember, Actor::User)
         .await
         .unwrap();
-    assert_eq!(
-        outcome,
-        TurnOutcome::Finished(StopReason::EndTurn),
-        "the second call should not have parked after AllowRemember"
-    );
 
-    let asks = store
-        .all()
-        .iter()
-        .filter(|e| matches!(e.event, Event::PermissionRequest { .. }))
-        .count();
-    assert_eq!(asks, 1, "the user should have been asked exactly once");
+    match outcome {
+        TurnOutcome::AwaitingPermission(second) => {
+            assert_ne!(second[0], first[0], "a different call must park separately");
+        }
+        other => panic!("the rm should still have asked, got {other:?}"),
+    }
 }
 
 #[tokio::test]

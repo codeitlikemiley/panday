@@ -205,10 +205,10 @@ async fn the_loop_fixes_a_real_failing_test_unattended() {
         store.clone(),
         Arc::new(ScriptedClient::new(script)),
         registry,
-        // `unleashed` because `bash` is Irreversible and would otherwise park
-        // for consent — "unattended" is the acceptance criterion, and this is
-        // the profile docs/13 defines for local, human-anchored use.
-        PermissionEngine::new(Profile::Unleashed),
+        // `dev`, which is what Phase 1's exit criterion names: "fixes a real
+        // failing test ... unattended, under `dev` profile". docs/13 says dev
+        // allows read/edit/test, so none of this should park for consent.
+        PermissionEngine::new(Profile::Dev),
         Box::new(panday_reducer::GenericReducer::default()),
         TurnBudget {
             max_wall_ms: 300_000,
@@ -273,7 +273,7 @@ async fn every_tool_call_in_that_run_is_recorded_with_its_observation() {
             ScriptedTurn::text("done"),
         ])),
         registry,
-        PermissionEngine::new(Profile::Unleashed),
+        PermissionEngine::new(Profile::Dev),
         Box::new(panday_reducer::GenericReducer::default()),
         TurnBudget::default(),
     );
@@ -384,7 +384,7 @@ async fn a_live_model_fixes_it_unattended() {
         store.clone(),
         Arc::new(gateway),
         registry,
-        PermissionEngine::new(Profile::Unleashed),
+        PermissionEngine::new(Profile::Dev),
         Box::new(panday_reducer::GenericReducer::default()),
         TurnBudget {
             max_steps: 25,

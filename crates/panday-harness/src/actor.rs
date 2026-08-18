@@ -526,7 +526,7 @@ impl SessionActor {
             }
             PermDecision::Allow | PermDecision::AllowRemember => {
                 if decision == PermDecision::AllowRemember {
-                    self.permissions.remember(&call.name, decision);
+                    self.permissions.remember(&call.name, &call.args, decision);
                 }
                 self.execute(call).await?;
             }

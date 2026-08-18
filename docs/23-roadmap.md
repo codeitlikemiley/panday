@@ -49,6 +49,26 @@ event store PG + WS resume (M3.3), macOS T2 (M14.3).
 unattended, under `dev` profile — and you reach for it by preference the
 next day. Dogfood begins; everything after this is built *with* it.
 
+**Status: milestones complete; the exit is half-met.** All eleven Phase 1
+milestones are shipped (M13.1–13.5, M14.1–14.3, M15.1–15.2, M3.3).
+
+The mechanical half of the exit *is* demonstrated: the agent repairs a
+genuinely broken crate — through the real native tools, inside a real T2 jail,
+**unattended under `dev`** — and the test verifies it by running `cargo test`
+on the repo afterwards, checking the fix landed in the implementation and the
+test was not deleted (`crates/panday-harness/tests/fix_a_failing_test.rs`).
+
+What is *not* met, and cannot be met by this repo alone:
+
+- the model is **scripted**, not live. The script chooses the plan; every tool
+  call, edit, jail and test run beneath it is real. The live leg is an
+  `#[ignore]`d test needing `ANTHROPIC_API_KEY`.
+- "in one of *your* repos" and "you reach for it by preference the next day"
+  are judgements only the builder can make. They are the dogfood clause, and
+  they are the point of the phase.
+
+Do not treat Phase 1 as exited until both hold.
+
 ## Phase 2 — Extension & polish (~weeks 15–22)
 
 Skills + plugin manifests (M16.1–16.2), MCP host with Ask-gating (M16.3),

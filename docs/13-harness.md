@@ -123,6 +123,23 @@ Profiles: `read_only`, `dev` (read/edit/test allowed; git push, package
 publish, network egress → Ask), `unleashed` (local only, still gates
 `irreversible`).
 
+> **The `dev` profile gates by action category, not by side effect** (found
+> while checking Phase 1's exit criterion). The seeded engine asked for
+> anything that was not side-effect-free, which contradicts the sentence above:
+> editing a file and running a test suite both mutate, and both are listed as
+> *allowed*. Gating them made "fixes a failing test unattended, under `dev`"
+> unreachable by construction. `dev` now allows local work and asks before
+> anything **outbound** — push, publish, network — expressed as the default
+> rules in `permissions::default_rules`, with the destructive patterns
+> (`bash(rm -rf*)`) asking in `unleashed` too, exactly as this section says.
+>
+> **Remembered grants are scoped to the call, not the tool.** `AllowRemember`
+> on `git push origin main` records that call; it does not hand `bash` a
+> standing waiver that would also cover `rm -rf /`. Grants are checked *before*
+> the `ask` rules — otherwise the rule would re-ask forever and remembering
+> would be decorative — but always *after* explicit denies and after the
+> irreversible Ask, neither of which a grant may waive.
+
 > **`side_effects` serves two masters, and `bash` exposes the seam** (found at
 > M13.2). The field drives both *consent* (which profiles prompt) and *replay
 > safety* (what resume may re-run). For `bash` these disagree: the profile
