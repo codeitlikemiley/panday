@@ -18,6 +18,7 @@
 
 use panday_reducer::{
     expand, GenericReducer, LineRange, MemoryArtifactStore, ReduceCtx, SpillingReducer,
+    StructuralReducer,
 };
 use std::sync::Arc;
 
@@ -75,10 +76,15 @@ impl Case {
     }
 }
 
+/// The full stack: structural compressors first, generic fallback behind
+/// them, artifact spill around both (docs/15 §strategy stack).
 fn reduce(name: &str, tool: &str) -> Case {
     let raw = fixture(name);
     let store = Arc::new(MemoryArtifactStore::new());
-    let r = SpillingReducer::new(GenericReducer::default(), store.clone());
+    let r = SpillingReducer::new(
+        StructuralReducer::new(GenericReducer::default()),
+        store.clone(),
+    );
     let reduction = r.reduce_and_spill(&raw, &ctx(tool)).unwrap();
 
     Case {
@@ -188,8 +194,12 @@ fn a_large_clean_read_is_reduced_and_fully_recoverable() {
 }
 
 #[test]
-fn every_reduced_fixture_tells_the_model_how_to_recover_the_rest() {
+fn every_reduced_fixture_remains_fully_recoverable() {
     // A reduction the model cannot undo is a reduction it must distrust.
+    //
+    // Structural digests do not carry an `expand_artifact` marker the way
+    // generic elision does — they are a re-emission, not a window — so the
+    // guarantee is checked where it actually lives: the spilled artifact.
     for name in [
         "cargo_test_failure",
         "cargo_build_error",
@@ -198,11 +208,44 @@ fn every_reduced_fixture_tells_the_model_how_to_recover_the_rest() {
         "file_read_large",
     ] {
         let c = reduce(name, "bash");
-        assert!(
-            c.text.contains("expand_artifact"),
-            "{name}: no escape hatch in the reduced output"
-        );
         assert!(c.raw_ref.is_some(), "{name}: reduced but did not spill");
+        c.recoverable("");
+    }
+}
+
+#[test]
+fn generic_elision_still_advertises_the_escape_hatch() {
+    // The file read has no structure to exploit, so it takes the generic
+    // path — and there the marker is how the model learns it can ask for more.
+    let c = reduce("file_read_large", "read_file");
+    assert!(c.text.contains("expand_artifact"), "{}", c.text);
+}
+
+#[test]
+fn structural_compressors_beat_the_generic_baseline() {
+    // Recorded at M15.1 with the generic fallback alone. M15.2's acceptance
+    // is >=60% on the corpus at zero retention failures (the assertions above
+    // are the "zero failures" half).
+    let baseline: [(&str, f64); 4] = [
+        ("cargo_test_failure", 0.76),
+        ("cargo_build_error", 0.36),
+        ("git_status", 0.49),
+        ("pytest_failure", 0.80),
+    ];
+
+    for (name, was) in baseline {
+        let now = reduce(name, "bash").cut();
+        println!(
+            "{name:24} generic {:.0}% -> structural {:.0}%",
+            was * 100.0,
+            now * 100.0
+        );
+        assert!(
+            now >= was,
+            "{name}: structural ({:.0}%) is worse than the generic baseline ({:.0}%)",
+            now * 100.0,
+            was * 100.0
+        );
     }
 }
 
@@ -232,9 +275,10 @@ fn the_corpus_cut_is_reported_for_the_m15_2_baseline() {
     }
     let overall = 1.0 - (total_kept as f64 / total_raw as f64);
     println!("corpus overall: {:.0}% cut", overall * 100.0);
+    // M15.2's stated bar.
     assert!(
-        overall > 0.5,
-        "the generic fallback should already halve this corpus; got {:.0}%",
+        overall >= 0.60,
+        "M15.2 requires >=60% on the corpus; got {:.0}%",
         overall * 100.0
     );
 }

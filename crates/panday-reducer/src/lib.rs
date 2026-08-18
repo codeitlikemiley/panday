@@ -23,9 +23,11 @@ pub struct ReduceCtx {
 
 pub mod artifact;
 pub mod spill;
+pub mod structural;
 
 pub use artifact::{expand, ArtifactError, ArtifactStore, LineRange, MemoryArtifactStore};
 pub use spill::{Reduction, SpillingReducer};
+pub use structural::{detect, Shape, StructuralReducer};
 
 pub trait Reducer: Send + Sync {
     fn reduce(&self, raw: &str, ctx: &ReduceCtx) -> ReducedOutput;

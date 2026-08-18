@@ -141,7 +141,39 @@ argument.
   are mostly signal, which is the right outcome, and the structural compressor
   should improve it by dropping the dependency-compile preamble rather than by
   trimming the error.
-- **M15.2** Structural: cargo + git + pytest/jest compressors with retention fixtures; measured ≥60% token cut on the fixture corpus at zero retention failures.
+- **M15.2** Structural: cargo + git + pytest/jest compressors with retention fixtures; measured ≥60% token cut on the fixture corpus at zero retention failures. ✅ *(shipped: `panday_reducer::structural` — `StructuralReducer`, shapes `CargoTest` / `CargoBuild` / `Pytest` / `GitStatus`.)*
+
+  **Measured, against the M15.1 baseline, zero retention failures:**
+
+  | fixture | generic | structural |
+  |---|---|---|
+  | cargo test | 76% | **96%** |
+  | cargo build | 36% | **89%** |
+  | git status | 49% | **94%** |
+  | pytest | 80% | **98%** |
+  | large file read | 92% | 92% *(no structure; stays generic)* |
+  | **corpus** | **82%** | **95%** |
+
+  `cargo build` improved most, exactly as predicted at M15.1 — the win came
+  from dropping the dependency-compile preamble, not from trimming the
+  diagnostic.
+
+  **Detection is by content, not by command**, because the harness sees
+  `bash` for everything and the command line is not in `ReduceCtx`. That is
+  also more honest: `make test` shelling out to cargo still gets the cargo
+  treatment.
+
+  **A detection false-positive is the worst failure this layer has**, and the
+  fixtures caught one: the first `git status` heuristic accepted two leading
+  spaces as a status field, so *every indented text file* matched — a Rust
+  source file was detected as a status listing and rewritten by that
+  compressor, destroying the code. Under-compressing is a missed saving;
+  misdetecting produces output that is confidently wrong. The status field now
+  requires a real status letter, and indented Rust, YAML and Markdown are
+  regression-tested as `Unknown`.
+
+  A compressor whose output is *larger* than its input falls back to generic
+  rather than shipping a "reduction" that costs tokens.
 - **M15.3** File-read dedup/diff-awareness wired into read/grep tools.
 - **M15.4** Dollar accounting with cache-state input; per-session savings report event; dashboard tile.
 - **M15.5** Reduce-then-solve replay eval harness; nightly job + regression gate.
