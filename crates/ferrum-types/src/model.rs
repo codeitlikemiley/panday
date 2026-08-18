@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-4-5`,
 /// `local/qwen3.5-4b`) or the literal `auto` to let the router decide.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct ModelRef(pub String);
 
@@ -27,6 +28,7 @@ impl ModelRef {
 /// Coarse task classification driving the router (docs/12). Callers that
 /// know, say; otherwise a classifier guesses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskClass {
     Chat,
@@ -39,6 +41,7 @@ pub enum TaskClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     System,
@@ -50,6 +53,7 @@ pub enum Role {
 /// Content is block-structured from day one so images/artifacts don't force
 /// a protocol bump later.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     Text {
@@ -68,6 +72,7 @@ pub enum ContentBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Message {
     pub role: Role,
     pub content: Vec<ContentBlock>,
@@ -79,6 +84,7 @@ pub struct Message {
 /// Tool definition as sent to models. Schema is JSON Schema; kept as a raw
 /// value because open-ended schemas have no fixed shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ToolDef {
     pub name: String,
     pub description: String,
@@ -86,6 +92,7 @@ pub struct ToolDef {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Sampling {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
@@ -101,6 +108,7 @@ pub struct Sampling {
 /// positions after which a cache breakpoint should be placed (Anthropic
 /// explicit breakpoints; ignored where caching is automatic).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CacheHints {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub breakpoints_after: Vec<u32>,
@@ -112,6 +120,7 @@ pub struct CacheHints {
 /// REQUIRED attribution on every model call. An unattributed call is a
 /// compile error by construction — this is how cost attribution stays total.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct CallMeta {
     pub account: AccountId,
     pub request: RequestId,
@@ -124,6 +133,7 @@ pub struct CallMeta {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ChatRequest {
     pub model: ModelRef,
     pub messages: Vec<Message>,
@@ -150,6 +160,7 @@ pub struct ChatRequest {
 /// disjoint counts (e.g. Anthropic reports cache reads/writes separately
 /// from `input_tokens`) MUST normalize by adding them into `input_tokens`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -175,6 +186,7 @@ impl Usage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
     EndTurn,
@@ -189,6 +201,7 @@ pub enum StopReason {
 
 /// Items yielded by a streaming chat call (docs/10).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamItem {
     Delta { text: String },

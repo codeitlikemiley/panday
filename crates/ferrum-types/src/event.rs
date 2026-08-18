@@ -10,6 +10,7 @@ pub const PROTOCOL_VERSION: u16 = 1;
 
 /// Every event on the wire and in the log wears this envelope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Envelope {
     /// Protocol version. Bump rules in docs/03 §Versioning.
     pub v: u16,
@@ -20,12 +21,17 @@ pub struct Envelope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<TurnId>,
     #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "String", description = "RFC 3339 UTC timestamp")
+    )]
     pub at: Timestamp,
     #[serde(flatten)]
     pub event: Event,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ClientKind {
     Cli,
@@ -36,6 +42,7 @@ pub enum ClientKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PermDecision {
     Allow,
@@ -44,6 +51,7 @@ pub enum PermDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Actor {
     User,
@@ -53,6 +61,7 @@ pub enum Actor {
 
 /// Reduced tool output as it enters context; the raw is in `raw_ref`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ReducedOutput {
     pub text: String,
     pub tokens_raw: u32,
@@ -64,6 +73,7 @@ pub struct ReducedOutput {
 /// The event vocabulary. Unknown kinds MUST be ignored-and-preserved by
 /// clients (tested in the golden suite).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
     // ---- conversation ----

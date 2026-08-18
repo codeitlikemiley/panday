@@ -128,7 +128,7 @@ display encoding, not a second id.
 ## Milestones
 
 - **M3.1** `ferrum-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(shipped: 17 fixtures in `crates/ferrum-types/tests/fixtures/`, harness in `tests/golden.rs`, plus the versioning-discipline suite — additive fields, unknown-kind tolerance, version pin.)*
-- **M3.2** `cargo xtask schemas` exports JSON Schema to `proto/`; CI diffs it (a schema change without a version note fails).
+- **M3.2** `cargo xtask schemas` exports JSON Schema to `proto/`; CI diffs it (a schema change without a version note fails). ✅ *(shipped: `xtask/`, `proto/aep-envelope.schema.json`, `cargo xtask schemas --check` in CI.)*
 - **M3.3** WS endpoint in harnessd: create session, stream events, resume-after-seq proven by killing the connection mid-turn.
 - **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events.
 - **M3.5** Ledger-rebuild-from-log: property test that replaying any session yields the ledger totals the live path recorded.

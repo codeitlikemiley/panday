@@ -35,6 +35,8 @@ jobs:
       - run: cargo nextest run --workspace --profile ci
       # nextest does not run doctests; docs/02 wants them gated too.
       - run: cargo test --workspace --doc
+      # docs/03 M3.2: a schema change without a regenerated proto/ fails.
+      - run: cargo xtask schemas --check
 
   docs:
     runs-on: ubuntu-latest

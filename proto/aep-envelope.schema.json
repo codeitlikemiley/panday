@@ -1,0 +1,644 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Envelope",
+  "description": "Every event on the wire and in the log wears this envelope.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "description": "Protocol version. Bump rules in docs/03 §Versioning.",
+      "type": "integer",
+      "format": "uint16",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "session_id": {
+      "$ref": "#/$defs/SessionId"
+    },
+    "seq": {
+      "description": "Gapless, per-session. THE ordering primitive; clients resume with\n`after_seq`.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "turn_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TurnId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "at": {
+      "description": "RFC 3339 UTC timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "v",
+    "session_id",
+    "seq",
+    "at"
+  ],
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        },
+        "source": {
+          "$ref": "#/$defs/ClientKind"
+        },
+        "event": {
+          "type": "string",
+          "const": "user_message"
+        }
+      },
+      "required": [
+        "event",
+        "content",
+        "source"
+      ]
+    },
+    {
+      "description": "Streaming only — never persisted (docs/03: deltas are ephemeral).",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string",
+          "const": "assistant_delta"
+        }
+      },
+      "required": [
+        "event",
+        "text"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentBlock"
+          }
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "event": {
+          "type": "string",
+          "const": "assistant_message"
+        }
+      },
+      "required": [
+        "event",
+        "content",
+        "usage"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "$ref": "#/$defs/CallId"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "args": true,
+        "event": {
+          "type": "string",
+          "const": "tool_call"
+        }
+      },
+      "required": [
+        "event",
+        "call_id",
+        "tool",
+        "args"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "$ref": "#/$defs/CallId"
+        },
+        "output": {
+          "$ref": "#/$defs/ReducedOutput"
+        },
+        "raw_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "is_error": {
+          "type": "boolean"
+        },
+        "event": {
+          "type": "string",
+          "const": "tool_result"
+        }
+      },
+      "required": [
+        "event",
+        "call_id",
+        "output",
+        "duration_ms",
+        "is_error"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "$ref": "#/$defs/CallId"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "event": {
+          "type": "string",
+          "const": "permission_request"
+        }
+      },
+      "required": [
+        "event",
+        "call_id",
+        "tool",
+        "action",
+        "options"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "call_id": {
+          "$ref": "#/$defs/CallId"
+        },
+        "decision": {
+          "$ref": "#/$defs/PermDecision"
+        },
+        "by": {
+          "$ref": "#/$defs/Actor"
+        },
+        "event": {
+          "type": "string",
+          "const": "permission_decision"
+        }
+      },
+      "required": [
+        "event",
+        "call_id",
+        "decision",
+        "by"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "from_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "to_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "summary_ref": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "tokens_before": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "tokens_after": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "const": "compaction"
+        }
+      },
+      "required": [
+        "event",
+        "from_seq",
+        "to_seq",
+        "summary_ref",
+        "tokens_before",
+        "tokens_after"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ModelRef"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TurnId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "event": {
+          "type": "string",
+          "const": "turn_started"
+        }
+      },
+      "required": [
+        "event",
+        "model"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/StopReason"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "cost_micros": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "const": "turn_finished"
+        }
+      },
+      "required": [
+        "event",
+        "reason",
+        "usage",
+        "cost_micros"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/SessionId"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "event": {
+          "type": "string",
+          "const": "subagent_spawned"
+        }
+      },
+      "required": [
+        "event",
+        "child",
+        "brief"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/SessionId"
+        },
+        "result_ref": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "event": {
+          "type": "string",
+          "const": "subagent_finished"
+        }
+      },
+      "required": [
+        "event",
+        "child",
+        "result_ref"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "from_seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "event": {
+          "type": "string",
+          "const": "session_forked"
+        }
+      },
+      "required": [
+        "event",
+        "from_seq"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "event": {
+          "type": "string",
+          "const": "error"
+        }
+      },
+      "required": [
+        "event",
+        "code",
+        "message",
+        "retryable"
+      ]
+    },
+    {
+      "description": "An event kind this build does not know.\n\ndocs/03 §Versioning discipline: \"New event kinds: minor; unknown kinds\nMUST be ignored-and-preserved by clients.\" A newer harness may emit\nevents an older CLI has never heard of; that CLI must neither crash nor\nsilently drop them from a log it may re-persist or relay.\n\nThe whole object — including the `event` tag itself — is captured\nverbatim, so re-serializing yields the original bytes. Never construct\nthis variant deliberately: it exists to be tolerant on read.",
+      "type": "object",
+      "additionalProperties": true
+    }
+  ],
+  "$defs": {
+    "SessionId": {
+      "description": "UUIDv7, canonical hyphenated form",
+      "type": "string"
+    },
+    "TurnId": {
+      "description": "UUIDv7, canonical hyphenated form",
+      "type": "string"
+    },
+    "ContentBlock": {
+      "description": "Content is block-structured from day one so images/artifacts don't force\na protocol bump later.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "Reduced tool output living inline (small) — large output is an artifact.",
+          "type": "object",
+          "properties": {
+            "call_id": {
+              "$ref": "#/$defs/CallId"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_output"
+            }
+          },
+          "required": [
+            "type",
+            "call_id",
+            "text"
+          ]
+        },
+        {
+          "description": "Reference to spilled content; `expand_artifact` can pull ranges.",
+          "type": "object",
+          "properties": {
+            "artifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "type",
+            "artifact",
+            "summary"
+          ]
+        }
+      ]
+    },
+    "CallId": {
+      "description": "UUIDv7, canonical hyphenated form",
+      "type": "string"
+    },
+    "ArtifactRef": {
+      "description": "Content-addressed handle into object storage. Events carry these instead\nof large payloads (docs/03, docs/15).",
+      "type": "object",
+      "properties": {
+        "hash": {
+          "description": "sha256 of content, hex.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes of the raw artifact.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "media_type": {
+          "description": "MIME type where known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "hash",
+        "size"
+      ]
+    },
+    "ClientKind": {
+      "type": "string",
+      "enum": [
+        "cli",
+        "acp",
+        "web",
+        "api",
+        "system"
+      ]
+    },
+    "Usage": {
+      "description": "Token accounting with cache splits — the ledger prices these at different\nrates: fresh input 1x; cache reads ~0.1x (both major providers); cache\nwrites are Anthropic-only surcharges at 1.25x (5-minute TTL) or 2x\n(1-hour TTL) — OpenAI-style automatic caching has no write premium.\n\nCONVENTION (normative, enforced at the adapter boundary): the cache\ncounts are SUBSETS of `input_tokens`. `input_tokens` is the total input;\n`cache_read + cache_write_5m + cache_write_1h <= input_tokens`, and the\nfresh remainder is the difference. Adapters for providers that report\ndisjoint counts (e.g. Anthropic reports cache reads/writes separately\nfrom `input_tokens`) MUST normalize by adding them into `input_tokens`.",
+      "type": "object",
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cache_read_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        },
+        "cache_write_tokens": {
+          "description": "Cache-write tokens at the short-TTL (5m-class) rate.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        },
+        "cache_write_1h_tokens": {
+          "description": "Cache-write tokens at the extended-TTL (1h-class) rate — priced\ndifferently (~2x vs ~1.25x); requested via `CacheHints::extended_ttl`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens"
+      ]
+    },
+    "ReducedOutput": {
+      "description": "Reduced tool output as it enters context; the raw is in `raw_ref`.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "tokens_raw": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "tokens_kept": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "strategy": {
+          "description": "Which reducer strategy produced this (docs/15).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "tokens_raw",
+        "tokens_kept",
+        "strategy"
+      ]
+    },
+    "PermDecision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "allow_remember",
+        "deny"
+      ]
+    },
+    "Actor": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "type": "object",
+              "properties": {
+                "rule": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rule"
+              ]
+            }
+          },
+          "required": [
+            "policy"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ModelRef": {
+      "description": "A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-4-5`,\n`local/qwen3.5-4b`) or the literal `auto` to let the router decide.",
+      "type": "string"
+    },
+    "StopReason": {
+      "type": "string",
+      "enum": [
+        "end_turn",
+        "tool_use",
+        "max_tokens",
+        "stop_sequence",
+        "cancelled",
+        "budget_exceeded",
+        "max_steps",
+        "error"
+      ]
+    }
+  }
+}

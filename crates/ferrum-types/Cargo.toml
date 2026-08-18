@@ -6,9 +6,16 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# JSON Schema derivation for `cargo xtask schemas` (docs/03 M3.2). OFF by
+# default: docs/02 requires this crate stay near-zero-dependency, and nothing
+# in a serving path needs schema reflection.
+schema = ["dep:schemars"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 time.workspace = true
+schemars = { workspace = true, optional = true }

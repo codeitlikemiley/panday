@@ -9,6 +9,13 @@ macro_rules! id_type {
         $(#[$doc])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(transparent)]
+        // On the wire these are plain UUID strings; describing them as such
+        // avoids depending on schemars' uuid integration for no benefit.
+        #[cfg_attr(
+            feature = "schema",
+            derive(schemars::JsonSchema),
+            schemars(with = "String", description = "UUIDv7, canonical hyphenated form")
+        )]
         pub struct $name(pub Uuid);
 
         impl $name {
@@ -62,6 +69,7 @@ id_type!(
 /// Content-addressed handle into object storage. Events carry these instead
 /// of large payloads (docs/03, docs/15).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ArtifactRef {
     /// sha256 of content, hex.
     pub hash: String,

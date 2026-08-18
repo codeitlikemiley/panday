@@ -21,6 +21,7 @@ ai-infra/
 │   ├── ferrum-local/       # bin: the offline single-binary composition
 │   └── ferrum-cli/         # bin: the terminal client (ratatui) + ACP server
 ├── proto/                  # JSON Schemas for the event protocol (generated from types)
+├── xtask/                  # repo automation: `cargo xtask schemas` (M3.2)
 ├── training/               # Python: the training pipeline (uv project) — see 19
 └── deploy/                 # compose files, infra configs, k8s later
 ```
@@ -52,7 +53,7 @@ Rules that keep a workspace this size sane:
 | ids | uuid v7 | time-ordered; sortable in PG |
 | time | time or chrono | pick ONE (we pick `time`), enforce with clippy |
 | tracing | tracing + opentelemetry | span per event, see 21 |
-| schemas | schemars | derive JSON Schema for tool params |
+| schemas | schemars | derive JSON Schema for tool params; in `ferrum-types` it is **optional** behind the `schema` feature so the near-zero-dependency rule above still holds — only `cargo xtask schemas` enables it |
 | MCP | rmcp (official) | client + server features |
 | ACP | agent-client-protocol | official Rust crate |
 | WASM | wasmtime | plugins tier, WASI 0.3 |
@@ -96,7 +97,7 @@ commercial product; know your license graph early.
 ## Milestones
 
 - **M2.1** Workspace compiles with all crates stubbed (✅ shipped: `cargo test --workspace` green, clippy clean); CI workflow file shipped — first green *run* happens on your remote.
-- **M2.2** nextest + cargo-deny wired; golden-file harness for `ferrum-types` fixtures.
+- **M2.2** nextest + cargo-deny wired; golden-file harness for `ferrum-types` fixtures. ✅ *(shipped: `.config/nextest.toml`, `deny.toml`, `crates/ferrum-types/tests/golden.rs`; CI runs nextest + a cargo-deny lane.)*
 - **M2.3** Integration lane with PG+MinIO compose; first sqlx query compiles against a real schema.
 - **M2.4** Release builds for linux x86_64/aarch64 + macOS arm64; binaries under 25MB.
 

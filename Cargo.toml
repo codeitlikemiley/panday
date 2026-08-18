@@ -13,6 +13,7 @@ members = [
     "crates/ferrum-platform",
     "crates/ferrum-local",
     "crates/ferrum-cli",
+    "xtask",
 ]
 
 [workspace.package]
@@ -37,6 +38,10 @@ async-trait = "0.1"
 futures-core = "0.3"
 uuid = { version = "1", features = ["v7", "serde"] }
 time = { version = "0.3", features = ["serde-well-known", "macros"] }
+# Optional in ferrum-types (feature `schema`), so the near-zero-dependency rule
+# in docs/02 still holds for every normal build; only `cargo xtask schemas`
+# turns it on.
+schemars = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
 lto = "thin"
