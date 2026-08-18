@@ -181,6 +181,9 @@ struct Session {
     workspace: PathBuf,
     profile_path: PathBuf,
     limits: Limits,
+    /// Explicitly injected environment (docs/14 §policy: "env is scrubbed;
+    /// injection is explicit"). Nothing is inherited from our process.
+    env: Vec<(String, String)>,
 }
 
 /// Session ids must be unique across the whole PROCESS, not per instance.
@@ -239,7 +242,10 @@ impl Sandbox for T2MacosSandbox {
         }
 
         let SandboxPolicy {
-            fs, net, limits, ..
+            fs,
+            net,
+            limits,
+            env: injected_env,
         } = spec.policy;
         let workspace = std::fs::canonicalize(&fs.workspace_rw).map_err(|e| {
             SandboxError::PolicyViolation(format!(
@@ -282,6 +288,7 @@ impl Sandbox for T2MacosSandbox {
                 workspace,
                 profile_path,
                 limits,
+                env: injected_env,
             },
         );
 
@@ -319,7 +326,16 @@ impl Sandbox for T2MacosSandbox {
             .env_clear()
             .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
             .env("HOME", &session.workspace)
-            .env("TMPDIR", &session.workspace)
+            .env("TMPDIR", &session.workspace);
+
+        // Explicit injection last, so a policy may deliberately widen PATH
+        // (a toolchain lives outside the workspace) without the jail ever
+        // inheriting our environment.
+        for (k, v) in &session.env {
+            command.env(k, v);
+        }
+
+        command
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -421,8 +437,8 @@ impl Sandbox for T2MacosSandbox {
 }
 
 impl T2MacosSandbox {
-    /// `put`/`get` run in OUR process, outside the jail, so they get the same
-    /// path check T0 applies — the Seatbelt profile does not protect them.
+    /// `put`/`get` run in OUR process, outside the jail, so the Seatbelt
+    /// profile does not cover them — they get the same in-code check T0 uses.
     fn scoped(&self, h: &SandboxHandle, path: &Path) -> Result<PathBuf, SandboxError> {
         let workspace = self
             .sessions
@@ -432,31 +448,6 @@ impl T2MacosSandbox {
             .map(|s| s.workspace.clone())
             .ok_or_else(|| SandboxError::Internal("no such session".into()))?;
 
-        let joined = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            workspace.join(path)
-        };
-
-        let mut probe = joined.clone();
-        while !probe.exists() {
-            if !probe.pop() {
-                break;
-            }
-        }
-        let anchor = std::fs::canonicalize(&probe)
-            .map_err(|e| SandboxError::PolicyViolation(format!("cannot resolve: {e}")))?;
-
-        if joined
-            .components()
-            .any(|c| c == std::path::Component::ParentDir)
-            || !anchor.starts_with(&workspace)
-        {
-            return Err(SandboxError::PolicyViolation(format!(
-                "{} resolves outside the workspace",
-                path.display()
-            )));
-        }
-        Ok(anchor.join(joined.strip_prefix(&probe).unwrap_or(Path::new(""))))
+        crate::path::resolve_within(&workspace, &[&workspace], path, "access")
     }
 }

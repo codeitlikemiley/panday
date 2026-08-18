@@ -117,6 +117,7 @@ pub enum SandboxError {
     Internal(String),
 }
 
+pub mod path;
 pub mod t0;
 #[cfg(target_os = "macos")]
 pub mod t2_macos;

@@ -15,6 +15,10 @@ members = [
     "crates/panday-cli",
     "xtask",
 ]
+# A deliberately broken crate used as a test target (M13.2). It must NOT be
+# built by the workspace — its test is supposed to fail until the harness
+# fixes a copy of it.
+exclude = ["crates/panday-harness/tests/fixture_repo"]
 
 [workspace.package]
 version = "0.0.1"

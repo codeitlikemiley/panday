@@ -121,7 +121,23 @@ pub struct PermissionEngine { profile: Profile, overrides: Vec<Rule>, remembered
 
 Profiles: `read_only`, `dev` (read/edit/test allowed; git push, package
 publish, network egress → Ask), `unleashed` (local only, still gates
-`irreversible`). Rules match (tool, args-pattern) — e.g. `bash(rm -rf*) → Ask`
+`irreversible`).
+
+> **`side_effects` serves two masters, and `bash` exposes the seam** (found at
+> M13.2). The field drives both *consent* (which profiles prompt) and *replay
+> safety* (what resume may re-run). For `bash` these disagree: the profile
+> table above says `dev` allows running tests, so the tool cannot be
+> `Irreversible` — that would force Ask in every profile, `unleashed`
+> included, making an unattended run impossible by construction. But replaying
+> an arbitrary shell command after a crash *is* unsafe, which is exactly what
+> `Irreversible` is for.
+>
+> Resolution: `bash` declares `Idempotent` (the common case — running a build
+> or a test suite), and genuinely dangerous invocations are gated by the
+> argument patterns this section already describes (`bash(rm -rf*) → Ask`),
+> which is per-command rather than per-tool. **M13.5 must therefore not treat
+> `Idempotent` as "safe to re-run on resume" for `bash`**; replay safety needs
+> its own signal, decided there. Rules match (tool, args-pattern) — e.g. `bash(rm -rf*) → Ask`
 even in unleashed. Decisions can be remembered per-session or per-project
 ("always allow cargo test here") → stored as `PermissionDecision` events, so
 grants are auditable and replayable like everything else.
@@ -155,7 +171,28 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   Context assembly here is a plain transcript. The cache-aligned
   stable→volatile layout and compaction are M13.4 — building them now would
   be guessing at a design that milestone exists to measure.
-- **M13.2** Real model via gateway + native read/grep/bash tools + T2 sandbox: fixes a real failing test in a fixture repo, unattended.
+- **M13.2** Real model via gateway + native read/grep/bash tools + T2 sandbox: fixes a real failing test in a fixture repo, unattended. ✅ *(shipped: `panday_harness::native` — `read_file`, `write_file`, `edit_file`, `grep`, `glob`, `bash`; fixture at `crates/panday-harness/tests/fixture_repo/`; proof in `tests/fix_a_failing_test.rs`.)*
+
+  **What is proven, and what is not.** The loop repairs a genuinely broken
+  crate — the fixture's `sum_to` is off by one and its test fails before the
+  run — through the real native tools inside a real T2 jail, and the test
+  asserts the repo is green afterwards by invoking `cargo test` on it
+  *outside* the harness. It also asserts the fix is in the implementation and
+  the test is still present, since deleting the test would also make `cargo
+  test` pass.
+
+  The model is scripted, per docs/02 ("the harness suite runs without network
+  using the fake client"): the script chooses the *plan*, everything beneath
+  it is real. Whether a **live** model chooses those steps is the remaining
+  leg, kept as an `#[ignore]`d test that needs `ANTHROPIC_API_KEY`:
+
+  ```text
+  ANTHROPIC_API_KEY=… cargo test -p panday-harness --test fix_a_failing_test -- --ignored
+  ```
+
+  `web_fetch` (needs the egress proxy, M14.2) and `spawn_subagent` (M13.6) are
+  deliberately absent rather than stubbed — a tool the model can call but that
+  cannot work is worse than one it never sees.
 - **M13.3** Permission engine + Ask flow over WS; cancellation kills a sleeping bash cleanly.
 - **M13.4** Cache-aligned assembly + compaction; measured: ≥70% cache-read ratio on a 30-turn session replay.
 - **M13.5** Crash-kill during Executing → resume replays correctly (idempotent) and refuses (irreversible) — both proven by tests.

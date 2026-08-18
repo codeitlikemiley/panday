@@ -16,8 +16,11 @@ serde_json.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 futures-util.workspace = true
+regex.workspace = true
 time.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 futures-core.workspace = true
+panday-gateway.workspace = true
+panday-router.workspace = true

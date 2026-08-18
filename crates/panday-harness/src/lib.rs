@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod actor;
 pub mod expand;
+pub mod native;
 pub mod permissions;
 pub mod testing;
 pub mod tools;

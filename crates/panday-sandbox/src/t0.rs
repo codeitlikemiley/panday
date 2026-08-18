@@ -22,7 +22,7 @@ use crate::{
     SandboxTier, SessionSpec, SnapshotRef,
 };
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// Read or write — they have different admissible roots.
@@ -79,14 +79,6 @@ impl T0Sandbox {
             .cloned()
             .ok_or_else(|| SandboxError::Internal(format!("no such session {}", handle.id)))?;
 
-        let joined = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            policy.workspace_rw.join(path)
-        };
-
-        let canonical = canonicalize_lexically_then_really(&joined)?;
-
         let roots: Vec<&PathBuf> = match access {
             Access::Write => vec![&policy.workspace_rw],
             // Staged inputs are readable but never writable (docs/14
@@ -96,19 +88,15 @@ impl T0Sandbox {
                 .collect(),
         };
 
-        if roots.iter().any(|root| canonical.starts_with(root)) {
-            return Ok(canonical);
-        }
-
-        Err(SandboxError::PolicyViolation(format!(
-            "{} denied: {} resolves outside the workspace ({})",
+        crate::path::resolve_within(
+            &policy.workspace_rw,
+            &roots,
+            path,
             match access {
                 Access::Read => "read",
                 Access::Write => "write",
             },
-            path.display(),
-            canonical.display()
-        )))
+        )
     }
 
     fn limits(&self, handle: &SandboxHandle) -> Result<Limits, SandboxError> {
@@ -120,56 +108,6 @@ impl T0Sandbox {
             .ok_or_else(|| SandboxError::Internal("no such session".into()))?
             .limits)
     }
-}
-
-/// Canonicalise a path that may not exist yet.
-///
-/// `std::fs::canonicalize` requires the whole path to exist, but a write
-/// targets a file that often does not. So: canonicalise the deepest existing
-/// ancestor (resolving any symlinks in it), then re-attach the remainder with
-/// `..` and `.` folded away lexically. A `..` that survives into the tail
-/// would let `a/../../etc` escape, so it is refused outright rather than
-/// normalised into something surprising.
-fn canonicalize_lexically_then_really(path: &Path) -> Result<PathBuf, SandboxError> {
-    let mut existing = path.to_path_buf();
-    let mut tail: Vec<std::ffi::OsString> = Vec::new();
-
-    loop {
-        if existing.exists() {
-            break;
-        }
-        match existing.file_name() {
-            Some(name) => {
-                tail.push(name.to_os_string());
-                if !existing.pop() {
-                    break;
-                }
-            }
-            // No filename component left (root, or a trailing `..`).
-            None => break,
-        }
-    }
-
-    let mut base = std::fs::canonicalize(&existing).map_err(|e| {
-        SandboxError::PolicyViolation(format!("cannot resolve {}: {e}", existing.display()))
-    })?;
-
-    for part in tail.into_iter().rev() {
-        let as_path = PathBuf::from(&part);
-        match as_path.components().next() {
-            Some(Component::ParentDir) => {
-                // Refuse rather than pop: the caller asked for a path whose
-                // meaning depends on symlink resolution we cannot redo here.
-                return Err(SandboxError::PolicyViolation(format!(
-                    "path escapes via `..`: {}",
-                    path.display()
-                )));
-            }
-            Some(Component::CurDir) => continue,
-            _ => base.push(part),
-        }
-    }
-    Ok(base)
 }
 
 #[async_trait::async_trait]
