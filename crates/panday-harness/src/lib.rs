@@ -20,7 +20,8 @@ pub mod testing;
 pub mod tools;
 
 pub use actor::{
-    CancelHandle, CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, TurnOutcome,
+    CancelHandle, CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, SubagentFactory,
+    SubagentResult, TurnOutcome, MAX_SUBAGENT_DEPTH, SPAWN_SUBAGENT,
 };
 pub use expand::ExpandArtifact;
 pub use permissions::{Gate, PermissionEngine, Profile};

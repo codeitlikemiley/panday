@@ -2,8 +2,8 @@
 {"event":"turn_started","model":"local/test","seq":2,"session_id":"sess_1","turn_id":"turn_1","v":1}
 {"content":[{"text":"Let me look.","type":"text"}],"event":"assistant_message","seq":3,"session_id":"sess_1","turn_id":"turn_1","usage":{"cache_read_tokens":0,"cache_write_1h_tokens":0,"cache_write_tokens":0,"input_tokens":100,"output_tokens":10},"v":1}
 {"args":{"path":"src/lib.rs"},"call_id":"call_1","event":"tool_call","provider_call_id":"call_scripted_0","seq":4,"session_id":"sess_1","tool":"read_file","turn_id":"turn_1","v":1}
-{"call_id":"call_1","duration_ms":0,"event":"tool_result","is_error":false,"output":{"strategy":"passthrough","text":"pub fn add(a: i32, b: i32) -> i32 { a - b }","tokens_kept":11,"tokens_raw":11},"seq":5,"session_id":"sess_1","turn_id":"turn_1","v":1}
-{"args":{"cmd":"cargo test"},"call_id":"call_2","event":"tool_call","provider_call_id":"call_scripted_1","seq":6,"session_id":"sess_1","tool":"bash","turn_id":"turn_1","v":1}
+{"args":{"cmd":"cargo test"},"call_id":"call_2","event":"tool_call","provider_call_id":"call_scripted_1","seq":5,"session_id":"sess_1","tool":"bash","turn_id":"turn_1","v":1}
+{"call_id":"call_1","duration_ms":0,"event":"tool_result","is_error":false,"output":{"strategy":"passthrough","text":"pub fn add(a: i32, b: i32) -> i32 { a - b }","tokens_kept":11,"tokens_raw":11},"seq":6,"session_id":"sess_1","turn_id":"turn_1","v":1}
 {"call_id":"call_2","duration_ms":0,"event":"tool_result","is_error":true,"output":{"strategy":"passthrough","text":"test result: FAILED. 1 failed","tokens_kept":8,"tokens_raw":8},"seq":7,"session_id":"sess_1","turn_id":"turn_1","v":1}
 {"event":"turn_started","model":"local/test","seq":8,"session_id":"sess_1","turn_id":"turn_2","v":1}
 {"content":[{"text":"One test fails; checking git.","type":"text"}],"event":"assistant_message","seq":9,"session_id":"sess_1","turn_id":"turn_2","usage":{"cache_read_tokens":0,"cache_write_1h_tokens":0,"cache_write_tokens":0,"input_tokens":100,"output_tokens":10},"v":1}

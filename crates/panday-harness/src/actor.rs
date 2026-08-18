@@ -26,6 +26,43 @@ use panday_types::{AccountId, CallId, Json, SessionId, TurnId};
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Runs a child session on the parent's behalf (docs/13 §subagents).
+///
+/// A trait because a subagent needs everything a session needs — a model, a
+/// store, a tool registry — and a `Tool` cannot conjure those. The parent
+/// supplies the factory; the child gets its own log and a restricted registry.
+#[async_trait::async_trait]
+pub trait SubagentFactory: Send + Sync {
+    /// Run a child to completion and return its **reduced result**.
+    ///
+    /// docs/13: "Parent receives `SubagentFinished{result_ref}` — the reduced
+    /// result, not the child's transcript." Returning the transcript would
+    /// defeat the entire point, which is that "be comprehensive" scales
+    /// without one context window eating the bill.
+    async fn run(
+        &self,
+        parent: SessionId,
+        brief: String,
+        budget: TurnBudget,
+        depth: u8,
+    ) -> Result<SubagentResult, HarnessError>;
+}
+
+/// What a child hands back.
+#[derive(Debug, Clone)]
+pub struct SubagentResult {
+    pub child: SessionId,
+    /// The reduced answer — never the transcript.
+    pub summary: String,
+    pub usage: Usage,
+}
+
+/// The reserved tool name that spawns a child (docs/13 §tools).
+pub const SPAWN_SUBAGENT: &str = "spawn_subagent";
+
+/// docs/13: "Depth ≤ 2".
+pub const MAX_SUBAGENT_DEPTH: u8 = 2;
+
 /// Where streamed events go for connected clients (WS, ACP bridge).
 ///
 /// Distinct from the log on purpose: `AssistantDelta` is emitted here and
@@ -152,6 +189,10 @@ pub struct SessionActor {
     /// Cache-aligned layout (ADR-008). Built once so the stable band is
     /// byte-identical every turn.
     context: ContextBuilder,
+    /// Present when this session may spawn children.
+    subagents: Option<Arc<dyn SubagentFactory>>,
+    /// 0 for a user-facing session. Children get parent + 1.
+    depth: u8,
     /// How many transcript messages have been folded into summaries.
     compacted_upto: usize,
 }
@@ -191,6 +232,33 @@ impl SessionActor {
                 Vec::new(),
             ),
             compacted_upto: 0,
+            subagents: None,
+            depth: 0,
+        }
+    }
+
+    /// Allow this session to spawn children.
+    pub fn with_subagents(mut self, factory: Arc<dyn SubagentFactory>, depth: u8) -> Self {
+        self.subagents = Some(factory);
+        self.depth = depth;
+        self
+    }
+
+    pub fn depth(&self) -> u8 {
+        self.depth
+    }
+
+    /// The budget a child receives: half of this session's, floored so a
+    /// child is never handed a budget it cannot do anything with.
+    ///
+    /// docs/13 says "a fraction of the parent budget"; halving is the simplest
+    /// rule that makes depth bounded in *cost* as well as in levels — a
+    /// two-level tree cannot spend more than the root was allowed.
+    pub fn child_budget(&self) -> TurnBudget {
+        TurnBudget {
+            max_steps: (self.budget.max_steps / 2).max(1),
+            max_wall_ms: (self.budget.max_wall_ms / 2).max(1_000),
+            max_spend_micros: self.budget.max_spend_micros / 2,
         }
     }
 
@@ -406,20 +474,43 @@ impl SessionActor {
             }
 
             // --- Executing ---
-            for call in queued {
+            //
+            // Calls that declare independence run concurrently (docs/13: "run
+            // queued calls (parallel where tools declare independence)");
+            // anything else runs in order, because a dependent call may rely
+            // on an earlier one's effect.
+            //
+            // Execution is parallel; *logging* stays sequential. The actor is
+            // the only writer to its log, which is what makes `seq` gapless
+            // without locks — so results are committed one at a time even when
+            // the work overlapped.
+            for group in group_for_execution(&self.tools, queued) {
                 if self.is_cancelled() {
                     // Stop dispatching immediately; anything already running
                     // is killed when its stream is dropped.
                     return self.finalize(StopReason::Cancelled, turn_usage).await;
                 }
-                self.commit(Event::ToolCall {
-                    call_id: call.id,
-                    tool: call.name.clone(),
-                    args: call.args.clone(),
-                    provider_call_id: call.provider_id.clone(),
-                })
-                .await?;
-                self.execute(call).await?;
+
+                for call in &group {
+                    self.commit(Event::ToolCall {
+                        call_id: call.id,
+                        tool: call.name.clone(),
+                        args: call.args.clone(),
+                        provider_call_id: call.provider_id.clone(),
+                    })
+                    .await?;
+                }
+
+                if group.len() == 1 {
+                    let call = group.into_iter().next().expect("len 1");
+                    self.execute(call).await?;
+                    continue;
+                }
+
+                let outcomes = self.run_concurrently(&group).await;
+                for (call, outcome) in group.into_iter().zip(outcomes) {
+                    self.record_outcome(call, outcome, 0).await?;
+                }
             }
         }
     }
@@ -543,8 +634,170 @@ impl SessionActor {
         self.run_loop().await
     }
 
+    /// Run several independent calls at once, returning outcomes in order.
+    ///
+    /// Only `&self` is needed here, which is precisely why this can be
+    /// concurrent — nothing touches the log until the results come back.
+    async fn run_concurrently(&self, calls: &[PendingCall]) -> Vec<crate::tools::ToolOutcome> {
+        let futures = calls.iter().map(|call| async move {
+            match self.tools.get(&call.name) {
+                Some(tool) => {
+                    let ctx = ToolCtx {
+                        account: self.account,
+                        session: self.session,
+                        turn: TurnId::new(),
+                    };
+                    tool.call(ctx, call.args.clone()).await
+                }
+                None => crate::tools::ToolOutcome {
+                    raw: format!("no such tool: {}", call.name),
+                    is_error: true,
+                },
+            }
+        });
+        futures_util::future::join_all(futures).await
+    }
+
+    /// Reduce an outcome and commit its `ToolResult`.
+    async fn record_outcome(
+        &mut self,
+        call: PendingCall,
+        outcome: crate::tools::ToolOutcome,
+        duration_ms: u64,
+    ) -> Result<(), HarnessError> {
+        // Tool output NEVER enters context raw (ADR-007).
+        let reduced = self.reducer.reduce(
+            &outcome.raw,
+            &ReduceCtx {
+                tool: call.name.clone(),
+                task: None,
+                expected_reads: 1,
+                price_per_token_micros: 0,
+                aggressive: false,
+            },
+        );
+
+        self.commit(Event::ToolResult {
+            call_id: call.id,
+            output: reduced,
+            raw_ref: None,
+            duration_ms,
+            is_error: outcome.is_error,
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Spawn a child session and fold its reduced result back in.
+    async fn spawn_subagent(&mut self, call: PendingCall) -> Result<(), HarnessError> {
+        let brief = call
+            .args
+            .get("brief")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let Some(factory) = self.subagents.clone() else {
+            return self
+                .record_outcome(
+                    call,
+                    crate::tools::ToolOutcome {
+                        raw: "subagents are not enabled for this session".into(),
+                        is_error: true,
+                    },
+                    0,
+                )
+                .await;
+        };
+
+        if self.depth >= MAX_SUBAGENT_DEPTH {
+            // docs/13 caps depth at 2. Refusing is an observation the model
+            // can work with; recursing would let one request fan out without
+            // bound and bill the parent for all of it.
+            return self
+                .record_outcome(
+                    call,
+                    crate::tools::ToolOutcome {
+                        raw: format!(
+                            "subagent depth limit reached ({MAX_SUBAGENT_DEPTH}); \
+                             do this work directly instead of delegating"
+                        ),
+                        is_error: true,
+                    },
+                    0,
+                )
+                .await;
+        }
+
+        if brief.trim().is_empty() {
+            return self
+                .record_outcome(
+                    call,
+                    crate::tools::ToolOutcome {
+                        raw: "spawn_subagent needs a `brief`: the child gets no other context"
+                            .into(),
+                        is_error: true,
+                    },
+                    0,
+                )
+                .await;
+        }
+
+        let began = Instant::now();
+        let budget = self.child_budget();
+        let result = factory
+            .run(self.session, brief.clone(), budget, self.depth + 1)
+            .await;
+
+        match result {
+            Ok(res) => {
+                self.commit(Event::SubagentSpawned {
+                    child: res.child,
+                    brief,
+                })
+                .await?;
+                self.commit(Event::SubagentFinished {
+                    child: res.child,
+                    // The child's log IS the artifact; a separate spill would
+                    // duplicate it.
+                    result_ref: panday_types::id::ArtifactRef {
+                        hash: format!("log:{}", res.child),
+                        size: 0,
+                        media_type: Some("application/vnd.panday.transcript".into()),
+                    },
+                })
+                .await?;
+
+                self.record_outcome(
+                    call,
+                    crate::tools::ToolOutcome {
+                        raw: res.summary,
+                        is_error: false,
+                    },
+                    began.elapsed().as_millis() as u64,
+                )
+                .await
+            }
+            Err(e) => {
+                self.record_outcome(
+                    call,
+                    crate::tools::ToolOutcome {
+                        raw: format!("subagent failed: {e}"),
+                        is_error: true,
+                    },
+                    began.elapsed().as_millis() as u64,
+                )
+                .await
+            }
+        }
+    }
+
     /// Run one tool and fold its (reduced) observation back in.
     async fn execute(&mut self, call: PendingCall) -> Result<(), HarnessError> {
+        if call.name == SPAWN_SUBAGENT {
+            return self.spawn_subagent(call).await;
+        }
+
         let began = Instant::now();
 
         let outcome = match self.tools.get(&call.name) {
@@ -575,29 +828,8 @@ impl SessionActor {
             },
         };
 
-        // Tool output NEVER enters context raw (ADR-007).
-        let reduced = self.reducer.reduce(
-            &outcome.raw,
-            &ReduceCtx {
-                tool: call.name.clone(),
-                task: None,
-                // One read is the honest default: a result the model sees
-                // once. Real horizon estimation is M15.4's accounting work.
-                expected_reads: 1,
-                price_per_token_micros: 0,
-                aggressive: false,
-            },
-        );
-
-        self.commit(Event::ToolResult {
-            call_id: call.id,
-            output: reduced,
-            raw_ref: None,
-            duration_ms: began.elapsed().as_millis() as u64,
-            is_error: outcome.is_error,
-        })
-        .await?;
-        Ok(())
+        self.record_outcome(call, outcome, began.elapsed().as_millis() as u64)
+            .await
     }
 
     async fn finalize(
@@ -783,6 +1015,43 @@ impl Default for Streamed {
             stop: StopReason::EndTurn,
         }
     }
+}
+
+/// Split queued calls into groups that may run together.
+///
+/// A run of consecutive calls whose tools all declare `independent` becomes one
+/// concurrent group. Anything else is its own group of one: a dependent call
+/// may rely on an earlier call's effect, and reordering or overlapping it would
+/// be a correctness bug the model has no way to see.
+///
+/// `spawn_subagent` is always alone — it runs a whole session, and the budget
+/// split assumes one child at a time.
+fn group_for_execution(tools: &ToolRegistry, queued: Vec<PendingCall>) -> Vec<Vec<PendingCall>> {
+    let mut groups: Vec<Vec<PendingCall>> = Vec::new();
+
+    for call in queued {
+        let independent = call.name != SPAWN_SUBAGENT
+            && tools
+                .get(&call.name)
+                .map(|t| t.requirements().independent)
+                .unwrap_or(false);
+
+        match groups.last_mut() {
+            Some(last) if independent && last_is_independent(tools, last) => last.push(call),
+            _ => groups.push(vec![call]),
+        }
+    }
+    groups
+}
+
+fn last_is_independent(tools: &ToolRegistry, group: &[PendingCall]) -> bool {
+    group.iter().all(|c| {
+        c.name != SPAWN_SUBAGENT
+            && tools
+                .get(&c.name)
+                .map(|t| t.requirements().independent)
+                .unwrap_or(false)
+    })
 }
 
 /// Incremental fold — the same rules as [`crate::fold`], applied to one

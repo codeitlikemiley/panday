@@ -73,6 +73,10 @@ fn build(
 
 #[tokio::test]
 async fn scripted_multi_tool_loop_matches_the_golden_log() {
+    // Note on the shape: both `EchoTool`s declare `independent`, so M13.6 runs
+    // them concurrently — which is why both `tool_call` events appear before
+    // either `tool_result`. That is the honest record of what happened: both
+    // were dispatched before either finished.
     let mut h = build(
         vec![
             ScriptedTurn::calling(

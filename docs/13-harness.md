@@ -276,7 +276,29 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   to decide whether the call already ran and cannot without seeing what was
   run. A permission-parked call is never replayed: it was never dispatched, so
   running it would execute something nobody approved.
-- **M13.6** Subagents with budget split; parallel independent tools.
+- **M13.6** Subagents with budget split; parallel independent tools. ✅ *(shipped: `SubagentFactory`, `SessionActor::with_subagents`, `spawn_subagent` handling; concurrent execution of independent calls.)*
+
+  **Containment is the property, not delegation.** The brief is the only
+  context that crosses into a child; only the reduced summary comes back, never
+  the transcript — otherwise the parent's window pays for the child's work,
+  which defeats the whole reason subagents exist. Depth is capped at 2, and a
+  session at the limit **refuses with an observation** the model can act on
+  rather than recursing.
+
+  **Budget halves per level**, so a tree is bounded in *cost* as well as in
+  levels: a two-deep tree cannot spend more than the root was allowed.
+
+  **Execution is parallel; logging is not.** Independent calls run
+  concurrently, but their results are committed one at a time — the actor is
+  the only writer to its log, which is what makes `seq` gapless without locks.
+  Dependent calls stay strictly ordered, because a dependent call may rely on
+  an earlier one's effect and the model has no way to see that reordering broke
+  it. `spawn_subagent` always runs alone, since the budget split assumes one
+  child at a time.
+
+  The golden event log changed shape here, deliberately: both `tool_call`
+  events for a concurrent group now precede either `tool_result`, which is the
+  honest record that both were dispatched before either finished.
 - **M13.7** Hook engine with in-process hooks; pre_tool veto demonstrated.
 
 Acceptance stance: the harness suite runs **without network** using the fake
