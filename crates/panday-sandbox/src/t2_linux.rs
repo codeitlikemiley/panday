@@ -66,9 +66,59 @@ impl T2LinuxSandbox {
         Self::default()
     }
 
-    /// True when this host can run the tier.
+    /// True when this host can *actually* run the tier.
+    ///
+    /// Probes rather than just checking the binary exists. Unprivileged user
+    /// namespaces are commonly restricted — Ubuntu 24.04 does it by default
+    /// via AppArmor, and there `bwrap` is installed and on PATH but every
+    /// jail dies with `loopback: Failed RTM_NEWADDR`. A presence check would
+    /// report the tier as available and then fail every call confusingly;
+    /// probing turns that into one clear answer.
+    ///
+    /// Cached: this spawns a process, and callers ask per session.
     pub fn available() -> bool {
-        which_bwrap().is_some()
+        static PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *PROBE.get_or_init(|| {
+            let Some(bwrap) = which_bwrap() else {
+                return false;
+            };
+            std::process::Command::new(bwrap)
+                .args([
+                    "--unshare-user",
+                    "--unshare-net",
+                    "--unshare-pid",
+                    "--ro-bind",
+                    "/usr",
+                    "/usr",
+                    "--ro-bind",
+                    "/bin",
+                    "/bin",
+                    "--ro-bind",
+                    "/lib",
+                    "/lib",
+                    "--",
+                    "/bin/true",
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        })
+    }
+
+    /// Why the tier is unavailable, for an operator staring at a skip.
+    pub fn unavailable_reason() -> Option<String> {
+        if Self::available() {
+            return None;
+        }
+        Some(match which_bwrap() {
+            None => "bubblewrap (`bwrap`) is not installed".to_string(),
+            Some(_) => "`bwrap` is installed but cannot create a user namespace — \
+                        unprivileged user namespaces are probably restricted \
+                        (Ubuntu 24.04: kernel.apparmor_restrict_unprivileged_userns=1)"
+                .to_string(),
+        })
     }
 
     /// The exact `bwrap` argv for a session — exposed so the escape suite can

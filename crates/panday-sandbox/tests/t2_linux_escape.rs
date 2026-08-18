@@ -58,8 +58,12 @@ struct Jail {
 
 async fn jail(wall_ms: u64) -> Option<Jail> {
     if !T2LinuxSandbox::available() {
-        eprintln!("skipping: bubblewrap not installed");
-        return None;
+        // A skip must say WHY, or a jail that silently stopped working looks
+        // exactly like a jail that was never asked to work.
+        panic!(
+            "T2 Linux is unavailable, so the escape suite cannot gate isolation: {}",
+            T2LinuxSandbox::unavailable_reason().unwrap_or_default()
+        );
     }
     let root = TempDir::new("escape");
     let workspace = root.path().join("ws");

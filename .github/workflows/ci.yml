@@ -35,7 +35,11 @@ jobs:
       # T2 Linux (docs/14 M14.2) jails through bubblewrap; its escape suite
       # skips itself without it, which would silently stop gating isolation.
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
-      - run: bwrap --version
+      # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor, so
+      # bwrap installs fine and then every jail dies with
+      # `loopback: Failed RTM_NEWADDR`. The sandbox needs them.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - run: bwrap --unshare-all --ro-bind /usr /usr --ro-bind /bin /bin --ro-bind /lib /lib -- /bin/true && echo "bwrap jails work" 
       - run: cargo nextest run --workspace --profile ci
       # nextest does not run doctests; docs/02 wants them gated too.
       - run: cargo test --workspace --doc
