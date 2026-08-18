@@ -118,6 +118,10 @@ pub enum SandboxError {
 }
 
 pub mod t0;
+#[cfg(target_os = "macos")]
+pub mod t2_macos;
+#[cfg(target_os = "macos")]
+pub use t2_macos::{SeatbeltProfile, T2MacosSandbox};
 
 pub use t0::{Access, T0Sandbox};
 

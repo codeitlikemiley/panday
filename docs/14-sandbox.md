@@ -95,7 +95,38 @@ type error.
   opening it. Closing it needs `openat2(RESOLVE_BENEATH)` or a real jail —
   M14.2.
 - **M14.2** T2 Linux: namespaces + seccomp + egress proxy; escape suite green; `bash` tool runs through it.
-- **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite.
+- **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite. ✅ *(shipped: `panday_sandbox::t2_macos` — `SeatbeltProfile`, `T2MacosSandbox`; 15-case suite in `crates/panday-sandbox/tests/t2_macos_escape.rs`.)*
+
+  Taken **out of roadmap order**, ahead of M14.2: the roadmap assumes a Linux
+  host, and a Linux escape suite cannot be run on the macOS machine this is
+  being built on. docs/14 is explicit that the suite gates every sandbox
+  change, so shipping the tier we can actually verify first is the honest
+  order. M14.2 follows, verified in CI (ubuntu).
+
+  **What this tier guarantees on macOS**, each covered by the suite:
+
+  | Guarantee | Enforced by | Status |
+  |---|---|---|
+  | No write outside the workspace | Seatbelt `file-write*` allowlist | **strict** |
+  | No network egress | Seatbelt `(deny network*)` | **strict** |
+  | Wall-clock ceiling | us (SIGKILL at the deadline) | **strict** |
+  | No parent env inherited | `env_clear()` | **strict** |
+  | No read of sensitive paths | Seatbelt `file-read*` **deny**list | *partial* |
+  | Memory / pid ceilings | — | **not enforced** |
+
+  **Reads are a denylist here, unlike Linux.** A strict read allowlist is not
+  achievable through Seatbelt in practice: the dynamic loader and shared cache
+  touch paths that vary by macOS version and APFS firmlink layout. Every
+  profile that enumerated top-level directories aborted `/bin/echo` with
+  SIGABRT before `main`; only `(subpath "/")` — i.e. no scoping — reliably
+  lets a binary start. So the tier allows broad reads and denies what matters
+  (SSH/AWS/GPG keys, keychains, shell history, `/etc/master.passwd`). This is
+  weaker than Linux T2's mount-namespace scoping and is stated rather than
+  implied; read confinement is a T3 property.
+
+  Every must-fail case is paired with a **positive control** proving the same
+  operation succeeds unsandboxed — the network test skips itself when the host
+  has no egress, because a denial proves nothing on an offline machine.
 - **M14.4** T1 wasmtime: WIT world for plugin tools (`panday:plugin/tool`), fuel + epoch limits; a demo plugin tool runs.
 - **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95.
 - **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo.
