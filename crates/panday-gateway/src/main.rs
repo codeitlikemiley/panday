@@ -14,6 +14,15 @@ const DEV_POLICY: &str = include_str!("../../panday-router/policy/dev.yaml");
 
 #[tokio::main]
 async fn main() {
+    // docs/21: JSON tracing to stdout, OTLP when an endpoint is configured.
+    // A failure here is fatal on purpose — the one error it returns is
+    // "PANDAY_DEBUG_CONTENT is set in production", and booting anyway would
+    // mean logging prompt content into a production log.
+    if let Err(e) = panday_sdk::telemetry::init("panday-gateway") {
+        eprintln!("panday-gateway: {e}");
+        std::process::exit(1);
+    }
+
     let addr =
         std::env::var("PANDAY_GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
 

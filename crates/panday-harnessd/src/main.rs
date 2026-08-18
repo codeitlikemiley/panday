@@ -4,6 +4,15 @@
 
 #[tokio::main]
 async fn main() {
+    // docs/21: JSON tracing to stdout, OTLP when an endpoint is configured.
+    // A failure here is fatal on purpose — the one error it returns is
+    // "PANDAY_DEBUG_CONTENT is set in production", and booting anyway would
+    // mean logging prompt content into a production log.
+    if let Err(e) = panday_sdk::telemetry::init("panday-harnessd") {
+        eprintln!("panday-harnessd: {e}");
+        std::process::exit(1);
+    }
+
     let addr =
         std::env::var("PANDAY_HARNESSD_ADDR").unwrap_or_else(|_| "127.0.0.1:8081".to_string());
 

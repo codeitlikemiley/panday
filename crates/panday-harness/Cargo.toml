@@ -17,10 +17,12 @@ thiserror.workspace = true
 async-trait.workspace = true
 futures-util.workspace = true
 regex.workspace = true
+tracing.workspace = true
 tokio = { workspace = true, features = ["time", "macros", "rt"] }
 time.workspace = true
 
 [dev-dependencies]
+tracing-subscriber.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 futures-core.workspace = true
 panday-gateway.workspace = true

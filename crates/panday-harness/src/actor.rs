@@ -367,6 +367,27 @@ impl SessionActor {
     }
 
     async fn run_loop(&mut self) -> Result<TurnOutcome, HarnessError> {
+        use tracing::Instrument;
+
+        // docs/21 §traces: one span tree per turn,
+        // `turn > assemble > model.call > tool.gate > sandbox.exec > reduce`.
+        //
+        // The RAW uuid, not `Display`. docs/03: the `sess_01J…` short form is
+        // "a display encoding, not a second id" — recording it would mean a
+        // span could not be joined against the event log by string equality,
+        // which is the entire point of the id scheme.
+        let turn_span = tracing::info_span!(
+            "turn",
+            session_id = %self.session.0,
+            account_id = %self.account.0,
+        );
+        // `.instrument()`, NOT `enter()`: an `enter()` guard is thread-local
+        // and a multi-thread runtime moves the future between polls, which
+        // drops the span mid-turn without any error.
+        self.run_loop_inner().instrument(turn_span).await
+    }
+
+    async fn run_loop_inner(&mut self) -> Result<TurnOutcome, HarnessError> {
         self.hooks.pre_turn();
         let started = Instant::now();
         let mut steps: u32 = 0;
@@ -394,10 +415,33 @@ impl SessionActor {
             steps += 1;
 
             // --- Streaming ---
-            let mut req = self.assemble().await?;
+            let mut req = {
+                use tracing::Instrument;
+                self.assemble()
+                    .instrument(tracing::info_span!("assemble"))
+                    .await?
+            };
             self.hooks.pre_model(&mut req);
-            let mut stream = self.model.chat(req).await?;
-            let streamed = self.consume_stream(&mut stream).await?;
+            let model_span = tracing::info_span!(
+                "model.call",
+                model = %req.model.0,
+                input_tokens = tracing::field::Empty,
+                output_tokens = tracing::field::Empty,
+                cache_read_tokens = tracing::field::Empty,
+            );
+            let streamed = {
+                use tracing::Instrument;
+                let model = self.model.clone();
+                async {
+                    let mut stream = model.chat(req).await?;
+                    self.consume_stream(&mut stream).await
+                }
+                .instrument(model_span.clone())
+                .await?
+            };
+            model_span.record("input_tokens", streamed.usage.input_tokens);
+            model_span.record("output_tokens", streamed.usage.output_tokens);
+            model_span.record("cache_read_tokens", streamed.usage.cache_read_tokens);
             self.hooks.post_model(&streamed.text);
             turn_usage.add(streamed.usage);
 
@@ -462,7 +506,13 @@ impl SessionActor {
                         replay: crate::tools::Replay::Unsafe,
                     });
 
-                match self.permissions.gate(&call.name, &req, &call.args) {
+                let gate = {
+                    let _s = tracing::info_span!("tool.gate", tool = %call.name).entered();
+                    self.permissions.gate(&call.name, &req, &call.args)
+                };
+                tracing::debug!(tool = %call.name, gate = ?gate, "permission decision");
+
+                match gate {
                     Gate::Allow => queued.push(call),
                     Gate::Deny => {
                         // A denial is still a tool call that happened and an
@@ -712,6 +762,8 @@ impl SessionActor {
         outcome: crate::tools::ToolOutcome,
         duration_ms: u64,
     ) -> Result<(), HarnessError> {
+        let _reduce_span = tracing::info_span!("reduce", tool = %call.name).entered();
+
         // Tool output NEVER enters context raw (ADR-007).
         let reduced = self.reducer.reduce(
             &outcome.raw,
@@ -724,6 +776,14 @@ impl SessionActor {
             },
         );
 
+        tracing::debug!(
+            tool = %call.name,
+            tokens_raw = reduced.tokens_raw,
+            tokens_kept = reduced.tokens_kept,
+            strategy = %reduced.strategy,
+            is_error = outcome.is_error,
+            "tool observation reduced"
+        );
         self.hooks.post_tool(&call.name, &reduced);
 
         self.commit(Event::ToolResult {
@@ -849,6 +909,11 @@ impl SessionActor {
 
         let began = Instant::now();
 
+        // Synchronous span entry is correct here only because nothing between
+        // this point and the await is thread-sensitive; the await itself is
+        // instrumented below.
+        let exec_span = tracing::info_span!("sandbox.exec", tool = %call.name);
+
         let outcome = match self.tools.get(&call.name) {
             Some(tool) => {
                 let ctx = ToolCtx {
@@ -857,6 +922,7 @@ impl SessionActor {
                     turn: TurnId::new(),
                 };
                 let cancelled = self.cancelled.clone();
+                let _entered = exec_span.clone().entered();
                 tokio::select! {
                     outcome = tool.call(ctx, call.args.clone()) => outcome,
                     // Dropping the tool future drops its ExecStream, which is
@@ -886,6 +952,7 @@ impl SessionActor {
         reason: StopReason,
         usage: Usage,
     ) -> Result<TurnOutcome, HarnessError> {
+        tracing::info!(stop_reason = ?reason, "turn finished");
         self.hooks.on_stop(reason);
         self.commit(Event::TurnFinished {
             reason,

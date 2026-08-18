@@ -13,6 +13,7 @@ panday-router.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 axum.workspace = true
+tracing.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
 futures-core.workspace = true
 futures-util.workspace = true
@@ -21,3 +22,4 @@ serde_json.workspace = true
 
 [dev-dependencies]
 uuid.workspace = true
+tracing-subscriber.workspace = true

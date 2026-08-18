@@ -1,0 +1,27 @@
+# Local trace collector for M21.1 (docs/21 §traces: "self-host Grafana
+# Tempo/Jaeger at first").
+#
+#   docker compose -f deploy/tempo-compose.yml up -d
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 cargo run -p panday-gateway
+#
+# The endpoint is what switches export on: a service with none configured must
+# not spend startup failing to reach a collector that is not there.
+services:
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP http-proto — the transport the exporter uses
+      - "3200:3200"   # Tempo query API
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    ports:
+      - "3000:3000"
+    depends_on: [tempo]

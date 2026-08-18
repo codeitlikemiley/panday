@@ -1,0 +1,21 @@
+# Minimal Tempo config for local development (M21.1).
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        # http only: the exporter is built with `http-proto` so it rides the
+        # reqwest/rustls stack the workspace already has, rather than pulling
+        # in tonic/grpc for a second transport.
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal

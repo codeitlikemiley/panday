@@ -52,7 +52,39 @@ preference (ADR-002).
 
 ## Milestones
 
-- **M21.1** tracing + OTLP wired in gateway/harness; spans carry the id scheme; local Tempo compose.
+- **M21.1** tracing + OTLP wired in gateway/harness; spans carry the id scheme; local Tempo compose. ✅ *(shipped: `panday_sdk::telemetry`; spans in gateway + harness; `deploy/tempo-compose.yml`.)*
+
+  Span tree as specified: `turn > assemble > model.call > tool.gate >
+  sandbox.exec > reduce`, plus `gateway.chat`. OTLP export is opt-in by
+  `OTEL_EXPORTER_OTLP_ENDPOINT` — a service with no collector must not spend
+  startup failing to reach one — over `http-proto`, so it rides the
+  reqwest/rustls stack already present instead of pulling in tonic/grpc.
+
+  **Ids are recorded as raw UUIDs, not `Display`.** `SessionId`'s `Display` is
+  the human short form `sess_01J…`, which docs/03 calls "a display encoding, not
+  a second id" — recording that would mean a span could not be joined against
+  the event log by string equality, which is the whole point of the id scheme.
+
+  **Content-freedom is enforced by test, not by care.** A real turn is run with
+  distinctive strings as prompt, assistant text, tool argument and tool result;
+  the captured trace is asserted to contain none of them, and every emitted line
+  is checked against `FORBIDDEN_CONTENT_FIELDS`. A control test asserts the
+  measurements *do* appear — a trace that leaked nothing because it recorded
+  nothing would otherwise pass. This is M21.5's audit, applied as soon as the
+  spans existed rather than later.
+
+  `PANDAY_DEBUG_CONTENT` with `PANDAY_ENV=production` **refuses to boot**
+  (verified: exit 1). A service logging prompts in production is a data
+  incident, so the safe failure is not starting.
+
+  **Two bugs found here, both invisible to a naive test.** Spans were attached
+  with `span.enter()`, whose guard is *thread-local*: on a multi-thread runtime
+  the future moves between polls and the span is silently lost, so events landed
+  with no span at all and an operator could not tell which request a failover
+  warning belonged to. Both are now `.instrument()`ed. And the first test passed
+  against that bug because it used `flavor = "current_thread"`; the suites now
+  run multi-thread and attach the subscriber with `WithSubscriber`, which
+  follows a future across threads, rather than the thread-local `with_default`.
 - **M21.2** Prometheus metrics for the table above; first Grafana board (cost + cache ratio).
 - **M21.3** `panday replay` v1 (render + time-travel).
 - **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing.

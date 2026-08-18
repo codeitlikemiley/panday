@@ -217,7 +217,39 @@ impl ModelClient for Gateway {
     /// holds turn semantics — and re-prompting would double-bill the caller
     /// for tokens they already saw.
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
+        use tracing::Instrument;
+
+        // Counts and decisions, never content (docs/21 §traces).
+        //
+        // `.instrument()`, NOT `span.enter()`: `enter()` returns a
+        // THREAD-LOCAL guard, so on a multi-thread runtime the future moves
+        // threads mid-await and the span is silently lost — events land with no
+        // span attached at all. Instrumenting the future is the only correct
+        // pattern in an `async fn`.
+        let span = tracing::info_span!(
+            "gateway.chat",
+            account_id = %req.metadata.account.0,
+            request_id = %req.metadata.request.0,
+            model = %req.model.0,
+            // Filled in once the chain resolves.
+            provider = tracing::field::Empty,
+            matched_rule = tracing::field::Empty,
+        );
+        self.chat_inner(req, span.clone()).instrument(span).await
+    }
+}
+
+impl Gateway {
+    async fn chat_inner(
+        &self,
+        req: ChatRequest,
+        span: tracing::Span,
+    ) -> Result<ItemStream, PandayError> {
         let chain = self.resolve_chain(&req)?;
+        if let Some(head) = chain.first() {
+            span.record("provider", head.provider.as_str());
+            span.record("matched_rule", head.matched_rule.as_str());
+        }
         let account = req.metadata.account;
         let request = req.metadata.request;
 
@@ -244,6 +276,12 @@ impl ModelClient for Gateway {
                 }
                 Err(e) => {
                     let retryable = e.is_retryable();
+                    tracing::warn!(
+                        provider = %leg.provider,
+                        model = %leg.model.0,
+                        retryable,
+                        "provider leg failed; walking the chain"
+                    );
                     failed.push(FailedLeg {
                         model: leg.model.clone(),
                         provider: leg.provider.clone(),

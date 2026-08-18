@@ -60,6 +60,19 @@ serde_yaml_ng = "0.10"
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# docs/02: "tracing | tracing + opentelemetry". The OTLP exporter uses the
+# http-proto transport so it rides the reqwest/rustls stack already present
+# rather than pulling in a second one (tonic/grpc).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.33"
+opentelemetry = "0.32"
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "http-proto",
+    "reqwest-client",
+    "trace",
+] }
 # Optional in panday-types (feature `schema`), so the near-zero-dependency rule
 # in docs/02 still holds for every normal build; only `cargo xtask schemas`
 # turns it on.

@@ -17,6 +17,15 @@ fn main() -> ExitCode {
 }
 
 async fn run() -> ExitCode {
+    // docs/21: JSON tracing to stdout, OTLP when an endpoint is configured.
+    // A failure here is fatal on purpose — the one error it returns is
+    // "PANDAY_DEBUG_CONTENT is set in production", and booting anyway would
+    // mean logging prompt content into a production log.
+    if let Err(e) = panday_sdk::telemetry::init("panday-cli") {
+        eprintln!("panday-cli: {e}");
+        std::process::exit(1);
+    }
+
     let cmd = match parse_args(std::env::args().skip(1)) {
         Ok(cmd) => cmd,
         Err(e) => {

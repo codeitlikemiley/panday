@@ -15,6 +15,7 @@
 pub mod gateway;
 pub mod middleware;
 pub mod providers;
+pub mod telemetry;
 
 pub use gateway::{connect, GatewayTransport};
 pub use middleware::{ModelClientExt, Retry, RetryPolicy, Timeout};
