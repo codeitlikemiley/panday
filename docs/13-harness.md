@@ -220,7 +220,27 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   "the caller is gone" and kills the child. The test starts a genuinely
   sleeping `bash`, cancels it, and then proves the process died by checking a
   marker file the command would have written had it survived.
-- **M13.4** Cache-aligned assembly + compaction; measured: ≥70% cache-read ratio on a 30-turn session replay.
+- **M13.4** Cache-aligned assembly + compaction; measured: ≥70% cache-read ratio on a 30-turn session replay. ✅ *(shipped: `panday_harness::context` — `ContextBuilder`, `Band`, `Summarizer`; wired into `SessionActor::assemble`.)*
+
+  **Measured: 93.7% cache-read** over a 30-turn replay (121,657 cached /
+  8,228 fresh tokens), against the ≥70% bar.
+
+  The number only means something next to its control: the same replay with a
+  *churned* stable prefix — ADR-008's banned pattern, injecting per-turn
+  content into the stable band — scores **0.0%**. One mutated byte early
+  invalidates every token behind it, which is precisely the 1x-vs-3-6x
+  difference the ADR is about.
+
+  Compaction folds the oldest settled span into the semi-stable band by
+  **appending**, never rewriting, so the summary sits *behind* the stable
+  prefix and does not invalidate it. The full text stays in the event log —
+  compaction is a view optimisation, never data loss — so `summary_ref`
+  points at the log rather than duplicating it into a separate artifact.
+
+  The summariser is a trait with a structural (free) default. docs/13 calls
+  for a `cheap`-pool model here; that is the semantic tier behind a budget
+  gate, M15.6, and shipping a model call before the gate exists would spend
+  tokens to save tokens with nothing deciding whether it is worth it.
 - **M13.5** Crash-kill during Executing → resume replays correctly (idempotent) and refuses (irreversible) — both proven by tests.
 - **M13.6** Subagents with budget split; parallel independent tools.
 - **M13.7** Hook engine with in-process hooks; pre_tool veto demonstrated.

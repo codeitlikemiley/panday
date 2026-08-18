@@ -11,6 +11,7 @@
 //! locks (docs/13). Everything it does is an event; state is a fold over
 //! those events, never a parallel truth.
 
+use crate::context::{ContextBuilder, ReducerSummarizer, Summarizer};
 use crate::permissions::Gate;
 use crate::tools::{SideEffects, ToolCtx, ToolRegistry};
 use crate::{fold, EventStore, PermissionEngine, Phase, SessionState, StoreError, TurnBudget};
@@ -148,6 +149,11 @@ pub struct SessionActor {
     parked: Vec<PendingCall>,
     /// Set by [`SessionActor::cancel`]; checked at every transition.
     cancelled: Arc<std::sync::atomic::AtomicBool>,
+    /// Cache-aligned layout (ADR-008). Built once so the stable band is
+    /// byte-identical every turn.
+    context: ContextBuilder,
+    /// How many transcript messages have been folded into summaries.
+    compacted_upto: usize,
 }
 
 impl SessionActor {
@@ -179,7 +185,21 @@ impl SessionActor {
             current_turn: None,
             parked: Vec::new(),
             cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            context: ContextBuilder::new(
+                "You are Panday, a coding agent. Work in the sandboxed workspace. \
+                 Prefer reading before editing, and verify changes by running tests.",
+                Vec::new(),
+            ),
+            compacted_upto: 0,
         }
+    }
+
+    /// Replace the system prompt and register the tool schemas in the stable
+    /// band. Must be called before the first turn: mutating the stable band
+    /// mid-session is a cache break (ADR-008, docs/13 §registry discipline).
+    pub fn with_context(mut self, builder: ContextBuilder) -> Self {
+        self.context = builder;
+        self
     }
 
     /// A handle that can request cancellation from another task — the client
@@ -540,16 +560,59 @@ impl SessionActor {
         Ok(TurnOutcome::Finished(reason))
     }
 
-    /// Build the model request from the log.
-    ///
-    /// M13.1 keeps this a plain transcript. The cache-aligned stable→volatile
-    /// layout and compaction are M13.4; doing them here would be guessing at
-    /// a design that milestone exists to measure.
+    /// Build the model request from the log, cache-aligned (ADR-008).
     async fn assemble(&mut self) -> Result<ChatRequest, HarnessError> {
         let events = self.log.read_after(self.session, 0).await?;
+        let full = transcript(&events);
+
+        // The current turn starts at the last user message; everything before
+        // it is settled and therefore cacheable.
+        let hot_from = full
+            .iter()
+            .rposition(|m| m.role == Role::User)
+            .unwrap_or(full.len());
+
+        let live = &full[self.compacted_upto.min(full.len())..];
+        let hot_from = hot_from.saturating_sub(self.compacted_upto);
+
+        let mut ctx = self.context.build(live, hot_from);
+
+        // Compaction: fold the oldest settled span into the semi-stable band
+        // rather than letting the window grow without bound. The full text
+        // stays in the log — this is a view optimisation, never data loss.
+        if self.context.should_compact(&ctx) && hot_from > 2 {
+            let split = hot_from / 2;
+            let before = ctx.approx_tokens();
+
+            let summariser = ReducerSummarizer(panday_reducer::StructuralReducer::new(
+                panday_reducer::GenericReducer::default(),
+            ));
+            let summary = summariser.summarize(&live[..split]);
+            self.context.add_summary(summary);
+            self.compacted_upto += split;
+
+            let live = &full[self.compacted_upto.min(full.len())..];
+            ctx = self.context.build(live, hot_from.saturating_sub(split));
+
+            self.commit(Event::Compaction {
+                from_seq: 0,
+                to_seq: self.seq,
+                // The span is recoverable from the log itself, which is the
+                // artifact; a separate spill would duplicate it.
+                summary_ref: panday_types::id::ArtifactRef {
+                    hash: format!("log:{}:{}", self.session, self.compacted_upto),
+                    size: 0,
+                    media_type: Some("application/vnd.panday.transcript".into()),
+                },
+                tokens_before: before,
+                tokens_after: ctx.approx_tokens(),
+            })
+            .await?;
+        }
+
         Ok(ChatRequest {
             model: self.model_ref.clone(),
-            messages: transcript(&events),
+            messages: ctx.messages,
             tools: self
                 .tools
                 .specs()
@@ -561,7 +624,7 @@ impl SessionActor {
                 })
                 .collect(),
             sampling: Sampling::default(),
-            cache: Default::default(),
+            cache: ctx.cache,
             stream: true,
             metadata: CallMeta {
                 account: self.account,
