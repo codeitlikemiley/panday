@@ -547,6 +547,8 @@ name = "panday-harness"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "futures-core",
+ "futures-util",
  "panday-reducer",
  "panday-sandbox",
  "panday-sdk",
@@ -554,6 +556,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "time",
+ "tokio",
 ]
 
 [[package]]

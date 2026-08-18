@@ -145,7 +145,16 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
 
 ## Milestones
 
-- **M13.1** State machine with fake ModelClient: scripted multi-tool loop, golden event log. Traits/types ✅ in workspace.
+- **M13.1** State machine with fake ModelClient: scripted multi-tool loop, golden event log. ✅ *(shipped: `panday_harness::actor` — `SessionActor`, `MemoryStore`, `EventSink`; `panday_harness::testing` — `ScriptedClient`, `EchoTool`, `render_log`; golden at `crates/panday-harness/tests/fixtures/multi_tool_loop.jsonl`.)*
+
+  `TurnOutcome::AwaitingPermission` is deliberately **not** a `StopReason`: a
+  turn parked on a gate is mid-flight, not finished, and collapsing the two
+  would make a paused turn indistinguishable from a completed one in the log.
+  The Ask flow that resumes it is M13.3.
+
+  Context assembly here is a plain transcript. The cache-aligned
+  stable→volatile layout and compaction are M13.4 — building them now would
+  be guessing at a design that milestone exists to measure.
 - **M13.2** Real model via gateway + native read/grep/bash tools + T2 sandbox: fixes a real failing test in a fixture repo, unattended.
 - **M13.3** Permission engine + Ask flow over WS; cancellation kills a sleeping bash cleanly.
 - **M13.4** Cache-aligned assembly + compaction; measured: ≥70% cache-read ratio on a 30-turn session replay.

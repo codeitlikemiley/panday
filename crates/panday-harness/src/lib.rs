@@ -11,10 +11,13 @@ use panday_types::model::{StopReason, Usage};
 use panday_types::{CallId, Json, SessionId};
 use serde::{Deserialize, Serialize};
 
+pub mod actor;
 pub mod permissions;
+pub mod testing;
 pub mod tools;
 
-pub use permissions::{PermissionEngine, Profile};
+pub use actor::{CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, TurnOutcome};
+pub use permissions::{Gate, PermissionEngine, Profile};
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 
 /// Where events live. PG in cloud, SQLite/file in `panday local`; in-memory
