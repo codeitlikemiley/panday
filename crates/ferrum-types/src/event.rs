@@ -144,7 +144,72 @@ pub enum Event {
         message: String,
         retryable: bool,
     },
+
+    /// An event kind this build does not know.
+    ///
+    /// docs/03 §Versioning discipline: "New event kinds: minor; unknown kinds
+    /// MUST be ignored-and-preserved by clients." A newer harness may emit
+    /// events an older CLI has never heard of; that CLI must neither crash nor
+    /// silently drop them from a log it may re-persist or relay.
+    ///
+    /// The whole object — including the `event` tag itself — is captured
+    /// verbatim, so re-serializing yields the original bytes. Never construct
+    /// this variant deliberately: it exists to be tolerant on read.
+    #[serde(untagged)]
+    Unknown {
+        #[serde(flatten)]
+        payload: serde_json::Map<String, Json>,
+    },
 }
+
+impl Event {
+    /// The wire tag for this event, whether or not this build knows the kind.
+    /// Returns `None` only for a malformed `Unknown` that carries no `event`
+    /// key — which the deserializer cannot actually produce.
+    pub fn kind(&self) -> Option<&str> {
+        Some(match self {
+            Event::UserMessage { .. } => "user_message",
+            Event::AssistantDelta { .. } => "assistant_delta",
+            Event::AssistantMessage { .. } => "assistant_message",
+            Event::ToolCall { .. } => "tool_call",
+            Event::ToolResult { .. } => "tool_result",
+            Event::PermissionRequest { .. } => "permission_request",
+            Event::PermissionDecision { .. } => "permission_decision",
+            Event::Compaction { .. } => "compaction",
+            Event::TurnStarted { .. } => "turn_started",
+            Event::TurnFinished { .. } => "turn_finished",
+            Event::SubagentSpawned { .. } => "subagent_spawned",
+            Event::SubagentFinished { .. } => "subagent_finished",
+            Event::SessionForked { .. } => "session_forked",
+            Event::Error { .. } => "error",
+            Event::Unknown { payload } => return payload.get("event").and_then(|v| v.as_str()),
+        })
+    }
+
+    /// True when this build did not recognise the event kind on the wire.
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Event::Unknown { .. })
+    }
+}
+
+/// Every event tag this build knows. Kept in sync with `Event` by
+/// `tests/golden.rs::corpus_covers_every_event_variant`.
+pub const KNOWN_EVENT_TAGS: &[&str] = &[
+    "user_message",
+    "assistant_delta",
+    "assistant_message",
+    "tool_call",
+    "tool_result",
+    "permission_request",
+    "permission_decision",
+    "compaction",
+    "turn_started",
+    "turn_finished",
+    "subagent_spawned",
+    "subagent_finished",
+    "session_forked",
+    "error",
+];
 
 impl Envelope {
     pub fn new(session_id: SessionId, seq: u64, turn_id: Option<TurnId>, event: Event) -> Self {

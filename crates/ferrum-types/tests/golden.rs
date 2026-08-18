@@ -15,7 +15,9 @@
 //! FERRUM_UPDATE_GOLDEN=1 cargo test -p ferrum-types --test golden
 //! ```
 
-use ferrum_types::event::{Actor, ClientKind, Envelope, Event, PermDecision, ReducedOutput};
+use ferrum_types::event::{
+    Actor, ClientKind, Envelope, Event, PermDecision, ReducedOutput, KNOWN_EVENT_TAGS,
+};
 use ferrum_types::id::{AccountId, ArtifactRef, CallId, RequestId, SessionId, TurnId};
 use ferrum_types::model::{ContentBlock, ModelRef, StopReason, Usage};
 use ferrum_types::{Timestamp, PROTOCOL_VERSION};
@@ -418,4 +420,125 @@ fn id_encoding_is_transparent() {
     );
     // Display is the human short form, NOT the wire form (docs/03 §Identifiers).
     assert_eq!(account.to_string(), "acct_0193000000007000800000000000000a");
+}
+
+// ---------------------------------------------------------------------------
+// Versioning discipline (docs/03 §Versioning discipline)
+//
+// Three rules are stated there. Each gets a test, because each one is a
+// promise to every client build that is older than the server.
+// ---------------------------------------------------------------------------
+
+/// The corpus must exercise every `Event` variant — otherwise adding a variant
+/// silently ships an unlocked wire format. `Unknown` is excluded by design: it
+/// is a read-tolerance mechanism, not an emittable kind.
+#[test]
+fn corpus_covers_every_event_variant() {
+    let corpus = corpus();
+    let covered: std::collections::BTreeSet<&str> = corpus
+        .iter()
+        .filter_map(|(_, env)| env.event.kind())
+        .collect();
+
+    let missing: Vec<&str> = KNOWN_EVENT_TAGS
+        .iter()
+        .copied()
+        .filter(|tag| !covered.contains(tag))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "these event kinds have no golden fixture: {missing:?}\n\
+         Every variant must be locked — add a corpus case and regenerate."
+    );
+}
+
+/// Rule 1 — "Additive fields: always ok." A field a newer emitter added must
+/// not break an older reader.
+#[test]
+fn additive_fields_are_ignored_on_read() {
+    let with_future_field = serde_json::json!({
+        "v": 1,
+        "session_id": "01930000-0000-7000-8000-000000000001",
+        "seq": 16,
+        "at": "2026-01-15T12:00:00Z",
+        "event": "session_forked",
+        "from_seq": 9,
+        "forked_by": "a-field-from-the-future"
+    });
+
+    let parsed: Envelope =
+        serde_json::from_value(with_future_field).expect("unknown fields must not break the read");
+    assert_eq!(parsed.event, Event::SessionForked { from_seq: 9 });
+}
+
+/// Rule 2 — "unknown kinds MUST be ignored-and-preserved by clients (test
+/// this — send a fake kind in the golden suite)."
+///
+/// *Ignored*: parsing succeeds and the reader can keep going.
+/// *Preserved*: re-serializing reproduces the original bytes exactly, so a
+/// client that relays or re-persists a log loses nothing it did not understand.
+#[test]
+fn unknown_event_kinds_are_ignored_and_preserved() {
+    let from_the_future = serde_json::json!({
+        "v": 1,
+        "session_id": "01930000-0000-7000-8000-000000000001",
+        "seq": 42,
+        "turn_id": "01930000-0000-7000-8000-000000000002",
+        "at": "2026-01-15T12:00:00Z",
+        "event": "cache_warmed",
+        "tokens_primed": 128,
+        "nested": { "detail": ["a", "b"] }
+    });
+
+    // Ignored: it parses.
+    let parsed: Envelope = serde_json::from_value(from_the_future.clone())
+        .expect("an unknown event kind must not fail the read (docs/03)");
+
+    // The envelope around it is still fully typed and usable.
+    assert_eq!(parsed.seq, 42);
+    assert_eq!(parsed.v, PROTOCOL_VERSION);
+    assert!(parsed.event.is_unknown());
+    assert_eq!(parsed.event.kind(), Some("cache_warmed"));
+
+    // Preserved: it round-trips byte-for-byte, payload and all.
+    let reserialized = serde_json::to_value(&parsed).expect("re-serialize");
+    assert_eq!(
+        reserialized, from_the_future,
+        "an unknown event must survive a read/write cycle unchanged"
+    );
+}
+
+/// A known kind must never fall through to `Unknown` — that would turn a
+/// deserialization bug into silent data-shape loss instead of a loud failure.
+#[test]
+fn known_kinds_never_fall_through_to_unknown() {
+    for (name, envelope) in corpus() {
+        assert!(
+            !envelope.event.is_unknown(),
+            "{name} parsed as Unknown; the tag is in KNOWN_EVENT_TAGS but the \
+             variant did not match — check for a malformed field"
+        );
+        let json = serde_json::to_string(&envelope).expect("serialize");
+        let back: Envelope = serde_json::from_str(&json).expect("deserialize");
+        assert!(
+            !back.event.is_unknown(),
+            "{name} round-tripped into Unknown — the derive and the wire tag disagree"
+        );
+    }
+}
+
+/// Rule 3 — "Field removal/retype: bump `v`." Nothing enforces a bump
+/// automatically, so at minimum the version every fixture carries is pinned
+/// here: changing it is a deliberate, visible edit.
+#[test]
+fn protocol_version_is_pinned_at_1() {
+    assert_eq!(
+        PROTOCOL_VERSION, 1,
+        "bumping PROTOCOL_VERSION is a breaking protocol change — see \
+         docs/03 §Versioning discipline (dual-write for one release)"
+    );
+    for (name, envelope) in corpus() {
+        assert_eq!(envelope.v, 1, "{name} must carry v=1");
+    }
 }

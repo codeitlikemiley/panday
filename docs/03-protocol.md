@@ -52,6 +52,10 @@ pub enum Event {
     SubagentFinished { child: SessionId, result_ref: ArtifactRef },
     SessionForked { from_seq: u64 },
     Error { code: String, message: String, retryable: bool },
+    // read-tolerance: an event kind this build does not know. Captured
+    // verbatim (tag included) so it survives a read/write cycle unchanged.
+    // Never constructed deliberately — see §Versioning discipline.
+    Unknown { payload: serde_json::Map<String, Json> },
 }
 ```
 
@@ -89,6 +93,15 @@ demands it (don't pre-optimize this).
 - Field removal/retype: bump `v`, dual-write for one release. Should be rare
   to never.
 
+**How ignore-and-preserve is implemented** (M3.1): `Event::Unknown` is a
+`#[serde(untagged)]` fallback variant holding the raw object. An unrecognised
+`event` tag deserializes into it instead of failing, and re-serializing emits
+the original bytes — so an older client can relay or re-persist a newer
+server's log without losing events it cannot interpret. `Event::kind()` reports
+the tag either way; `Event::is_unknown()` distinguishes them. Known tags are
+listed in `KNOWN_EVENT_TAGS`, and the golden suite asserts every known variant
+has a fixture and that no known kind falls through to `Unknown`.
+
 ## Platform REST (sketch — full OpenAPI generated in M-plat milestones)
 
 ```
@@ -114,7 +127,7 @@ display encoding, not a second id.
 
 ## Milestones
 
-- **M3.1** `ferrum-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(types shipped; fixtures next)*
+- **M3.1** `ferrum-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(shipped: 17 fixtures in `crates/ferrum-types/tests/fixtures/`, harness in `tests/golden.rs`, plus the versioning-discipline suite — additive fields, unknown-kind tolerance, version pin.)*
 - **M3.2** `cargo xtask schemas` exports JSON Schema to `proto/`; CI diffs it (a schema change without a version note fails).
 - **M3.3** WS endpoint in harnessd: create session, stream events, resume-after-seq proven by killing the connection mid-turn.
 - **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events.
