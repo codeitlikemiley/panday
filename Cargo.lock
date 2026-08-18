@@ -786,7 +786,9 @@ name = "panday-router"
 version = "0.0.1"
 dependencies = [
  "panday-types",
+ "regex",
  "serde",
+ "serde_json",
  "serde_yaml_ng",
  "thiserror",
 ]

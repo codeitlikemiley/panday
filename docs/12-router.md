@@ -100,6 +100,28 @@ is, so it stops promising what it can't do (18).
     gateway turns that into a typed `budget_exceeded` and a graceful session
     pause (docs/11 §Quotas), rather than a 500.
 - **M12.2** Wired into gateway: `auto` resolves through rules; RouteDecision audit rows land in PG.
-- **M12.3** Heuristic classifier + confidence; misclassification harness with labeled fixtures.
+- **M12.3** Heuristic classifier + confidence; misclassification harness with labeled fixtures. ✅ *(shipped: `panday_router::classify` — `HeuristicClassifier`, `TRUST_THRESHOLD`, `classify_or_default`; harness in `crates/panday-router/tests/classification.rs`.)*
+
+  **Measured: 92% on the labelled corpus, zero confidently-wrong.** The second
+  number is the one that matters. Being wrong is tolerable; being wrong *and*
+  trusted is not, because the router acts on it and nothing downstream can
+  tell. The two it misses are genuinely ambiguous and are correctly reported
+  below the trust gate, so they fall back rather than mislead.
+
+  **Ambiguity is reported, not resolved.** When two marker families both fire —
+  "tldr on why the cargo build broke" is honestly both summarize and code — the
+  winner is returned *below* `TRUST_THRESHOLD`. Picking whichever matched one
+  more keyword would be a guess dressed as a fact.
+
+  **The corpus contains keyword traps, and they caught a real bug.** The first
+  version matched substrings, so `"legit good"` matched `git `,
+  `"class dismissed"` matched `class `, and `"can we fix a time"` matched
+  `fix` — all classified as `Code`, confidently. Markers are now regexes with
+  explicit word boundaries, and the genuinely ambiguous verbs (`fix`,
+  `implement`, `class`) were removed rather than boundary-matched, because "fix
+  a time" is ordinary English and no boundary saves it.
+
+  An earlier draft of the corpus scored 100%, which is why the hard cases exist:
+  a corpus the classifier aces measures nothing.
 - **M12.4** Scorecard generator from eval runs; the weekly review is a generated PR against the YAML.
 - **M12.5** ONNX classifier slot behind `Classifier` trait; shadow-mode comparison report (heuristic vs learned) over 1k replayed sessions.

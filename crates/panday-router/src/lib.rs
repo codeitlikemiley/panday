@@ -62,8 +62,10 @@ pub enum RouteError {
     Policy(String),
 }
 
+pub mod classify;
 pub mod policy;
 
+pub use classify::{classify_or_default, TRUST_THRESHOLD};
 pub use policy::{Policy, PolicyRouter};
 
 pub trait Router: Send + Sync {
@@ -78,27 +80,4 @@ pub trait Classifier: Send + Sync {
     fn classify(&self, req: &ChatRequest) -> (TaskClass, f32);
 }
 
-/// v1 heuristic: cheap, debuggable, replaceable.
-pub struct HeuristicClassifier;
-
-impl Classifier for HeuristicClassifier {
-    fn classify(&self, req: &ChatRequest) -> (TaskClass, f32) {
-        if !req.tools.is_empty() {
-            return (TaskClass::Code, 0.55);
-        }
-        let text_len: usize = req
-            .messages
-            .iter()
-            .flat_map(|m| &m.content)
-            .map(|b| match b {
-                panday_types::model::ContentBlock::Text { text } => text.len(),
-                _ => 0,
-            })
-            .sum();
-        if text_len > 8_000 {
-            (TaskClass::Summarize, 0.5)
-        } else {
-            (TaskClass::Chat, 0.4)
-        }
-    }
-}
+pub use classify::HeuristicClassifier;
