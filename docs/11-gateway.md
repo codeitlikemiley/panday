@@ -84,6 +84,11 @@ horizontally behind any LB.
 
 ## Milestones
 
+- **M0.1** (defined in `docs/23-roadmap.md`) wired `Gateway` — the adapter
+  registry, router integration and `UsageSink` that make the adapters below
+  reachable as one call. It is the Phase 0 exit; the milestones here refine
+  what it wires.
+
 - **M11.1** IR + one adapter (openai_compat → llama-server): stream a local completion. ✅ *(shipped: `panday_sdk::providers::openai_compat` + the `OpenAiCompat` gateway adapter — sans-IO `SseDecoder` + `ChunkTranslator`, dialect mapping, and a `HttpStreamTransport` seam with a reqwest implementation. Tests mock the transport, so the suite passes with no model running. The wire layer moved out of `panday-gateway` in M10.2 so the SDK could share it.)*
 
 - **M11.2** Anthropic adapter with cache breakpoints + usage splits; conformance fixtures for both. ✅ *(shipped: `panday_sdk::providers::anthropic` + the `Anthropic` gateway adapter; fixtures in `crates/panday-sdk/tests/fixtures/{openai_compat,anthropic}/`, replayed byte-at-a-time by `tests/conformance.rs`.)*

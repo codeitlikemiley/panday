@@ -5,6 +5,9 @@
 //! (openai_compat → llama-server).
 
 pub mod adapters;
+pub mod gateway;
+
+pub use gateway::{CollectUsage, DiscardUsage, Gateway, UsageRecord, UsageSink};
 
 use async_trait::async_trait;
 use panday_sdk::{ItemStream, PandayError};

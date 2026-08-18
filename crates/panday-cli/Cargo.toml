@@ -6,6 +6,16 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[bin]]
+# The docs say `panday chat`, `panday acp`, `panday local` — the binary must
+# actually be called that, not `panday-cli`.
+name = "panday"
+path = "src/main.rs"
+
 [dependencies]
 panday-types.workspace = true
 panday-sdk.workspace = true
+panday-gateway.workspace = true
+panday-router.workspace = true
+futures-util.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

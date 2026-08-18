@@ -517,8 +517,12 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "panday-cli"
 version = "0.0.1"
 dependencies = [
+ "futures-util",
+ "panday-gateway",
+ "panday-router",
  "panday-sdk",
  "panday-types",
+ "tokio",
 ]
 
 [[package]]
@@ -526,6 +530,8 @@ name = "panday-gateway"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "futures-core",
+ "futures-util",
  "panday-router",
  "panday-sdk",
  "panday-types",

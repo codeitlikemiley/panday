@@ -61,6 +61,16 @@ a later phase because it is more interesting than what remains in the current
 one. If the current phase looks finished, check its exit criterion literally
 before moving on.
 
+**A phase is not done when its milestones are done — it is done when its exit
+criterion holds.** These diverge: every Phase 0 milestone was green while all
+three binaries were still `println!` stubs, because the wiring that satisfies
+the exit had no milestone number. When you find such a gap, add the milestone
+(as M0.1 was added to `docs/23`) rather than leaving the work invisible.
+
+Also note the roadmap's phase lists are **selective**, not exhaustive — they
+name representative milestones. Most of the 88 milestones across the specs
+appear in no phase at all, so "not in a phase list" does not mean "not needed".
+
 Related standing traps from the same pre-mortem, worth re-reading before any
 design decision: the gateway is the engine room, not the product; no training
 before evals; invent only AEP and conform everywhere else.

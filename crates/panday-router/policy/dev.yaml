@@ -1,0 +1,32 @@
+# Dev / solo routing policy — the shape `panday chat` uses (docs/01 §Deployment
+# shapes, "Dev / solo: everything in one process").
+#
+# Differs from default.yaml in ONE way that matters: every pool entry is a
+# CONCRETE model id, not a glob. Globs need a model catalog to expand
+# (docs/12 M12.1 note, resolved at M12.2); until that exists the gateway
+# cannot call a `claude-opus-*` target, so a policy meant to actually serve
+# traffic must name real models.
+version: 1
+
+pools:
+  frontier:   [anthropic/claude-opus-4-1]
+  workhorse:  [anthropic/claude-sonnet-4-5]
+  cheap:      [together/qwen3.5-9b, local/qwen3.5-4b]
+  local-only: [local/qwen3.5-4b]
+
+rules:
+  - match: { offline: true }
+    use: local-only
+  - match: { task: route }
+    use: cheap
+  - match: { task: summarize, context_tokens: { lt: 8000 } }
+    use: cheap
+  - match: { task: code, plan: [pro, max] }
+    use: frontier
+    fallback: workhorse
+  - match: {}
+    use: workhorse
+
+constraints:
+  privacy_strict: { restrict_to: [local-only] }
+  budget_soft: { demote_to: cheap }

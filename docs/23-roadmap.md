@@ -19,6 +19,24 @@ router policy file v1 (M12.1), golden protocol fixtures (M3.1–3.2).
 and a local llama-server, with usage recorded per call. *(Yes — a chat CLI
 before the harness. It forces the whole spine.)*
 
+- **M0.1** **The spine: `panday chat` end to end.** ✅ *(shipped:
+  `panday_gateway::Gateway` — adapter registry keyed by `ModelRef` provider
+  prefix, router integration, `UsageSink`; `panday-cli` with the `chat`
+  subcommand; `crates/panday-router/policy/dev.yaml`.)*
+
+  This milestone exists because the phase's exit criterion was not covered by
+  any numbered milestone. M2.1–2.2, M3.1–3.2, M10.1–10.2, M11.1–11.2 and
+  M12.1 could all be green — and were — while the three binaries were still
+  `println!` stubs and nothing was wired together. A future session reading
+  only the milestone lists would have concluded Phase 0 was finished. Phases
+  exit on their criteria, not on their checklists; where the two diverge, the
+  criterion wins and gets a milestone of its own.
+
+  Scope deliberately excluded, each already owned elsewhere: chain failover
+  (M11.3), the Postgres ledger behind `UsageSink` (M11.4), HTTP ingress so the
+  CLI can talk to a *remote* gateway (M11.5), accounts and entitlements
+  (M17.x), and glob→model catalog resolution (M12.2).
+
 ## Phase 1 — The agent (~weeks 5–14)
 
 The product wedge. Harness state machine on fake client (M13.1), native
