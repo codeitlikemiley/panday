@@ -22,10 +22,12 @@ pub struct ReduceCtx {
 }
 
 pub mod artifact;
+pub mod reads;
 pub mod spill;
 pub mod structural;
 
 pub use artifact::{expand, ArtifactError, ArtifactStore, LineRange, MemoryArtifactStore};
+pub use reads::{hunk_diff, ReadLedger, ReadOutcome};
 pub use spill::{Reduction, SpillingReducer};
 pub use structural::{detect, Shape, StructuralReducer};
 

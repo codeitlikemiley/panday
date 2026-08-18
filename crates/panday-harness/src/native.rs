@@ -23,6 +23,19 @@ pub struct Workspace {
     /// (`grep`, `glob`), which need a directory walk the `Sandbox` trait
     /// does not expose.
     pub root: PathBuf,
+    /// What context already holds, per file (docs/15 layer 2, M15.3).
+    ///
+    /// Shared across the tools so a `write_file` can invalidate what
+    /// `read_file` believes — otherwise a re-read after a write would report
+    /// "unchanged" about content that changed.
+    pub reads: Arc<panday_reducer::ReadLedger>,
+    /// Monotonic counter standing in for the event `seq` a read is sent at.
+    ///
+    /// The tool does not know the log position, so it numbers its own reads.
+    /// The dedup message therefore cites a read ordinal rather than a true
+    /// `seq`; wiring the real one through means giving tools access to actor
+    /// state, which is a bigger change than this milestone needs.
+    read_counter: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Workspace {
@@ -31,7 +44,14 @@ impl Workspace {
             sandbox,
             handle,
             root,
+            reads: Arc::new(panday_reducer::ReadLedger::new()),
+            read_counter: Arc::new(std::sync::atomic::AtomicU64::new(1)),
         }
+    }
+
+    fn next_read_seq(&self) -> u64 {
+        self.read_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Enumerate files under the root, refusing to leave it.
@@ -153,15 +173,25 @@ impl Tool for ReadFile {
             .await
         {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                // Line numbers so the model can cite and edit precisely.
-                let numbered: String = text
-                    .lines()
-                    .enumerate()
-                    .map(|(i, l)| format!("{:>6}\t{l}", i + 1))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                ok(numbered)
+                let text = String::from_utf8_lossy(&bytes).to_string();
+
+                // Dedup against what context already holds (docs/15 layer 2).
+                // Only the NEW result shrinks — nothing already sent is
+                // rewritten, because churning a cached prefix costs more than
+                // it saves (ADR-008).
+                match self.0.reads.observe(path, &text, self.0.next_read_seq()) {
+                    panday_reducer::ReadOutcome::First(body) => {
+                        // Line numbers so the model can cite and edit precisely.
+                        let numbered: String = body
+                            .lines()
+                            .enumerate()
+                            .map(|(i, l)| format!("{:>6}\t{l}", i + 1))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        ok(numbered)
+                    }
+                    other => ok(other.text(path)),
+                }
             }
             Err(e) => err(format!("read_file({path}): {e}")),
         }
@@ -219,7 +249,13 @@ impl Tool for WriteFile {
             )
             .await
         {
-            Ok(()) => ok(format!("wrote {} bytes to {path}", content.len())),
+            Ok(()) => {
+                // Our belief about this file is now stale. Without this, a
+                // re-read after a write would report "unchanged" about content
+                // that changed — a wrong answer, not a missed saving.
+                self.0.reads.invalidate(path);
+                ok(format!("wrote {} bytes to {path}", content.len()))
+            }
             Err(e) => err(format!("write_file({path}): {e}")),
         }
     }
@@ -298,7 +334,10 @@ impl Tool for EditFile {
                     .put(&self.0.handle, PathBuf::from(path), updated.into_bytes())
                     .await
                 {
-                    Ok(()) => ok(format!("edited {path}")),
+                    Ok(()) => {
+                        self.0.reads.invalidate(path);
+                        ok(format!("edited {path}"))
+                    }
                     Err(e) => err(format!("edit_file({path}): {e}")),
                 }
             }

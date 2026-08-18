@@ -174,7 +174,26 @@ argument.
 
   A compressor whose output is *larger* than its input falls back to generic
   rather than shipping a "reduction" that costs tokens.
-- **M15.3** File-read dedup/diff-awareness wired into read/grep tools.
+- **M15.3** File-read dedup/diff-awareness wired into read/grep tools. ✅ *(shipped: `panday_reducer::reads` — `ReadLedger`, `ReadOutcome`, `hunk_diff`; wired into `read_file`, invalidated by `write_file`/`edit_file`.)*
+
+  This is the channel the JetBrains benchmark showed rtk never covered. Agents
+  re-read the same files constantly, and over a long session those re-reads
+  dominate the bill.
+
+  **Only the new result shrinks.** The original read stays verbatim in the
+  rolling window, exactly as the spec's parenthesis requires — rewriting it to
+  a stub would churn a cached prefix and re-price it at 1x instead of ~0.1x, a
+  "saving" that costs money (ADR-008).
+
+  **A write invalidates the held copy.** Reporting "unchanged" about content the
+  agent itself just replaced is a *wrong answer*, not a missed saving, so both
+  `write_file` and `edit_file` clear the belief and both are tested.
+
+  A changed re-read diffs against the **most recently sent** version, not the
+  original, so the model is never shown changes it has already seen. Diffs keep
+  ±2 lines of context and summarise the rest; a diff of two very large files
+  reports that it is too large rather than grinding through a quadratic LCS
+  table and stalling the turn.
 - **M15.4** Dollar accounting with cache-state input; per-session savings report event; dashboard tile.
 - **M15.5** Reduce-then-solve replay eval harness; nightly job + regression gate.
 - **M15.6** Semantic tier behind budget gate (provider cheap model); swap-in point defined for our tuned summarizer.

@@ -409,3 +409,128 @@ async fn a_live_model_fixes_it_unattended() {
         "the model deleted the test instead of fixing the bug"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M15.3 — read dedup wired into the real tools
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn re_reading_an_unchanged_file_returns_a_pointer_not_the_file() {
+    // docs/15 layer 2: the Read channel rtk never covered. Agents re-read the
+    // same files constantly, and in a long session those re-reads dominate.
+    let repo = staged_repo();
+    let Some((_sandbox, ws)) = jailed_workspace(repo.path()).await else {
+        return;
+    };
+    let mut registry = ToolRegistry::default();
+    register_native(&mut registry, ws);
+
+    let ctx = || panday_harness::tools::ToolCtx {
+        account: AccountId::new(),
+        session: SessionId::new(),
+        turn: panday_types::TurnId::new(),
+    };
+    let read = registry.get("read_file").unwrap();
+    let args = serde_json::json!({"path": "src/lib.rs"});
+
+    let first = read.call(ctx(), args.clone()).await;
+    assert!(first.raw.contains("sum_to"), "first read must be verbatim");
+
+    let second = read.call(ctx(), args.clone()).await;
+    assert!(
+        second.raw.contains("unchanged since"),
+        "a re-read should point at the held copy: {}",
+        second.raw
+    );
+    assert!(
+        second.raw.len() < first.raw.len() / 2,
+        "the re-read should be far smaller: {} vs {}",
+        second.raw.len(),
+        first.raw.len()
+    );
+}
+
+#[tokio::test]
+async fn a_write_invalidates_the_held_copy_so_a_re_read_is_not_falsely_unchanged() {
+    // The dangerous case: reporting "unchanged" about content that changed is
+    // a wrong answer, not merely a missed saving.
+    let repo = staged_repo();
+    let Some((_sandbox, ws)) = jailed_workspace(repo.path()).await else {
+        return;
+    };
+    let mut registry = ToolRegistry::default();
+    register_native(&mut registry, ws);
+
+    let ctx = || panday_harness::tools::ToolCtx {
+        account: AccountId::new(),
+        session: SessionId::new(),
+        turn: panday_types::TurnId::new(),
+    };
+    let read = registry.get("read_file").unwrap();
+    let edit = registry.get("edit_file").unwrap();
+    let args = serde_json::json!({"path": "src/lib.rs"});
+
+    read.call(ctx(), args.clone()).await;
+
+    let edited = edit
+        .call(
+            ctx(),
+            serde_json::json!({
+                "path": "src/lib.rs",
+                "old": "(1..n).sum()",
+                "new": "(1..=n).sum()"
+            }),
+        )
+        .await;
+    assert!(!edited.is_error, "{}", edited.raw);
+
+    let after = read.call(ctx(), args).await;
+    assert!(
+        !after.raw.contains("unchanged since"),
+        "a file edited in between must never report unchanged: {}",
+        after.raw
+    );
+    assert!(
+        after.raw.contains("1..=n"),
+        "the new content must be visible: {}",
+        after.raw
+    );
+}
+
+#[tokio::test]
+async fn write_file_also_invalidates_the_held_copy() {
+    // Same hazard as edit_file: a stale belief would report "unchanged" about
+    // content the agent itself just replaced.
+    let repo = staged_repo();
+    let Some((_sandbox, ws)) = jailed_workspace(repo.path()).await else {
+        return;
+    };
+    let mut registry = ToolRegistry::default();
+    register_native(&mut registry, ws);
+
+    let ctx = || panday_harness::tools::ToolCtx {
+        account: AccountId::new(),
+        session: SessionId::new(),
+        turn: panday_types::TurnId::new(),
+    };
+    let read = registry.get("read_file").unwrap();
+    let write = registry.get("write_file").unwrap();
+    let args = serde_json::json!({"path": "src/lib.rs"});
+
+    read.call(ctx(), args.clone()).await;
+    let wrote = write
+        .call(
+            ctx(),
+            serde_json::json!({"path": "src/lib.rs", "content": "pub fn replaced() {}"}),
+        )
+        .await;
+    assert!(!wrote.is_error, "{}", wrote.raw);
+
+    let after = read.call(ctx(), args).await;
+    assert!(
+        !after.raw.contains("unchanged since"),
+        "must not claim unchanged after a write: {}",
+        after.raw
+    );
+    assert!(after.raw.contains("replaced"), "{}", after.raw);
+}
