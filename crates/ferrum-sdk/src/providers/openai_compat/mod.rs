@@ -15,8 +15,6 @@
 //! bytes ──▶ SseDecoder ──▶ "data:" records ──▶ ChunkTranslator ──▶ StreamItem
 //! ```
 
-pub mod sse;
-pub mod transport;
 pub mod wire;
 
 use crate::{FerrumError, ItemStream, ModelClient};
@@ -25,7 +23,8 @@ use ferrum_types::model::{ChatRequest, StopReason, StreamItem};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use transport::{HttpStreamTransport, ReqwestTransport};
+use super::sse;
+use super::transport::{self, HttpStreamTransport, ReqwestTransport};
 use wire::WireChunk;
 
 /// The sentinel that ends an OpenAI-compatible stream.
@@ -108,6 +107,7 @@ impl ChunkTranslator {
                         out.push(StreamItem::ToolCallStart {
                             id: call,
                             name: name.clone(),
+                            provider_id: self.provider_ids.get(&frag.index).cloned(),
                         });
                     }
                     if let Some(args) = &func.arguments {
@@ -193,6 +193,16 @@ impl OpenAiCompatClient {
     fn endpoint(&self) -> String {
         format!("{}/v1/chat/completions", self.base_url)
     }
+
+    /// The `local` tier is this adapter pinned to loopback with no auth
+    /// (docs/11), so an absent key means no header at all rather than an
+    /// empty one — llama-server rejects a malformed `Authorization`.
+    fn headers(&self) -> Vec<(String, String)> {
+        match &self.api_key {
+            Some(key) => vec![("authorization".into(), format!("Bearer {key}"))],
+            None => Vec::new(),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -203,7 +213,7 @@ impl ModelClient for OpenAiCompatClient {
 
         let bytes = self
             .http
-            .post_sse(&self.endpoint(), self.api_key.as_deref(), body)
+            .post_sse(&self.endpoint(), &self.headers(), body)
             .await?;
 
         Ok(Box::pin(into_items(bytes)))
@@ -390,7 +400,7 @@ data: [DONE]
         let starts: Vec<_> = items
             .iter()
             .filter_map(|i| match i {
-                StreamItem::ToolCallStart { id, name } => Some((*id, name.clone())),
+                StreamItem::ToolCallStart { id, name, .. } => Some((*id, name.clone())),
                 _ => None,
             })
             .collect();
@@ -430,7 +440,7 @@ data: [DONE]
         let starts: Vec<_> = items
             .iter()
             .filter_map(|i| match i {
-                StreamItem::ToolCallStart { id, name } => Some((*id, name.clone())),
+                StreamItem::ToolCallStart { id, name, .. } => Some((*id, name.clone())),
                 _ => None,
             })
             .collect();
@@ -544,12 +554,15 @@ data: [DONE]
         async fn post_sse(
             &self,
             url: &str,
-            api_key: Option<&str>,
+            headers: &[(String, String)],
             body: Vec<u8>,
         ) -> Result<ByteStream, FerrumError> {
             *self.seen.lock().unwrap() = Some(SeenRequest {
                 url: url.to_string(),
-                api_key: api_key.map(str::to_string),
+                api_key: headers
+                    .iter()
+                    .find(|(k, _)| k == "authorization")
+                    .map(|(_, v)| v.trim_start_matches("Bearer ").to_string()),
                 body: serde_json::from_slice(&body).expect("body must be valid JSON"),
             });
             if let Some(e) = &self.fail {
@@ -578,6 +591,7 @@ data: [DONE]
                     text: "say hello".into(),
                 }],
                 call_id: None,
+                provider_call_id: None,
             }],
             tools: vec![],
             sampling: Sampling {

@@ -79,6 +79,15 @@ pub struct Message {
     /// Present on `Role::Tool` messages: which call this answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_id: Option<CallId>,
+    /// The **provider's** opaque id for that call, echoed back verbatim.
+    ///
+    /// Our `CallId` is a UUIDv7 we mint (docs/03 §Identifiers); providers
+    /// issue their own correlation tokens (`call_abc123` on Chat Completions,
+    /// `toolu_01…` on Anthropic) and will reject a tool result that does not
+    /// quote theirs. Both ids are needed: ours to key the event log, theirs to
+    /// satisfy the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_call_id: Option<String>,
 }
 
 /// Tool definition as sent to models. Schema is JSON Schema; kept as a raw
@@ -204,9 +213,25 @@ pub enum StopReason {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamItem {
-    Delta { text: String },
-    ToolCallStart { id: CallId, name: String },
-    ToolCallDelta { id: CallId, args_fragment: String },
-    Usage { usage: Usage },
-    Done { reason: StopReason },
+    Delta {
+        text: String,
+    },
+    ToolCallStart {
+        id: CallId,
+        name: String,
+        /// The provider's opaque id for this call. Carried so the harness can
+        /// echo it back on the tool result; see `Message::provider_call_id`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_id: Option<String>,
+    },
+    ToolCallDelta {
+        id: CallId,
+        args_fragment: String,
+    },
+    Usage {
+        usage: Usage,
+    },
+    Done {
+        reason: StopReason,
+    },
 }

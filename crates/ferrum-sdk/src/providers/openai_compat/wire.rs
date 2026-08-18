@@ -101,10 +101,11 @@ fn to_wire_message(m: &Message) -> WireMessage {
     WireMessage {
         role: role_str(m.role),
         content: flatten(&m.content),
-        // The IR's CallId is a UUID; this dialect's ids are opaque strings.
-        // Rendering the UUID is lossless in this direction. See the note on
-        // `provider_call_id` in the parent module for the inbound direction.
-        tool_call_id: m.call_id.map(|c| c.0.to_string()),
+        // Quote the PROVIDER's id, never our UUID — the server issued
+        // `call_abc123` and will reject anything else. Falling back to our
+        // UUID would be wrong on the wire, so an absent provider id stays
+        // absent and the server tells us plainly.
+        tool_call_id: m.provider_call_id.clone(),
     }
 }
 
@@ -258,6 +259,7 @@ mod tests {
                 role: Role::User,
                 content: vec![ContentBlock::Text { text: "hi".into() }],
                 call_id: None,
+                provider_call_id: None,
             }],
             tools: vec![],
             sampling: Sampling::default(),

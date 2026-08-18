@@ -108,6 +108,7 @@ pub fn fold(events: &[Envelope]) -> SessionState {
                 call_id,
                 tool,
                 args,
+                ..
             } => {
                 s.phase = Phase::Executing;
                 s.steps_this_turn += 1;
@@ -208,6 +209,7 @@ mod tests {
                     call_id: call,
                     tool: "bash".into(),
                     args: serde_json::json!({"cmd": "cargo test"}),
+                    provider_call_id: None,
                 },
             ),
             env(
@@ -286,6 +288,7 @@ mod tests {
                     call_id: call,
                     tool: "bash".into(),
                     args: serde_json::json!({"cmd": "sleep 999"}),
+                    provider_call_id: None,
                 },
             ),
             env(
@@ -327,6 +330,7 @@ mod tests {
                     call_id: call,
                     tool: "write_file".into(),
                     args: serde_json::json!({"path": "x"}),
+                    provider_call_id: None,
                 },
             ),
             env(
@@ -370,6 +374,7 @@ mod tests {
                     call_id: call,
                     tool: "bash".into(),
                     args: serde_json::json!({"cmd": "cargo build"}),
+                    provider_call_id: None,
                 },
             ),
             // crash here: no ToolResult

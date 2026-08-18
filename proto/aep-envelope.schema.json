@@ -115,6 +115,13 @@
           "type": "string"
         },
         "args": true,
+        "provider_call_id": {
+          "description": "The provider's opaque id for this call, when one issued it.\n\nAdditive field (docs/03 §Versioning: \"Additive fields: always\nok\"), so no `v` bump. It is required for correctness, not\nconvenience: state is a fold over the log, and a session resumed\nfrom events alone must be able to answer the provider's tool call.\nWithout this the id would live only in adapter memory and a\nresumed turn could never reply.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "event": {
           "type": "string",
           "const": "tool_call"

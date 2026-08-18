@@ -202,6 +202,7 @@ mod tests {
                 role: Role::User,
                 content: vec![ContentBlock::Text { text: "hi".into() }],
                 call_id: None,
+                provider_call_id: None,
             }],
             tools: vec![],
             sampling: Sampling::default(),

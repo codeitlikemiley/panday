@@ -12,7 +12,8 @@
 //! the base URL and that the bearer token is a ferrum API key.
 
 use crate::middleware::{ModelClientExt, RetryPolicy};
-use crate::providers::openai_compat::{transport::HttpStreamTransport, OpenAiCompatClient};
+use crate::providers::openai_compat::OpenAiCompatClient;
+use crate::providers::transport::HttpStreamTransport;
 use crate::{FerrumError, ItemStream, ModelClient};
 use ferrum_types::model::ChatRequest;
 use std::sync::Arc;
@@ -68,7 +69,7 @@ pub fn connect(base_url: impl Into<String>, api_key: Option<String>) -> Box<dyn 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::openai_compat::transport::ByteStream;
+    use crate::providers::transport::ByteStream;
     use ferrum_types::id::{AccountId, RequestId};
     use ferrum_types::model::{
         CallMeta, ContentBlock, Message, ModelRef, Role, Sampling, StopReason, StreamItem,
@@ -86,10 +87,14 @@ mod tests {
         async fn post_sse(
             &self,
             url: &str,
-            api_key: Option<&str>,
+            headers: &[(String, String)],
             _body: Vec<u8>,
         ) -> Result<ByteStream, FerrumError> {
-            *self.seen.lock().unwrap() = Some((url.to_string(), api_key.map(str::to_string)));
+            let key = headers
+                .iter()
+                .find(|(k, _)| k == "authorization")
+                .map(|(_, v)| v.trim_start_matches("Bearer ").to_string());
+            *self.seen.lock().unwrap() = Some((url.to_string(), key));
             let chunks: Vec<Result<Vec<u8>, FerrumError>> = vec![Ok(self.body.clone())];
             Ok(Box::pin(futures_util::stream::iter(chunks)))
         }
@@ -110,6 +115,7 @@ data: [DONE]
                 role: Role::User,
                 content: vec![ContentBlock::Text { text: "hi".into() }],
                 call_id: None,
+                provider_call_id: None,
             }],
             tools: vec![],
             sampling: Sampling::default(),

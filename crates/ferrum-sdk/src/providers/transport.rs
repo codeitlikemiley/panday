@@ -15,15 +15,18 @@ pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Vec<u8>, FerrumError>> + 
 
 /// Issues one streaming POST and hands back the body.
 ///
-/// Deliberately narrow: no retries, no timeouts, no auth logic. Those are
-/// middleware concerns that live in the gateway's tower stack (docs/10 Layer
-/// 2, M10.2), not in a dialect adapter.
+/// Deliberately narrow: no retries, no timeouts, no auth policy. Retry and
+/// timeout are middleware (`crate::middleware`), and *which* headers carry
+/// credentials is the dialect's business — Chat Completions uses
+/// `Authorization: Bearer`, Anthropic uses `x-api-key` plus a required
+/// `anthropic-version`. So the caller supplies headers and this just sends
+/// them.
 #[async_trait::async_trait]
 pub trait HttpStreamTransport: Send + Sync {
     async fn post_sse(
         &self,
         url: &str,
-        api_key: Option<&str>,
+        headers: &[(String, String)],
         body: Vec<u8>,
     ) -> Result<ByteStream, FerrumError>;
 }
@@ -53,7 +56,7 @@ impl Default for ReqwestTransport {
 fn transport_error(e: reqwest::Error) -> FerrumError {
     let retryable = e.is_timeout() || e.is_connect() || e.is_request();
     FerrumError::Provider {
-        upstream: "openai_compat".into(),
+        upstream: "http".into(),
         message: e.to_string(),
         retryable,
     }
@@ -67,7 +70,7 @@ fn status_error(status: reqwest::StatusCode, body: String) -> FerrumError {
         return FerrumError::RateLimited { retry_after_ms: 0 };
     }
     FerrumError::Provider {
-        upstream: "openai_compat".into(),
+        upstream: "http".into(),
         message: format!("HTTP {status}: {body}"),
         // 5xx and 408 are worth another target; 4xx will fail identically.
         retryable: status.is_server_error() || status == reqwest::StatusCode::REQUEST_TIMEOUT,
@@ -79,7 +82,7 @@ impl HttpStreamTransport for ReqwestTransport {
     async fn post_sse(
         &self,
         url: &str,
-        api_key: Option<&str>,
+        headers: &[(String, String)],
         body: Vec<u8>,
     ) -> Result<ByteStream, FerrumError> {
         let mut req = self
@@ -89,10 +92,8 @@ impl HttpStreamTransport for ReqwestTransport {
             .header(reqwest::header::ACCEPT, "text/event-stream")
             .body(body);
 
-        // The `local` adapter is openai_compat pinned to loopback with no auth
-        // (docs/11), so the key is optional rather than required.
-        if let Some(key) = api_key {
-            req = req.bearer_auth(key);
+        for (name, value) in headers {
+            req = req.header(name, value);
         }
 
         let resp = req.send().await.map_err(transport_error)?;

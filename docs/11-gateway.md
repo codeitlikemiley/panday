@@ -84,17 +84,28 @@ horizontally behind any LB.
 
 ## Milestones
 
-- **M11.1** IR + one adapter (openai_compat → llama-server): stream a local completion. ✅ *(shipped: `crates/ferrum-gateway/src/adapters/openai_compat/` — sans-IO `SseDecoder` + `ChunkTranslator`, dialect mapping, and a `HttpStreamTransport` seam with a reqwest implementation. Tests mock the transport, so the suite passes with no model running.)*
+- **M11.1** IR + one adapter (openai_compat → llama-server): stream a local completion. ✅ *(shipped: `ferrum_sdk::providers::openai_compat` + the `OpenAiCompat` gateway adapter — sans-IO `SseDecoder` + `ChunkTranslator`, dialect mapping, and a `HttpStreamTransport` seam with a reqwest implementation. Tests mock the transport, so the suite passes with no model running. The wire layer moved out of `ferrum-gateway` in M10.2 so the SDK could share it.)*
 
-  **Known gap carried forward:** the IR's `CallId` is a UUID (docs/03
-  §Identifiers) but this dialect's tool-call ids are opaque strings
-  (`call_abc123`), and `StreamItem::ToolCallStart` has nowhere to carry the
-  original. The adapter mints a UUID and keeps the provider's string
-  recoverable via `ChunkTranslator::provider_call_id`, which is enough to
-  stream but not to echo `tool_call_id` back through a multi-turn tool loop.
-  Closing it means an IR field — decide it in M11.2/M11.3, when the Anthropic
-  adapter and chain-failover make the requirement concrete.
-- **M11.2** Anthropic adapter with cache breakpoints + usage splits; conformance fixtures for both.
+- **M11.2** Anthropic adapter with cache breakpoints + usage splits; conformance fixtures for both. ✅ *(shipped: `ferrum_sdk::providers::anthropic` + the `Anthropic` gateway adapter; fixtures in `crates/ferrum-sdk/tests/fixtures/{openai_compat,anthropic}/`, replayed byte-at-a-time by `tests/conformance.rs`.)*
+
+  **The M11.1 tool-call-id gap is closed.** `StreamItem::ToolCallStart` gained
+  `provider_id` and `Message` gained `provider_call_id`; `Event::ToolCall`
+  carries `provider_call_id` too, because state is a fold over the log and a
+  session resumed from events alone must be able to answer a provider's tool
+  call. All three are additive optional fields, so no `v` bump (docs/03
+  §Versioning). Adapters now quote the provider's own id — `call_abc123` on
+  Chat Completions, `toolu_01…` on Anthropic — instead of our UUID, which no
+  provider ever issued.
+
+  **Usage normalization is the load-bearing difference between the two.**
+  Chat Completions reports `cached_tokens` as a subset of `prompt_tokens`;
+  Anthropic reports fresh input, cache reads and cache writes as *disjoint*
+  counts. The Anthropic adapter sums them into `input_tokens` per the
+  `Usage` CONVENTION. Getting this wrong under-reports input by exactly the
+  cached portion, which on a long agent session is most of it. Cache writes
+  are split by TTL tier because they price differently (1.25x at 5m, 2x at
+  1h); the flat `cache_creation_input_tokens` form is attributed to the 5m
+  tier, since over-charging a tenant on a guess is worse than under-charging.
 - **M11.3** Router integration (12) with chain-failover; kill-a-provider chaos test passes (session degrades, never errors to user).
 - **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures.
 - **M11.5** OpenAI-compat ingress; aider-against-ferrum smoke test.

@@ -95,6 +95,16 @@ pub enum Event {
         call_id: CallId,
         tool: String,
         args: Json,
+        /// The provider's opaque id for this call, when one issued it.
+        ///
+        /// Additive field (docs/03 §Versioning: "Additive fields: always
+        /// ok"), so no `v` bump. It is required for correctness, not
+        /// convenience: state is a fold over the log, and a session resumed
+        /// from events alone must be able to answer the provider's tool call.
+        /// Without this the id would live only in adapter memory and a
+        /// resumed turn could never reply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_call_id: Option<String>,
     },
     ToolResult {
         call_id: CallId,

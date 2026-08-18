@@ -128,6 +128,7 @@ fn corpus() -> Vec<(&'static str, Envelope)> {
                     call_id: call(),
                     tool: "run_tests".into(),
                     args: serde_json::json!({ "package": "ferrum-types" }),
+                    provider_call_id: Some("toolu_01ABCdefGHIjklMNOpqr".into()),
                 })
             },
         ),

@@ -4,4 +4,5 @@
 //! belong to us. Four dialects total (`anthropic`, `openai`, `openai_compat`,
 //! `local`); `local` is `openai_compat` pinned to loopback with no auth.
 
+pub mod anthropic;
 pub mod openai_compat;

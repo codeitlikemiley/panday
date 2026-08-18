@@ -36,7 +36,8 @@ pub enum Event {
     AssistantMessage { content: Vec<ContentBlock>, usage: Usage },
     // tools  (tool names are plain strings in v1; a ToolName newtype is a
     // planned tightening, not a shipped one)
-    ToolCall { call_id: CallId, tool: String, args: Json },
+    ToolCall { call_id: CallId, tool: String, args: Json,
+               provider_call_id: Option<String> },  // the provider's opaque id
     ToolResult { call_id: CallId, output: ReducedOutput, raw_ref: Option<ArtifactRef>,
                  duration_ms: u64, is_error: bool },
     // control
@@ -61,6 +62,11 @@ pub enum Event {
 
 Design rules, each one load-bearing:
 
+- **Two ids per tool call.** `call_id` is ours (UUIDv7, the log's key);
+  `provider_call_id` is the provider's opaque token (`call_abc123`,
+  `toolu_01…`), which must be quoted verbatim to answer the call. It lives on
+  the event, not just in adapter memory, because a session resumed from the
+  log alone must still be able to reply (M11.2).
 - **Append-only, gapless `seq`.** Clients resume with `?after_seq=N`; the
   server replays. There is no other sync mechanism and none is needed.
 - **Deltas are ephemeral; messages are durable.** `AssistantDelta` streams to
