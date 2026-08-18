@@ -36,7 +36,7 @@ Infrastructure before any training run:
 
 - **Harnesses**: `inspect-ai` (UK AISI) for agentic/tool-use evals — sandboxed
   scoring fits us natively; `lighteval` (HF) for standard benchmarks; both
-  run via `training/evals/` and hit models **through ferrum-gateway** (so
+  run via `training/evals/` and hit models **through panday-gateway** (so
   evals exercise routing, caching, and adapters — three birds).
 - **Suites we own** (versioned in-repo, grown from real transcripts):
   `route-bench` (task-classification accuracy), `reduce-bench`
@@ -163,7 +163,7 @@ training/                    # Python uv project — the ONE Python island (ADR-
 Format: OpenAI-style `messages` JSONL everywhere (tool-call turns preserved
 natively — never flattened to text). Dataset builders emit provenance +
 license fields per example; `semhash` dedup + n-gram decontam runs in the
-builder, not as an afterthought. Orchestration: Rust `ferrum-models` CLI (or
+builder, not as an afterthought. Orchestration: Rust `panday-models` CLI (or
 just `just` recipes at first) submits jobs to Modal/HF Jobs and pulls
 artifacts; CI runs eval gates nightly.
 

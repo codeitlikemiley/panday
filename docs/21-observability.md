@@ -38,12 +38,12 @@ Prometheus endpoint per service; Grafana dashboards checked into `deploy/`.
 ## Logs
 
 `tracing` JSON to stdout, shipped by the platform (Loki/Vector at first).
-Content-free by default; `FERRUM_DEBUG_CONTENT=1` per-service for local dev
+Content-free by default; `PANDAY_DEBUG_CONTENT=1` per-service for local dev
 only (refuses to start with it set in `env=production`).
 
 ## The replay tool (the killer feature)
 
-`ferrum replay <session_id>` — renders any session's event log as the CLI
+`panday replay <session_id>` — renders any session's event log as the CLI
 would have shown it, with `--at seq` time travel, `--diff` between two
 replays (e.g., before/after a reducer change), and `--costs` per-turn ledger
 overlay. Built once in phase 2 against the fold; pays for itself the first
@@ -54,6 +54,6 @@ preference (ADR-002).
 
 - **M21.1** tracing + OTLP wired in gateway/harness; spans carry the id scheme; local Tempo compose.
 - **M21.2** Prometheus metrics for the table above; first Grafana board (cost + cache ratio).
-- **M21.3** `ferrum replay` v1 (render + time-travel).
+- **M21.3** `panday replay` v1 (render + time-travel).
 - **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing.
 - **M21.5** Content-scrub audit: grep-proof that no content fields leak into spans/logs at default levels.

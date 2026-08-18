@@ -100,7 +100,7 @@ TensorZero (archived Jun 2026 — cautionary). Our gateway must integrate the
 router, the credit ledger, entitlements, and per-tenant budget stops — the
 commercial core.
 
-**Decision.** Build `ferrum-gateway` (11). Provider adapters are a small,
+**Decision.** Build `panday-gateway` (11). Provider adapters are a small,
 well-understood surface (~4 dialects); the value is in what wraps them, which
 is precisely what we can't outsource. Crib test suites and edge-case handling
 from the open Rust gateways.
@@ -209,8 +209,8 @@ tune button; in exchange the offline tier inherits every model we ever train.
 **Context.** Building N clients is the classic startup death. ACP v1 is
 stable with an official Rust crate and 13 editors on the client side.
 
-**Decision.** `ferrum-cli` is a ratatui TUI *and* speaks ACP over stdio.
-One codebase, `ferrum acp` subcommand, every ACP editor becomes a surface.
+**Decision.** `panday-cli` is a ratatui TUI *and* speaks ACP over stdio.
+One codebase, `panday acp` subcommand, every ACP editor becomes a surface.
 
 **Consequences.** Editor UX is bounded by what ACP models (fine for phase 1-2).
 The web client waits until the platform phase, as decided.

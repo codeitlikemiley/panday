@@ -8,10 +8,10 @@ the lessons, not the dependency.
 
 | What | Why it must be ours |
 |---|---|
-| ferrum-harness | THE product. Event-sourced loop, permissions, budgets — the behavior users choose us for. |
-| ferrum-gateway | The commercial choke point: metering, budgets, failover, audit. (ADR-006) |
-| ferrum-router | Routing IS the margin in a subscription business. |
-| ferrum-reducer | Direct COGS lever; cache-aware accounting nobody ships off-the-shelf. |
+| panday-harness | THE product. Event-sourced loop, permissions, budgets — the behavior users choose us for. |
+| panday-gateway | The commercial choke point: metering, budgets, failover, audit. (ADR-006) |
+| panday-router | Routing IS the margin in a subscription business. |
+| panday-reducer | Direct COGS lever; cache-aware accounting nobody ships off-the-shelf. |
 | AEP protocol | Our event vocabulary; resume/replay/billing hang off it. Only invention allowed. |
 | Ledger & entitlements | Money truth. Never outsource truth. |
 | T2/T3 sandbox integration | The *policy layer* is ours; mechanisms adopted below. |

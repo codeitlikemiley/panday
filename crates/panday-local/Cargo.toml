@@ -1,0 +1,12 @@
+[package]
+name = "panday-local"
+description = "The offline composition: harness + gateway-lite + local model supervisor in one binary. Spec: docs/18-local.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+panday-harness.workspace = true
+panday-sdk.workspace = true

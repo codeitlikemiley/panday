@@ -1,7 +1,7 @@
-# Ferrum — a Rust AI platform, built from first principles
+# Panday — a Rust AI platform, built from first principles
 
-> **Ferrum** (Fe — iron; the thing rust comes from) is the working codename.
-> Every crate is prefixed `ferrum-`; one `sed -i 's/ferrum/yourname/g'` renames the world.
+> **Panday** (Fe — iron; the thing rust comes from) is the working codename.
+> Every crate is prefixed `panday-`; one `sed -i 's/panday/yourname/g'` renames the world.
 
 This repository is the blueprint and the seed of a full AI infrastructure
 platform: an agent harness, an LLM gateway with a model router, a tiered
@@ -36,9 +36,9 @@ Read in this order:
 
 One binary-per-service Rust platform where:
 
-- Every model call goes through **your** gateway (`ferrum-gateway`) — cost
+- Every model call goes through **your** gateway (`panday-gateway`) — cost
   attribution, caching, failover, and the router live there.
-- The agent loop (`ferrum-harness`) is an event-sourced state machine — every
+- The agent loop (`panday-harness`) is an event-sourced state machine — every
   session is an append-only log you can replay, resume, branch, and audit.
 - Tool output passes through a **reducer** before it touches context — the
   token bill is a first-class engineering target, measured against real

@@ -1,4 +1,4 @@
-# 11 — ferrum-gateway
+# 11 — panday-gateway
 
 Every model call in the company goes through this service. It is the cost
 meter, the policy gate, the cache, the failover switch, and the audit source —
@@ -12,7 +12,7 @@ ChatRequest
   → authn (API key / service token)          — who
   → entitlements + budget check (ledger)     — may they    [fail CLOSED for API keys,
   → redaction hooks (optional per-tenant)    — DLP           fail OPEN for our harness]
-  → route (ferrum-router)                    — where to
+  → route (panday-router)                    — where to
   → cache lookup (exact; semantic later)     — maybe free
   → provider adapter (stream)                — do it
   → usage capture (incl. cache splits)       — what it cost
@@ -72,7 +72,7 @@ post-flight (reconcile actual). Budget stop mid-session emits a typed
 ## Also serves: OpenAI-compatible ingress
 
 `POST /v1/chat/completions` accepting the standard dialect, mapped to IR.
-Any existing tool (aider, continue.dev, curl scripts) can point at ferrum
+Any existing tool (aider, continue.dev, curl scripts) can point at panday
 with an API key and inherit routing/metering/caching. This is the platform's
 cheapest adoption wedge and its best A/B harness (compare us vs direct).
 
@@ -84,9 +84,9 @@ horizontally behind any LB.
 
 ## Milestones
 
-- **M11.1** IR + one adapter (openai_compat → llama-server): stream a local completion. ✅ *(shipped: `ferrum_sdk::providers::openai_compat` + the `OpenAiCompat` gateway adapter — sans-IO `SseDecoder` + `ChunkTranslator`, dialect mapping, and a `HttpStreamTransport` seam with a reqwest implementation. Tests mock the transport, so the suite passes with no model running. The wire layer moved out of `ferrum-gateway` in M10.2 so the SDK could share it.)*
+- **M11.1** IR + one adapter (openai_compat → llama-server): stream a local completion. ✅ *(shipped: `panday_sdk::providers::openai_compat` + the `OpenAiCompat` gateway adapter — sans-IO `SseDecoder` + `ChunkTranslator`, dialect mapping, and a `HttpStreamTransport` seam with a reqwest implementation. Tests mock the transport, so the suite passes with no model running. The wire layer moved out of `panday-gateway` in M10.2 so the SDK could share it.)*
 
-- **M11.2** Anthropic adapter with cache breakpoints + usage splits; conformance fixtures for both. ✅ *(shipped: `ferrum_sdk::providers::anthropic` + the `Anthropic` gateway adapter; fixtures in `crates/ferrum-sdk/tests/fixtures/{openai_compat,anthropic}/`, replayed byte-at-a-time by `tests/conformance.rs`.)*
+- **M11.2** Anthropic adapter with cache breakpoints + usage splits; conformance fixtures for both. ✅ *(shipped: `panday_sdk::providers::anthropic` + the `Anthropic` gateway adapter; fixtures in `crates/panday-sdk/tests/fixtures/{openai_compat,anthropic}/`, replayed byte-at-a-time by `tests/conformance.rs`.)*
 
   **The M11.1 tool-call-id gap is closed.** `StreamItem::ToolCallStart` gained
   `provider_id` and `Message` gained `provider_call_id`; `Event::ToolCall`
@@ -108,5 +108,5 @@ horizontally behind any LB.
   tier, since over-charging a tenant on a guess is worse than under-charging.
 - **M11.3** Router integration (12) with chain-failover; kill-a-provider chaos test passes (session degrades, never errors to user).
 - **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures.
-- **M11.5** OpenAI-compat ingress; aider-against-ferrum smoke test.
+- **M11.5** OpenAI-compat ingress; aider-against-panday smoke test.
 - **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core.

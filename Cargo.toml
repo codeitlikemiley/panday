@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/ferrum-types",
-    "crates/ferrum-sdk",
-    "crates/ferrum-router",
-    "crates/ferrum-reducer",
-    "crates/ferrum-sandbox",
-    "crates/ferrum-harness",
-    "crates/ferrum-harnessd",
-    "crates/ferrum-plugins",
-    "crates/ferrum-gateway",
-    "crates/ferrum-platform",
-    "crates/ferrum-local",
-    "crates/ferrum-cli",
+    "crates/panday-types",
+    "crates/panday-sdk",
+    "crates/panday-router",
+    "crates/panday-reducer",
+    "crates/panday-sandbox",
+    "crates/panday-harness",
+    "crates/panday-harnessd",
+    "crates/panday-plugins",
+    "crates/panday-gateway",
+    "crates/panday-platform",
+    "crates/panday-local",
+    "crates/panday-cli",
     "xtask",
 ]
 
@@ -24,13 +24,13 @@ repository = ""
 publish = false                 # nothing here goes to a registry (docs/00 §Naming)
 
 [workspace.dependencies]
-ferrum-types = { path = "crates/ferrum-types" }
-ferrum-sdk = { path = "crates/ferrum-sdk" }
-ferrum-router = { path = "crates/ferrum-router" }
-ferrum-reducer = { path = "crates/ferrum-reducer" }
-ferrum-sandbox = { path = "crates/ferrum-sandbox" }
-ferrum-harness = { path = "crates/ferrum-harness" }
-ferrum-plugins = { path = "crates/ferrum-plugins" }
+panday-types = { path = "crates/panday-types" }
+panday-sdk = { path = "crates/panday-sdk" }
+panday-router = { path = "crates/panday-router" }
+panday-reducer = { path = "crates/panday-reducer" }
+panday-sandbox = { path = "crates/panday-sandbox" }
+panday-harness = { path = "crates/panday-harness" }
+panday-plugins = { path = "crates/panday-plugins" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -49,7 +49,7 @@ time = { version = "0.3", features = ["serde-well-known", "macros"] }
 # Router policy files are YAML (docs/12). Upstream serde_yaml is deprecated;
 # serde_yaml_ng is its maintained continuation with the same derive API.
 serde_yaml_ng = "0.10"
-# Optional in ferrum-types (feature `schema`), so the near-zero-dependency rule
+# Optional in panday-types (feature `schema`), so the near-zero-dependency rule
 # in docs/02 still holds for every normal build; only `cargo xtask schemas`
 # turns it on.
 schemars = { version = "1", features = ["preserve_order"] }

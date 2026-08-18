@@ -1,4 +1,4 @@
-# 14 — ferrum-sandbox
+# 14 — panday-sandbox
 
 Four different trust problems wear the same trait. Tier is chosen per tool
 call by `ToolReq.sandbox_tier` × deployment shape (ADR-004).
@@ -81,7 +81,7 @@ type error.
 - **M14.1** Trait ✅ + T0 (path-policied native tools) + policy types; unit-tested FS scoping.
 - **M14.2** T2 Linux: namespaces + seccomp + egress proxy; escape suite green; `bash` tool runs through it.
 - **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite.
-- **M14.4** T1 wasmtime: WIT world for plugin tools (`ferrum:plugin/tool`), fuel + epoch limits; a demo plugin tool runs.
+- **M14.4** T1 wasmtime: WIT world for plugin tools (`panday:plugin/tool`), fuel + epoch limits; a demo plugin tool runs.
 - **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95.
 - **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo.
 - **M14.7** sandbox-seconds metering events → ledger (17).

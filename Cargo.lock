@@ -118,139 +118,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "ferrum-cli"
-version = "0.0.1"
-dependencies = [
- "ferrum-sdk",
- "ferrum-types",
-]
-
-[[package]]
-name = "ferrum-gateway"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "ferrum-router",
- "ferrum-sdk",
- "ferrum-types",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "ferrum-harness"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "ferrum-reducer",
- "ferrum-sandbox",
- "ferrum-sdk",
- "ferrum-types",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "ferrum-harnessd"
-version = "0.0.1"
-dependencies = [
- "ferrum-harness",
- "ferrum-sdk",
- "ferrum-types",
-]
-
-[[package]]
-name = "ferrum-local"
-version = "0.0.1"
-dependencies = [
- "ferrum-harness",
- "ferrum-sdk",
- "ferrum-types",
-]
-
-[[package]]
-name = "ferrum-platform"
-version = "0.0.1"
-dependencies = [
- "ferrum-types",
- "serde",
- "serde_json",
- "thiserror",
- "time",
- "uuid",
-]
-
-[[package]]
-name = "ferrum-plugins"
-version = "0.0.1"
-dependencies = [
- "ferrum-types",
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "ferrum-reducer"
-version = "0.0.1"
-dependencies = [
- "ferrum-types",
- "serde",
-]
-
-[[package]]
-name = "ferrum-router"
-version = "0.0.1"
-dependencies = [
- "ferrum-types",
- "serde",
- "serde_yaml_ng",
- "thiserror",
-]
-
-[[package]]
-name = "ferrum-sandbox"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "ferrum-types",
- "futures-core",
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "ferrum-sdk"
-version = "0.0.1"
-dependencies = [
- "async-trait",
- "ferrum-types",
- "futures-core",
- "futures-util",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "ferrum-types"
-version = "0.0.1"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
- "time",
- "uuid",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -645,6 +512,139 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "panday-cli"
+version = "0.0.1"
+dependencies = [
+ "panday-sdk",
+ "panday-types",
+]
+
+[[package]]
+name = "panday-gateway"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "panday-router",
+ "panday-sdk",
+ "panday-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "panday-harness"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "panday-reducer",
+ "panday-sandbox",
+ "panday-sdk",
+ "panday-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "panday-harnessd"
+version = "0.0.1"
+dependencies = [
+ "panday-harness",
+ "panday-sdk",
+ "panday-types",
+]
+
+[[package]]
+name = "panday-local"
+version = "0.0.1"
+dependencies = [
+ "panday-harness",
+ "panday-sdk",
+ "panday-types",
+]
+
+[[package]]
+name = "panday-platform"
+version = "0.0.1"
+dependencies = [
+ "panday-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "uuid",
+]
+
+[[package]]
+name = "panday-plugins"
+version = "0.0.1"
+dependencies = [
+ "panday-types",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "panday-reducer"
+version = "0.0.1"
+dependencies = [
+ "panday-types",
+ "serde",
+]
+
+[[package]]
+name = "panday-router"
+version = "0.0.1"
+dependencies = [
+ "panday-types",
+ "serde",
+ "serde_yaml_ng",
+ "thiserror",
+]
+
+[[package]]
+name = "panday-sandbox"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "futures-core",
+ "panday-types",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "panday-sdk"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "futures-core",
+ "futures-util",
+ "panday-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "panday-types"
+version = "0.0.1"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "uuid",
+]
 
 [[package]]
 name = "percent-encoding"
@@ -1546,7 +1546,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 name = "xtask"
 version = "0.0.1"
 dependencies = [
- "ferrum-types",
+ "panday-types",
  "schemars",
  "serde_json",
 ]

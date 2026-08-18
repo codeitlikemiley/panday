@@ -1,0 +1,11 @@
+[package]
+name = "panday-cli"
+description = "The terminal client (ratatui) + ACP server. Spec: docs/16-plugins.md §ACP, ADR-012"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+panday-sdk.workspace = true

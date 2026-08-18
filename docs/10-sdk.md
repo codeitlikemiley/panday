@@ -1,4 +1,4 @@
-# 10 — ferrum-sdk
+# 10 — panday-sdk
 
 The client library. Three audiences, one crate: (a) our own services calling
 models through the gateway, (b) our clients (CLI, future web) talking to the
@@ -16,7 +16,7 @@ of OUR platform — model IR, AEP sessions, entitlement-aware errors — which n
 general-purpose crate models. The provider-adapter layer we'd reuse is the
 easy 20%.
 
-## Layer 1 — Model IR (`ferrum-types::model`)
+## Layer 1 — Model IR (`panday-types::model`)
 
 One request/response vocabulary across Anthropic, OpenAI-compat, and local:
 
@@ -48,7 +48,7 @@ ledger prices them differently (ADR-007/008).
 ## Layer 2 — Transport client
 
 ```rust
-let client = Ferrum::builder()
+let client = Panday::builder()
     .base_url(env)                 // gateway URL; local daemon in offline mode
     .api_key(key)
     .middleware(Retry::default())  // tower stack: retry w/ jitter, timeout,
@@ -61,7 +61,7 @@ let vecs = client.embed(EmbedRequest { .. }).await?;
 
 Middleware composes, and the same stack runs inside the gateway's adapters
 (write once, use both sides) — the wire layer lives in
-`ferrum_sdk::providers`, which `ferrum-gateway`'s adapters wrap.
+`panday_sdk::providers`, which `panday-gateway`'s adapters wrap.
 
 **Implemented as `ModelClient` decorators, not `tower::Service`** (M10.2).
 Retry can only ever wrap the call that *establishes* a stream, never the
@@ -101,7 +101,7 @@ For customers who want the loop in-process rather than calling our hosted
 harness:
 
 ```rust
-#[ferrum::tool]                       // proc-macro: schema from types via schemars
+#[panday::tool]                       // proc-macro: schema from types via schemars
 /// Look up an order by id.
 async fn lookup_order(ctx: &ToolCtx, order_id: String) -> Result<Order> { ... }
 
@@ -113,13 +113,13 @@ let agent = Agent::builder()
 let run = agent.run(session, "where is order 123?").await?;
 ```
 
-This embeds `ferrum-harness` (13) with in-memory event storage — the same
+This embeds `panday-harness` (13) with in-memory event storage — the same
 state machine that powers the cloud, which is the honesty guarantee: our
 hosted product and the embedded SDK cannot drift because they are one crate.
 
 ## Errors
 
-One `enum FerrumError` with stable `code` strings mirroring the wire:
+One `enum PandayError` with stable `code` strings mirroring the wire:
 `rate_limited { retry_after }`, `budget_exceeded { balance }`,
 `entitlement_denied { plan, needed }`, `model_unavailable { tried: Vec<_> }`,
 `permission_denied`, `provider { upstream, retryable }`. Retryability is a
@@ -128,10 +128,10 @@ method, not a guess.
 ## Milestones
 
 - **M10.1** Model IR + streaming trait compile ✅ *(in workspace)*; round-trip serde tests.
-- **M10.2** Gateway transport with retry/timeout middleware; streams a real completion end to end via one provider. ✅ *(shipped: `ferrum_sdk::gateway::GatewayTransport` + `connect()`, `ferrum_sdk::middleware::{Retry, Timeout}`. The wire layer moved from `ferrum-gateway` to `ferrum_sdk::providers` so both sides share it.)*
-- **M10.3** Sessions client over WS with resume-after-seq; used by ferrum-cli (dogfood — the CLI has no private APIs).
-- **M10.4** `#[ferrum::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures.
-- **M10.5** Embedded Agent runs a 3-tool loop offline against `ferrum local`.
+- **M10.2** Gateway transport with retry/timeout middleware; streams a real completion end to end via one provider. ✅ *(shipped: `panday_sdk::gateway::GatewayTransport` + `connect()`, `panday_sdk::middleware::{Retry, Timeout}`. The wire layer moved from `panday-gateway` to `panday_sdk::providers` so both sides share it.)*
+- **M10.3** Sessions client over WS with resume-after-seq; used by panday-cli (dogfood — the CLI has no private APIs).
+- **M10.4** `#[panday::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures.
+- **M10.5** Embedded Agent runs a 3-tool loop offline against `panday local`.
 - **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline.
 
 Acceptance across all: no public API returns a provider-specific type; a

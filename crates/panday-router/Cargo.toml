@@ -1,0 +1,13 @@
+[package]
+name = "panday-router"
+description = "Model routing: policy engine + classifier trait. Spec: docs/12-router.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+serde.workspace = true
+serde_yaml_ng.workspace = true
+thiserror.workspace = true

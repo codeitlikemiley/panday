@@ -1,4 +1,4 @@
-# 16 — ferrum-plugins: skills, MCP, hooks, ACP
+# 16 — panday-plugins: skills, MCP, hooks, ACP
 
 The extension story rides on open standards (ADR-005): **skills** are
 markdown, **tools** are MCP, **editors** are ACP, and the only invention is
@@ -51,13 +51,13 @@ Schema hygiene: MCP tool schemas can be enormous; the registry minifies
 descriptions into the stable prefix and lazy-loads full schemas on first use
 (the ToolSearch pattern) when a server exposes >N tools.
 
-We also **serve** MCP: `ferrum mcp` exposes our native tools + a session's
+We also **serve** MCP: `panday mcp` exposes our native tools + a session's
 context to other MCP clients — cheap interop, and it forces our tool layer to
 stay spec-clean.
 
 ## Hooks (untrusted)
 
-Plugin hooks are WASM components implementing `ferrum:plugin/hook` — same
+Plugin hooks are WASM components implementing `panday:plugin/hook` — same
 lifecycle points as in-process hooks (13) with vetoes limited to `pre_tool`.
 Fuel-metered, epoch-interrupted, 10ms default budget; a hook that exceeds it
 is skipped and the event logged. Hooks see *redacted* views (no secrets in
@@ -65,7 +65,7 @@ args).
 
 ## ACP bridge
 
-`ferrum acp` (in ferrum-cli, ADR-012) speaks Agent Client Protocol v1 over
+`panday acp` (in panday-cli, ADR-012) speaks Agent Client Protocol v1 over
 stdio using the official `agent-client-protocol` crate. Mapping is mechanical:
 session/new + prompt → `UserMessage`; AEP `AssistantDelta/ToolCall/ToolResult`
 → ACP session updates; `PermissionRequest` → ACP's permission flow. Thirteen
@@ -79,4 +79,4 @@ of one adapter — the best distribution-per-line-of-code in the plan.
 - **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
 - **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite.
 - **M16.5** ACP bridge: interactive session from Zed; permission round-trip works.
-- **M16.6** Registry service (publish/fetch/verify) + `ferrum plugin install`; marketplace UI deferred to phase 4.
+- **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4.

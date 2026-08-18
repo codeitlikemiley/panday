@@ -1,4 +1,4 @@
-# 13 — ferrum-harness
+# 13 — panday-harness
 
 The heart. A session actor that runs the agent loop as an explicit state
 machine over the event log. Everything else in the platform exists to feed

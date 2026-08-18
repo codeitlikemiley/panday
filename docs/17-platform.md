@@ -1,4 +1,4 @@
-# 17 — ferrum-platform: accounts, subscriptions, billing
+# 17 — panday-platform: accounts, subscriptions, billing
 
 The commercial spine. One metering pipeline serves all three channels
 (subscription, API, enterprise) — the difference between them is plan
@@ -10,7 +10,7 @@ configuration, not code paths.
 Account ──< Member (role) >── User (OIDC identities)
 Account ──< Workspace ──< Session (log lives with harness; index here)
 Account ── Subscription ── Plan ──< Entitlement
-Account ──< ApiKey (hashed, scoped, frm_live_/frm_test_)
+Account ──< ApiKey (hashed, scoped, pnd_live_/pnd_test_)
 Account ──< LedgerEntry (append-only)          ← the truth
 Account ──< CreditGrant (purchases, plan refresh, promos)
 ```
@@ -102,7 +102,7 @@ overage policy per plan: block (free), throttle-to-cheap-pool (pro), invoice
 
 OIDC (any IdP; start with GitHub/Google) for humans → short-lived JWTs.
 API keys for machines: random 256-bit, stored as argon2 hash, prefix-typed
-(`frm_live_`, `frm_test_`), scoped (models? sessions? admin?), last-used
+(`pnd_live_`, `pnd_test_`), scoped (models? sessions? admin?), last-used
 tracking, instant revoke. Service-to-service: mTLS or private-network + key,
 per deployment shape.
 
@@ -115,7 +115,7 @@ spyware.
 
 ## Admin surface
 
-`ferrum-platform` serves a minimal internal admin (accounts, grants, refunds,
+`panday-platform` serves a minimal internal admin (accounts, grants, refunds,
 kill-switch per key) — HTML, boring, behind IdP. Customer dashboard (usage
 graphs, keys, invoices) is part of the phase-3 web surface.
 
@@ -126,5 +126,5 @@ graphs, keys, invoices) is part of the phase-3 web surface.
 - **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
 - **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.
-- **M17.6** Entitlement tokens for offline; `ferrum local` honors + expires them.
+- **M17.6** Entitlement tokens for offline; `panday local` honors + expires them.
 - **M17.7** Admin panel + abuse guardrails (velocity checks, disposable-email list).

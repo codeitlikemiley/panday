@@ -10,12 +10,12 @@ one week of evenings.
 
 ## Phase 0 — Spine (~weeks 1–4)
 
-The vocabulary and the door. `ferrum-types` events + model IR (✅ seeded in
+The vocabulary and the door. `panday-types` events + model IR (✅ seeded in
 this repo), workspace CI (M2.1–2.2), gateway with openai_compat + Anthropic
 adapters streaming end to end (M11.1–11.2), SDK transport (M10.1–10.2),
 router policy file v1 (M12.1), golden protocol fixtures (M3.1–3.2).
 
-**Exit:** `ferrum-cli chat` streams through your gateway from two providers
+**Exit:** `panday-cli chat` streams through your gateway from two providers
 and a local llama-server, with usage recorded per call. *(Yes — a chat CLI
 before the harness. It forces the whole spine.)*
 
@@ -35,7 +35,7 @@ next day. Dogfood begins; everything after this is built *with* it.
 
 Skills + plugin manifests (M16.1–16.2), MCP host with Ask-gating (M16.3),
 ACP bridge → Zed/JetBrains (M16.5), subagents + parallel tools (M13.6),
-`ferrum replay` (M21.3), `ferrum local` v1 with model supervisor
+`panday replay` (M21.3), `panday local` v1 with model supervisor
 (M18.1–18.3), reduce-then-solve eval + dollar accounting (M15.4–15.5),
 observability spine (M21.1–21.2).
 

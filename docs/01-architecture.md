@@ -8,28 +8,28 @@ own spec in `docs/1x-*.md`.
 ```mermaid
 flowchart TB
     subgraph clients[Clients]
-        CLI[ferrum-cli<br/>terminal TUI]
+        CLI[panday-cli<br/>terminal TUI]
         IDE[Editors via ACP<br/>Zed · JetBrains · VS Code · nvim]
         WEB[Web / Desktop<br/>phase 6]
-        SDKC[Customer apps<br/>via ferrum-sdk / REST]
+        SDKC[Customer apps<br/>via panday-sdk / REST]
     end
 
-    subgraph plane[Platform plane — ferrum-platform]
+    subgraph plane[Platform plane — panday-platform]
         AUTH[Auth · orgs · API keys]
         ENT[Entitlements & plans]
         METER[Usage ledger & billing]
     end
 
     subgraph runtime[Agent runtime]
-        HARN[ferrum-harness<br/>event-sourced session loop]
-        RED[ferrum-reducer<br/>token economy]
-        PLUG[ferrum-plugins<br/>skills · MCP host · hooks]
-        SBX[ferrum-sandbox<br/>T0 in-proc → T3 microVM]
+        HARN[panday-harness<br/>event-sourced session loop]
+        RED[panday-reducer<br/>token economy]
+        PLUG[panday-plugins<br/>skills · MCP host · hooks]
+        SBX[panday-sandbox<br/>T0 in-proc → T3 microVM]
     end
 
     subgraph modelplane[Model plane]
-        GW[ferrum-gateway<br/>one egress for all model calls]
-        RTR[ferrum-router<br/>policy + learned routing]
+        GW[panday-gateway<br/>one egress for all model calls]
+        RTR[panday-router<br/>policy + learned routing]
         PROV[Providers<br/>Anthropic · OpenAI · Together …]
         LOCAL[Local tier<br/>llama-server · mistral.rs GGUF]
         TUNED[Your models<br/>vLLM multi-LoRA]
@@ -68,7 +68,7 @@ flowchart TB
    stream the model, gate tool calls through permissions, execute in the
    sandbox, fold reduced observations back in, repeat until final or budget
    stop (`13-harness.md`).
-3. **Every model call in the company goes through ferrum-gateway** — cost
+3. **Every model call in the company goes through panday-gateway** — cost
    attribution, quota enforcement, caching, failover, and audit exist because
    this is the only door (`11-gateway.md`).
 4. **The router is policy first, learning second** — YAML rules route by task
@@ -86,7 +86,7 @@ flowchart TB
 8. **Subscriptions and the API are one metering pipeline** — gateway and
    sandbox emit usage events into an internal ledger that is the source of
    truth; Stripe is a projection of it (`17-platform.md`).
-9. **Offline is the same binary with a different config** — `ferrum local`
+9. **Offline is the same binary with a different config** — `panday local`
    bundles harness + gateway-lite + a GGUF server; capability degradation is
    explicit and announced to the prompt (`18-local.md`).
 10. **Models are trained in Python, served in Rust, judged by evals** — LoRA on
@@ -120,7 +120,7 @@ Same crates, three compositions:
 
 | Shape | Composition | Who |
 |---|---|---|
-| **Dev / solo** | `ferrum local` — everything in one process, SQLite-or-PG, local GGUF | you, day 1 |
+| **Dev / solo** | `panday local` — everything in one process, SQLite-or-PG, local GGUF | you, day 1 |
 | **SaaS** | platform + harnessd + gateway as separate services; PG + object storage; microVM sandbox pool | phase 3 |
 | **On-prem** | the SaaS shape, minus egress, in the customer's cluster; signed entitlement tokens | enterprise |
 

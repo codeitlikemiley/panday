@@ -1,4 +1,4 @@
-# 12 — ferrum-router
+# 12 — panday-router
 
 Chooses which model serves each request. Lives inside the gateway process
 (it's a library, not a service — one fewer hop). Policy first, learning
@@ -84,7 +84,7 @@ is, so it stops promising what it can't do (18).
 
 ## Milestones
 
-- **M12.1** Policy file parse + first-match engine + unreachable-rule linter; table-driven tests. ✅ *(shipped: `ferrum_router::policy` — `Policy`/`PolicyRouter`, the shipped default at `crates/ferrum-router/policy/default.yaml`, and `Policy::lint()`.)*
+- **M12.1** Policy file parse + first-match engine + unreachable-rule linter; table-driven tests. ✅ *(shipped: `panday_router::policy` — `Policy`/`PolicyRouter`, the shipped default at `crates/panday-router/policy/default.yaml`, and `Policy::lint()`.)*
 
   Two notes from the implementation:
 

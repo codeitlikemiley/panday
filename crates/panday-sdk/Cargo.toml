@@ -1,0 +1,22 @@
+[package]
+name = "panday-sdk"
+description = "Client library: model IR client traits, errors, (later) transports, sessions, embedded agent. Spec: docs/10-sdk.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "time"] }
+uuid.workspace = true

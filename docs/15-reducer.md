@@ -1,4 +1,4 @@
-# 15 — ferrum-reducer (the token economy)
+# 15 — panday-reducer (the token economy)
 
 Every tool result passes through the reducer before it enters context. The
 mandate is not "compress everything"; it is **minimize dollars while

@@ -1,0 +1,17 @@
+[package]
+name = "panday-harness"
+description = "The session actor and turn state machine. Spec: docs/13-harness.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+panday-sdk.workspace = true
+panday-sandbox.workspace = true
+panday-reducer.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true

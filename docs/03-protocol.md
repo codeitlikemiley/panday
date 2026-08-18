@@ -15,7 +15,7 @@ AEP⇄ACP; the mapping is mechanical because both are event-shaped.
 
 ## AEP: the event log IS the session
 
-Rust definitions live in `ferrum-types::event` (the workspace compiles them
+Rust definitions live in `panday-types::event` (the workspace compiles them
 today); JSON Schema is exported to `proto/` by `cargo xtask schemas`. The
 essentials:
 
@@ -121,7 +121,7 @@ GET    /v1/usage                        ledger view for the caller
 POST   /v1/keys · GET /v1/keys · DELETE /v1/keys/:id
 ```
 
-Auth: `Authorization: Bearer` — API keys (`frm_live_…`, hashed at rest) for
+Auth: `Authorization: Bearer` — API keys (`pnd_live_…`, hashed at rest) for
 programmatic; OIDC-backed short-lived JWTs for interactive clients. Same
 entitlement checks either way (`17-platform.md`).
 
@@ -133,7 +133,7 @@ display encoding, not a second id.
 
 ## Milestones
 
-- **M3.1** `ferrum-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(shipped: 17 fixtures in `crates/ferrum-types/tests/fixtures/`, harness in `tests/golden.rs`, plus the versioning-discipline suite — additive fields, unknown-kind tolerance, version pin.)*
+- **M3.1** `panday-types` events compile + serde round-trip; golden fixtures checked in. ✅ *(shipped: 17 fixtures in `crates/panday-types/tests/fixtures/`, harness in `tests/golden.rs`, plus the versioning-discipline suite — additive fields, unknown-kind tolerance, version pin.)*
 - **M3.2** `cargo xtask schemas` exports JSON Schema to `proto/`; CI diffs it (a schema change without a version note fails). ✅ *(shipped: `xtask/`, `proto/aep-envelope.schema.json`, `cargo xtask schemas --check` in CI.)*
 - **M3.3** WS endpoint in harnessd: create session, stream events, resume-after-seq proven by killing the connection mid-turn.
 - **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events.

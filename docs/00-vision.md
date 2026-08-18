@@ -63,7 +63,7 @@ debugging, resume is replay, branching is forking a log, audit is reading it,
 and — critically — **training data is mining it** (with consent). The log is
 the platform's compounding asset.
 
-**Offline is a deployment target, not a feature flag.** One binary (`ferrum
+**Offline is a deployment target, not a feature flag.** One binary (`panday
 local`) runs the harness, a gateway-lite, and a GGUF model server on a laptop
 with zero outbound calls. It is how you sell to regulated buyers, and it is
 the forcing function that keeps the architecture honest.
@@ -94,7 +94,12 @@ subscription is priced against *reduced* cost, not list price.
 
 ## Naming
 
-`Ferrum` (Fe, iron — the thing rust comes from) is a **placeholder codename**
-chosen for grep-ability. Rename before anything public:
-`grep -rl ferrum . | xargs sed -i 's/ferrum/newname/g'` and rename the crate
-directories. Check crates.io/npm/domain availability before you commit.
+**Panday** is Tagalog for *blacksmith* — the smith who heats iron and forges it
+into tools. The name is doing real work: this platform is a forge for agents,
+and every component is a tool someone hammers into shape. It also keeps the
+Rust thread honest — rust is what iron does when left alone; a panday is what
+happens when someone works it on purpose.
+
+Chosen and committed: `panday` is unclaimed on crates.io (no crate uses the
+name or the prefix) and returns 404 on npm. Every crate is prefixed `panday-`,
+the CLI binary is `panday`, and API keys are `pnd_live_` / `pnd_test_`.

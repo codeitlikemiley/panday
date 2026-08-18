@@ -63,7 +63,7 @@ fn repo_root() -> PathBuf {
 fn targets() -> Vec<(&'static str, schemars::Schema)> {
     vec![(
         "aep-envelope.schema.json",
-        schemars::schema_for!(ferrum_types::Envelope),
+        schemars::schema_for!(panday_types::Envelope),
     )]
 }
 
@@ -119,10 +119,10 @@ mod tests {
     /// would ship a schema that rejects valid traffic.
     #[test]
     fn schema_describes_every_known_event_tag() {
-        let schema = serde_json::to_string(&schemars::schema_for!(ferrum_types::Envelope))
+        let schema = serde_json::to_string(&schemars::schema_for!(panday_types::Envelope))
             .expect("schema serializes");
 
-        let missing: Vec<&str> = ferrum_types::event::KNOWN_EVENT_TAGS
+        let missing: Vec<&str> = panday_types::event::KNOWN_EVENT_TAGS
             .iter()
             .copied()
             .filter(|tag| !schema.contains(&format!("\"const\":\"{tag}\"")))
@@ -138,8 +138,8 @@ mod tests {
     /// and every run would look like a protocol change.
     #[test]
     fn schema_generation_is_stable() {
-        let a = render(&schemars::schema_for!(ferrum_types::Envelope)).unwrap();
-        let b = render(&schemars::schema_for!(ferrum_types::Envelope)).unwrap();
+        let a = render(&schemars::schema_for!(panday_types::Envelope)).unwrap();
+        let b = render(&schemars::schema_for!(panday_types::Envelope)).unwrap();
         assert_eq!(a, b, "schema generation is not deterministic");
     }
 }

@@ -5,7 +5,7 @@ written down before they're needed** (ADR-003).
 
 ## Shape 1 — dev/solo (day 1)
 
-`ferrum local` for offline work; for cloud-ish dev, `docker compose up`:
+`panday local` for offline work; for cloud-ish dev, `docker compose up`:
 Postgres 16 (pgvector image), MinIO, and the services as one compose file in
 `deploy/compose/dev.yml`. Everything runs on a laptop.
 
@@ -15,7 +15,7 @@ Postgres 16 (pgvector image), MinIO, and the services as one compose file in
   start — *not* Kubernetes. K8s enters only with the T3 sandbox pool if the
   provider can't give KVM another way (Fly Machines are Firecracker-based —
   evaluate running T3 *as* Fly machines before building a pool manager).
-- **Services**: `ferrum-platform` (API), `ferrum-harnessd`, `ferrum-gateway`
+- **Services**: `panday-platform` (API), `panday-harnessd`, `panday-gateway`
   — each stateless, horizontally scalable; session-actor affinity via
   consistent hashing on session_id at the LB (an actor lives on one node;
   failover = fold the log on another).

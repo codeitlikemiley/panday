@@ -1,0 +1,12 @@
+[package]
+name = "panday-harnessd"
+description = "The hosted session service: WS/SSE AEP endpoint over panday-harness session actors. Specs: docs/03 (M3.3), docs/13, docs/22"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+panday-types.workspace = true
+panday-harness.workspace = true
+panday-sdk.workspace = true

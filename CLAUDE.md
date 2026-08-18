@@ -1,8 +1,10 @@
 # CLAUDE.md — working agreement for this repo
 
-Ferrum is a Rust AI platform (agent harness, LLM gateway + router, tiered
-sandbox, plugins, metering, offline tier). `ferrum` is a **placeholder
-codename** — do not rename it yet; see `docs/00-vision.md` §Naming.
+Panday is a Rust AI platform (agent harness, LLM gateway + router, tiered
+sandbox, plugins, metering, offline tier). **Panday** is Tagalog for
+*blacksmith*; the name is settled, not a placeholder (see `docs/00-vision.md`
+§Naming). Crates are prefixed `panday-`, the CLI binary is `panday`, and API
+keys are `pnd_live_` / `pnd_test_`.
 
 ## 1. `docs/` is the source of truth
 
@@ -74,32 +76,32 @@ rmcp, agent-client-protocol, wasmtime, ratatui).
   dependencies.
 - Versions are pinned in `[workspace.dependencies]`; member crates inherit with
   `foo.workspace = true`. Do not pin a version inside a member crate.
-- `ferrum-types` keeps near-zero dependencies (serde, serde_json, thiserror,
+- `panday-types` keeps near-zero dependencies (serde, serde_json, thiserror,
   uuid, time). Everything depends on it; it depends on nothing of ours.
 - `cargo deny check` gates the license/advisory graph — keep it green.
 
 ## 6. Architectural invariants that are easy to break by accident
 
-- **Libraries take traits, binaries do the wiring.** `ferrum-harness` accepts
+- **Libraries take traits, binaries do the wiring.** `panday-harness` accepts
   `ModelClient`/`Sandbox`/`EventSink`; HTTP and Postgres live in the binaries.
-  This is what makes `ferrum local` possible.
-- **No `unsafe` outside `ferrum-sandbox`.**
+  This is what makes `panday local` possible.
+- **No `unsafe` outside `panday-sandbox`.**
 - **AEP is append-only with gapless `seq`.** Deltas are ephemeral; only folded
   messages persist. State is a fold over the log — if a state cannot be
   rebuilt from events, the missing event is the bug (`docs/03`).
 - **Protocol changes are golden-file diffs.** Fixtures live in
-  `crates/ferrum-types/tests/fixtures/`; a changed fixture is a reviewed
+  `crates/panday-types/tests/fixtures/`; a changed fixture is a reviewed
   protocol change, and `proto/` schemas are regenerated with
   `cargo xtask schemas`.
 - **Context layout is stable→volatile** (ADR-008). Nothing may inject into the
   stable cached prefix mid-session.
 - **Usage cache counts are subsets of `input_tokens`** — adapters normalize at
   the boundary (see the CONVENTION note on `Usage` in
-  `crates/ferrum-types/src/model.rs`).
+  `crates/panday-types/src/model.rs`).
 
 ## 7. Repo conventions
 
-- Workspace: `crates/ferrum-*`, one binary per service, `lib.rs` + thin
+- Workspace: `crates/panday-*`, one binary per service, `lib.rs` + thin
   `main.rs` so every service is testable in-process.
 - Toolchain is pinned in `rust-toolchain.toml` (currently 1.95); ratchet
   monthly, never mid-crunch.
