@@ -82,23 +82,21 @@ impl T2LinuxSandbox {
             let Some(bwrap) = which_bwrap() else {
                 return false;
             };
+            // Probe with the same bind construction the real jails use, so a
+            // merged-/usr mistake fails here rather than in every session.
+            let probe_session = Session {
+                workspace: std::env::temp_dir(),
+                staged_ro: vec![],
+                limits: Limits::default(),
+                net: NetPolicy::default(),
+                env: vec![],
+            };
+            let mut args = build_args(&probe_session);
+            args.push("--".into());
+            args.push("/usr/bin/true".into());
+
             std::process::Command::new(bwrap)
-                .args([
-                    "--unshare-user",
-                    "--unshare-net",
-                    "--unshare-pid",
-                    "--ro-bind",
-                    "/usr",
-                    "/usr",
-                    "--ro-bind",
-                    "/bin",
-                    "/bin",
-                    "--ro-bind",
-                    "/lib",
-                    "/lib",
-                    "--",
-                    "/bin/true",
-                ])
+                .args(args)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
@@ -162,10 +160,24 @@ fn build_args(s: &Session) -> Vec<String> {
     // Nothing is visible unless bound. This is the allowlist macOS could not
     // express.
     for p in SYSTEM_RO {
-        if Path::new(p).exists() {
-            a.push("--ro-bind".into());
-            a.push((*p).into());
-            a.push((*p).into());
+        let path = Path::new(p);
+        if !path.exists() {
+            continue;
+        }
+        match std::fs::symlink_metadata(path) {
+            // A merged-/usr symlink: recreate the link, do not bind it.
+            Ok(meta) if meta.file_type().is_symlink() => {
+                if let Ok(target) = std::fs::read_link(path) {
+                    a.push("--symlink".into());
+                    a.push(target.display().to_string());
+                    a.push((*p).into());
+                }
+            }
+            _ => {
+                a.push("--ro-bind".into());
+                a.push((*p).into());
+                a.push((*p).into());
+            }
         }
     }
     push(&mut a, "--proc");
