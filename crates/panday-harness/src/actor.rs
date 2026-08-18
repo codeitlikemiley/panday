@@ -344,6 +344,7 @@ impl SessionActor {
                         sandbox_tier: panday_sandbox::SandboxTier::T0InProcess,
                         side_effects: SideEffects::None,
                         independent: true,
+                        replay: crate::tools::Replay::Unsafe,
                     });
 
                 match self.permissions.gate(&call.name, &req, &call.args) {
@@ -421,6 +422,61 @@ impl SessionActor {
                 self.execute(call).await?;
             }
         }
+    }
+
+    /// Deal with calls that were dispatched but whose result never reached
+    /// the log — the crash-resume path (docs/13 §persist-before-proceed).
+    ///
+    /// > "resume **replays idempotent calls and refuses irreversible ones** —
+    /// > surfacing the refusal with the call's args, since the tool may or may
+    /// > not have run."
+    ///
+    /// The decision comes from [`crate::tools::Replay`], not `side_effects`:
+    /// `bash` is `Idempotent` for consent reasons yet must never be re-run.
+    /// A tool the registry no longer knows is refused too — its replay
+    /// safety is unknowable, and guessing "safe" is the dangerous direction.
+    pub async fn resume_pending(&mut self) -> Result<Vec<CallId>, HarnessError> {
+        let pending = self.state.inflight_calls.clone();
+        let mut refused = Vec::new();
+
+        for (call_id, tool, args) in pending {
+            let safe = self
+                .tools
+                .get(&tool)
+                .map(|t| t.requirements().replay == crate::tools::Replay::Safe)
+                .unwrap_or(false);
+
+            if safe {
+                self.execute(PendingCall {
+                    id: call_id,
+                    name: tool,
+                    provider_id: None,
+                    args,
+                })
+                .await?;
+            } else {
+                // The refusal carries the arguments because the human reading
+                // it has to decide whether the call already took effect — and
+                // cannot without seeing what was run.
+                self.commit(Event::ToolResult {
+                    call_id,
+                    output: ReducedOutput {
+                        text: format!(
+                            "refused on resume: `{tool}` was dispatched before a crash and may                              or may not have run. It is not safe to replay automatically.                              Arguments were: {args}"
+                        ),
+                        tokens_raw: 0,
+                        tokens_kept: 0,
+                        strategy: "replay_refused".into(),
+                    },
+                    raw_ref: None,
+                    duration_ms: 0,
+                    is_error: true,
+                })
+                .await?;
+                refused.push(call_id);
+            }
+        }
+        Ok(refused)
     }
 
     /// Answer a parked permission request and continue the turn.

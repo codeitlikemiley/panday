@@ -5,7 +5,7 @@
 //! `panday-reducer` because it implements [`Tool`], and the tool vocabulary
 //! belongs to the harness.
 
-use crate::tools::{SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
+use crate::tools::{Replay, SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 use panday_reducer::{expand, ArtifactStore, LineRange};
 use panday_sandbox::SandboxTier;
 use panday_types::id::ArtifactRef;
@@ -56,6 +56,8 @@ impl Tool for ExpandArtifact {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: SideEffects::None,
             independent: true,
+            // Reading back a stored blob: replaying it changes nothing.
+            replay: Replay::Safe,
         }
     }
 

@@ -6,7 +6,7 @@
 //! `panday-cli`, `panday-local` and the eval harness all need to drive a
 //! session without a provider.
 
-use crate::tools::{SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
+use crate::tools::{Replay, SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 use panday_sandbox::SandboxTier;
 use panday_sdk::{ItemStream, ModelClient, PandayError};
 use panday_types::model::{ChatRequest, StopReason, StreamItem};
@@ -133,6 +133,7 @@ pub struct EchoTool {
     pub reply: String,
     pub is_error: bool,
     pub side_effects: SideEffects,
+    pub replay: Replay,
 }
 
 impl EchoTool {
@@ -142,6 +143,7 @@ impl EchoTool {
             reply: reply.into(),
             is_error: false,
             side_effects: SideEffects::None,
+            replay: Replay::Safe,
         })
     }
 
@@ -151,6 +153,7 @@ impl EchoTool {
             reply: reply.into(),
             is_error: true,
             side_effects: SideEffects::None,
+            replay: Replay::Safe,
         })
     }
 
@@ -162,6 +165,7 @@ impl EchoTool {
             reply: reply.into(),
             is_error: false,
             side_effects: SideEffects::Idempotent,
+            replay: Replay::Safe,
         })
     }
 
@@ -172,6 +176,7 @@ impl EchoTool {
             reply: reply.into(),
             is_error: false,
             side_effects: SideEffects::Irreversible,
+            replay: Replay::Unsafe,
         })
     }
 }
@@ -191,6 +196,7 @@ impl Tool for EchoTool {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: self.side_effects,
             independent: true,
+            replay: self.replay,
         }
     }
 

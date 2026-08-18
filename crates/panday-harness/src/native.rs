@@ -8,7 +8,7 @@
 //! path policy is enforced by the tier rather than by each tool remembering
 //! to check — the mistake that class of code always eventually makes.
 
-use crate::tools::{SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
+use crate::tools::{Replay, SideEffects, Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 use panday_sandbox::{ExecChunk, ExecSpec, Sandbox, SandboxHandle, SandboxTier};
 use panday_types::Json;
 use std::path::{Path, PathBuf};
@@ -136,6 +136,8 @@ impl Tool for ReadFile {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: SideEffects::None,
             independent: true,
+            // Pure reads reach the same state every time.
+            replay: Replay::Safe,
         }
     }
 
@@ -197,6 +199,8 @@ impl Tool for WriteFile {
             // side-effect free, so `read_only` denies it.
             side_effects: SideEffects::Idempotent,
             independent: false,
+            // Writing known content is idempotent by construction.
+            replay: Replay::Safe,
         }
     }
 
@@ -251,6 +255,9 @@ impl Tool for EditFile {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: SideEffects::Idempotent,
             independent: false,
+            // `old` must match exactly once, so a replay after the edit
+            // already landed fails loudly rather than editing twice.
+            replay: Replay::Safe,
         }
     }
 
@@ -331,6 +338,7 @@ impl Tool for Grep {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: SideEffects::None,
             independent: true,
+            replay: Replay::Safe,
         }
     }
 
@@ -408,6 +416,7 @@ impl Tool for GlobTool {
             sandbox_tier: SandboxTier::T0InProcess,
             side_effects: SideEffects::None,
             independent: true,
+            replay: Replay::Safe,
         }
     }
 
@@ -518,6 +527,10 @@ impl Tool for Bash {
             // note added to docs/13.
             side_effects: SideEffects::Idempotent,
             independent: false,
+            // The seam this field exists for: Idempotent above is a CONSENT
+            // answer, and it is not a replay answer. An arbitrary shell
+            // command may have already taken effect.
+            replay: Replay::Unsafe,
         }
     }
 

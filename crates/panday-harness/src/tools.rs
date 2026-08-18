@@ -27,12 +27,42 @@ pub enum SideEffects {
     Irreversible,
 }
 
+/// Whether resume may re-run a call whose result never made it to the log.
+///
+/// **Separate from [`SideEffects`] on purpose.** That field drives *consent*
+/// — which profiles prompt — and the two answers genuinely differ for
+/// `bash`: docs/13's profile table says `dev` allows running tests, so the
+/// tool cannot be `Irreversible` (that would force Ask in every profile and
+/// make an unattended run impossible), yet replaying an arbitrary shell
+/// command after a crash is plainly unsafe. Collapsing both decisions into
+/// one field forces a wrong answer to one of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Replay {
+    /// Re-running reaches the same end state: reads, and writes of known
+    /// content.
+    Safe,
+    /// May have already taken effect, and re-running could compound it.
+    /// Resume refuses these and surfaces the call's arguments, since the tool
+    /// may or may not have run (docs/13 §persist-before-proceed).
+    Unsafe,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolReq {
     pub sandbox_tier: SandboxTier,
     pub side_effects: SideEffects,
     /// May run in parallel with other independent tools this step.
     pub independent: bool,
+    /// Whether crash-resume may re-run this call. See [`Replay`].
+    #[serde(default = "default_replay")]
+    pub replay: Replay,
+}
+
+/// Refusing is the safe default: a tool that has not thought about replay
+/// should not be silently re-run.
+fn default_replay() -> Replay {
+    Replay::Unsafe
 }
 
 #[derive(Debug, Clone)]

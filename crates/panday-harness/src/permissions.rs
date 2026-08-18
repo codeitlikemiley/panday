@@ -235,6 +235,7 @@ mod tests {
             sandbox_tier: SandboxTier::T2OsJail,
             side_effects: se,
             independent: true,
+            replay: crate::tools::Replay::Unsafe,
         }
     }
 

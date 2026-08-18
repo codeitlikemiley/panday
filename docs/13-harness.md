@@ -241,7 +241,24 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   for a `cheap`-pool model here; that is the semantic tier behind a budget
   gate, M15.6, and shipping a model call before the gate exists would spend
   tokens to save tokens with nothing deciding whether it is worth it.
-- **M13.5** Crash-kill during Executing → resume replays correctly (idempotent) and refuses (irreversible) — both proven by tests.
+- **M13.5** Crash-kill during Executing → resume replays correctly (idempotent) and refuses (irreversible) — both proven by tests. ✅ *(shipped: `tools::Replay`; `SessionActor::resume_pending`.)*
+
+  **Replay safety is now its own signal, separate from `side_effects`** —
+  closing the seam recorded at M13.2. That field answers *consent* ("which
+  profiles prompt"); `Replay` answers *"may resume re-run this"*. For `bash`
+  the two genuinely differ: `Idempotent` for consent, so `dev` can run tests
+  unprompted, and `Unsafe` for replay, because an arbitrary shell command may
+  already have taken effect. One field could only have given a wrong answer to
+  one of them.
+
+  `Replay::Unsafe` is the default for any tool that has not decided, and a
+  tool the registry no longer knows (removed in an upgrade) is refused too —
+  its safety is unknowable, and guessing "safe" is the dangerous direction.
+
+  A refusal carries the call's **arguments**, because the human reading it has
+  to decide whether the call already ran and cannot without seeing what was
+  run. A permission-parked call is never replayed: it was never dispatched, so
+  running it would execute something nobody approved.
 - **M13.6** Subagents with budget split; parallel independent tools.
 - **M13.7** Hook engine with in-process hooks; pre_tool veto demonstrated.
 

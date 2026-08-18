@@ -26,6 +26,7 @@ fn req(se: SideEffects) -> ToolReq {
         sandbox_tier: panday_sandbox::SandboxTier::T2OsJail,
         side_effects: se,
         independent: true,
+        replay: panday_harness::tools::Replay::Unsafe,
     }
 }
 
