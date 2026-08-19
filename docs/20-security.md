@@ -99,7 +99,62 @@ the audit trail *is* the product's data model (ADR-002).
 ## Milestones
 
 - **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench.
-- **M20.2** Origin tagging + pre_tool filter pack; secrets vault + env-injection policy.
+- **M20.2** Origin tagging + pre_tool filter pack; secrets vault + env-injection policy. ✅ *(shipped: `panday_types::model::Origin` + `ContextBuilder`'s markers and `PROVENANCE_RULE`, `panday_harness::filters`, `panday_harness::secrets`; suite in `crates/panday-harness/tests/injection_defence.rs`.)*
+
+  **Origin tagging.** `Origin` is additive and optional on `ToolOutput`/`Artifact`
+  (docs/03 §Versioning), decoded in one place from the tool's registered name —
+  docs/16 mounts MCP tools as `mcp:{server}:{tool}` precisely so provenance rides
+  in the string every layer already carries. `is_trusted()` names the two trusted
+  origins rather than excluding the untrusted ones: the untrusted list grows (MCP
+  came after plugins, web after both) and a negative check would silently trust each
+  addition. An **untagged** block is rendered `[origin: untagged]`, because a bare
+  block reads as trusted and the one place provenance is missing is exactly where an
+  attacker wants it missing.
+
+  The marker is added during *assembly*, not when the event is written — the log
+  records what happened, and a marker is a rendering decision — and it is
+  deterministic, so the cached prefix stays byte-identical (ADR-008). The rule that
+  gives markers meaning lives in the **stable band**: a safety rule that arrives
+  after the untrusted content it governs is one the attacker got to speak first.
+
+  **The filter pack is not a boundary, and says so.** A determined command evades any
+  pattern list — `$(printf '\143url')` is `curl` — so the suite includes the
+  evasions that get through, asserted as passing, with a note to update this bullet
+  if the pack ever gets smarter. What these rules catch is the *unobfuscated* shape
+  of an attack, which is what injected instructions overwhelmingly look like because
+  the attacker is writing for a model, not a parser. T2's `--unshare-net` is what
+  actually blocks egress.
+
+  The pack's other design constraint is false positives: a pack that vetoes real work
+  gets switched off, and then none of it helps. So `rm -rf ./target` passes while
+  `rm -rf /` does not, `echo $TOKEN` passes (the scrub covers the output) while
+  `curl -d "t=$TOKEN" …` does not, and the workspace rule applies to writes only —
+  vetoing reads outside the workspace would break every `cargo` invocation that
+  touches `~/.cargo`. A veto names the rule that fired. Filters scan string *values*
+  at any depth rather than the serialized JSON, so a key named `curl` is not a
+  finding. It holds under `unleashed`, which is the point of a model-free layer.
+
+  A found bug: a `~`-relative write path is not absolute, so joining it to the
+  workspace placed `workspace/~/.ssh/authorized_keys` "inside" and the rule passed
+  it. Home-relative paths are now refused rather than guessed at.
+
+  **Secrets.** Three conditions, all required: declared in the manifest (the
+  `secrets:` grant consented to at install), approved by the permission engine, and
+  present in the vault. An approval without a declaration is refused too — otherwise
+  a gate answer could widen a manifest nobody re-consented to. `MemoryVault::from_env`
+  takes explicit names only; a vault that swept the environment would hand a tool
+  every credential the developer happened to have exported. A vault lists *names*,
+  never values, so an audit log cannot become a leak.
+
+  **The scrub runs before the reducer**, and that ordering is the whole trick:
+  reduction is lossy and its spilled artifacts are content-addressed, so a secret
+  that survives into the reducer is a secret in the artifact store forever. Scrubbing
+  first also means it never reaches the event log, and therefore never a replay —
+  which the test asserts on the serialized log rather than on the tool's return
+  value. It scrubs known *values*, not patterns: a pattern list guesses at what a
+  credential looks like and misses the one that does not match, while the vault knows
+  exactly which strings are secret (pattern-based DLP belongs at the gateway, where a
+  false positive costs a redaction rather than a broken turn).
 - **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults. *(Two thirds landed elsewhere: the cache-key audit's finding is built into `CacheKey` at M11.6 — `account_id` is part of the key by construction, with a test that one tenant's prompt cannot serve another's response — and trace-scrubbing defaults are audited statically and at runtime by M21.5. What remains here is the CI lint that catches a *new* query or cache key built without a tenant scope.)*
 - **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented.
 - **M20.5** SBOM + signed releases; dependency-update cadence with an owner.

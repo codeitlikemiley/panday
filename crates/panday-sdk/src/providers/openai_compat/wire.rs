@@ -321,6 +321,7 @@ mod tests {
             ContentBlock::ToolOutput {
                 call_id: CallId(uuid_for_test()),
                 text: "second".into(),
+                origin: None,
             },
             ContentBlock::Artifact {
                 artifact: panday_types::id::ArtifactRef {
@@ -329,6 +330,7 @@ mod tests {
                     media_type: None,
                 },
                 summary: "third".into(),
+                origin: None,
             },
         ];
         assert_eq!(

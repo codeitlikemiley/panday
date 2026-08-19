@@ -79,12 +79,101 @@ pub enum ContentBlock {
     ToolOutput {
         call_id: CallId,
         text: String,
+        /// Where this text came from (docs/20 T1 §origin tagging).
+        ///
+        /// Additive and optional (docs/03 §Versioning: "Additive fields: always
+        /// ok"), so an older log still reads. `None` means "not tagged", which
+        /// callers must treat as untrusted rather than as user input — a missing
+        /// tag on a tool output is a gap in provenance, not a promise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Origin>,
     },
     /// Reference to spilled content; `expand_artifact` can pull ranges.
     Artifact {
         artifact: crate::id::ArtifactRef,
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Origin>,
     },
+}
+
+/// Provenance of a context block (docs/20 T1: "every context block carries
+/// provenance (user | tool:{name} | web:{domain} | plugin:{id}); the system prompt
+/// and permission engine treat non-user origins as untrusted").
+///
+/// The distinction this exists to preserve is the one prompt injection attacks:
+/// text the *user* wrote is an instruction, and text a *tool* returned is data
+/// about the world. Both arrive as strings in the same conversation, so the
+/// difference has to be carried rather than inferred.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Origin {
+    /// The human. The only origin whose text is an instruction.
+    User,
+    /// Our own scaffolding: system prompt, skill bodies, compaction summaries.
+    System,
+    Tool {
+        name: String,
+    },
+    /// Fetched content. The domain is kept because "this came from the web" and
+    /// "this came from *this site*" are different facts to an operator reading a
+    /// replay.
+    Web {
+        domain: String,
+    },
+    Plugin {
+        id: String,
+    },
+    Mcp {
+        server: String,
+        tool: String,
+    },
+}
+
+impl Origin {
+    /// Whether text from this origin may be treated as instruction.
+    ///
+    /// Deliberately not `!= Tool`: the list of untrusted origins grows (MCP came
+    /// after plugins, web after both), and a negative check would silently trust
+    /// each new one. Only two origins are ever trusted, and they are named here.
+    pub fn is_trusted(&self) -> bool {
+        matches!(self, Origin::User | Origin::System)
+    }
+
+    /// The origin of a tool's output, from the tool's registered name.
+    ///
+    /// docs/16 mounts MCP tools as `mcp:{server}:{tool}` and plugin tools under
+    /// their plugin id, precisely so that where a tool came from is visible in the
+    /// one string every layer already carries. This is the single place that
+    /// mapping is decoded, so a new prefix cannot be handled two ways.
+    pub fn for_tool(name: &str) -> Self {
+        if let Some(rest) = name.strip_prefix("mcp:") {
+            let (server, tool) = rest.split_once(':').unwrap_or((rest, ""));
+            return Origin::Mcp {
+                server: server.to_string(),
+                tool: tool.to_string(),
+            };
+        }
+        if let Some(id) = name.strip_prefix("plugin:") {
+            return Origin::Plugin { id: id.to_string() };
+        }
+        Origin::Tool {
+            name: name.to_string(),
+        }
+    }
+
+    /// Short label for a context marker, a span field or a replay line.
+    pub fn label(&self) -> String {
+        match self {
+            Origin::User => "user".into(),
+            Origin::System => "system".into(),
+            Origin::Tool { name } => format!("tool:{name}"),
+            Origin::Web { domain } => format!("web:{domain}"),
+            Origin::Plugin { id } => format!("plugin:{id}"),
+            Origin::Mcp { server, tool } => format!("mcp:{server}:{tool}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

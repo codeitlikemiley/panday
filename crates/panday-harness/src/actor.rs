@@ -207,6 +207,8 @@ pub struct SessionActor {
     pricing: Option<panday_reducer::Pricing>,
     /// Layer 5 (docs/15). Opt-in and budget-gated; absent by default.
     semantic: Option<panday_reducer::SemanticTier<Box<dyn panday_reducer::Summarizer>>>,
+    /// Removes known secret values from raw tool output (docs/20 T4, M20.2).
+    scrub: Option<Arc<crate::secrets::ScrubSecrets>>,
 }
 
 impl SessionActor {
@@ -246,6 +248,7 @@ impl SessionActor {
             compacted_upto: 0,
             pricing: None,
             semantic: None,
+            scrub: None,
             subagents: None,
             depth: 0,
             hooks: HookEngine::new(),
@@ -266,6 +269,18 @@ impl SessionActor {
     /// reports volume only and the tier refuses to run.
     pub fn with_pricing(mut self, pricing: panday_reducer::Pricing) -> Self {
         self.pricing = Some(pricing);
+        self
+    }
+
+    /// Scrub known secret values out of tool output **before** it is reduced
+    /// (docs/20 T4).
+    ///
+    /// Before, not after: reduction is lossy and its spilled artifacts are
+    /// content-addressed, so a secret that survives into the reducer is a secret in
+    /// the artifact store forever. This is also before the event is committed, so
+    /// it never reaches the log or a replay.
+    pub fn with_secret_scrub(mut self, scrub: Arc<crate::secrets::ScrubSecrets>) -> Self {
+        self.scrub = Some(scrub);
         self
     }
 
@@ -835,7 +850,11 @@ impl SessionActor {
             price_per_mtok_micros: self.pricing.map_or(0, |p| p.input_per_mtok_micros),
             aggressive: false,
         };
-        let mut reduced = self.reducer.reduce(&outcome.raw, &ctx);
+        let raw = match &self.scrub {
+            Some(scrub) => scrub.scrub(&outcome.raw),
+            None => outcome.raw.clone(),
+        };
+        let mut reduced = self.reducer.reduce(&raw, &ctx);
 
         // Layer 5, if configured and if the accounting says it is worth it. The
         // decision is recorded in `strategy`, which the log carries and
@@ -1344,6 +1363,7 @@ pub fn transcript(events: &[Envelope]) -> Vec<Message> {
     // A tool result must quote the provider's id, so remember it from the
     // matching ToolCall (docs/03 §two ids per tool call).
     let mut provider_ids: std::collections::HashMap<CallId, Option<String>> = Default::default();
+    let mut tool_names: std::collections::HashMap<CallId, String> = Default::default();
 
     for env in events {
         match &env.event {
@@ -1361,10 +1381,14 @@ pub fn transcript(events: &[Envelope]) -> Vec<Message> {
             }),
             Event::ToolCall {
                 call_id,
+                tool,
                 provider_call_id,
                 ..
             } => {
                 provider_ids.insert(*call_id, provider_call_id.clone());
+                // The name is only on the call, and the origin tag belongs on the
+                // result — so the fold carries it across (docs/20 T1).
+                tool_names.insert(*call_id, tool.clone());
             }
             Event::ToolResult {
                 call_id, output, ..
@@ -1373,6 +1397,17 @@ pub fn transcript(events: &[Envelope]) -> Vec<Message> {
                 content: vec![ContentBlock::ToolOutput {
                     call_id: *call_id,
                     text: output.text.clone(),
+                    origin: Some(
+                        tool_names
+                            .get(call_id)
+                            .map(|t| panday_types::model::Origin::for_tool(t))
+                            // A result with no matching call cannot be attributed
+                            // to a tool, and guessing `Tool` would invent
+                            // provenance. Untagged reads as untrusted.
+                            .unwrap_or(panday_types::model::Origin::Tool {
+                                name: "unknown".into(),
+                            }),
+                    ),
                 }],
                 call_id: Some(*call_id),
                 provider_call_id: provider_ids.get(call_id).cloned().flatten(),

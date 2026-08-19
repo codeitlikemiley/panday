@@ -447,6 +447,17 @@
             "text": {
               "type": "string"
             },
+            "origin": {
+              "description": "Where this text came from (docs/20 T1 §origin tagging).\n\nAdditive and optional (docs/03 §Versioning: \"Additive fields: always\nok\"), so an older log still reads. `None` means \"not tagged\", which\ncallers must treat as untrusted rather than as user input — a missing\ntag on a tool output is a gap in provenance, not a promise.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Origin"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": {
               "type": "string",
               "const": "tool_output"
@@ -468,6 +479,16 @@
             "summary": {
               "type": "string"
             },
+            "origin": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Origin"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": {
               "type": "string",
               "const": "artifact"
@@ -484,6 +505,106 @@
     "CallId": {
       "description": "UUIDv7, canonical hyphenated form",
       "type": "string"
+    },
+    "Origin": {
+      "description": "Provenance of a context block (docs/20 T1: \"every context block carries\nprovenance (user | tool:{name} | web:{domain} | plugin:{id}); the system prompt\nand permission engine treat non-user origins as untrusted\").\n\nThe distinction this exists to preserve is the one prompt injection attacks:\ntext the *user* wrote is an instruction, and text a *tool* returned is data\nabout the world. Both arrive as strings in the same conversation, so the\ndifference has to be carried rather than inferred.",
+      "oneOf": [
+        {
+          "description": "The human. The only origin whose text is an instruction.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "user"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Our own scaffolding: system prompt, skill bodies, compaction summaries.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "system"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "tool"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        },
+        {
+          "description": "Fetched content. The domain is kept because \"this came from the web\" and\n\"this came from *this site*\" are different facts to an operator reading a\nreplay.",
+          "type": "object",
+          "properties": {
+            "domain": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "web"
+            }
+          },
+          "required": [
+            "kind",
+            "domain"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "plugin"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "server": {
+              "type": "string"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "mcp"
+            }
+          },
+          "required": [
+            "kind",
+            "server",
+            "tool"
+          ]
+        }
+      ]
     },
     "ArtifactRef": {
       "description": "Content-addressed handle into object storage. Events carry these instead\nof large payloads (docs/03, docs/15).",
