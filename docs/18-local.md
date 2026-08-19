@@ -144,7 +144,34 @@ offline via ed25519 pubkey baked into the binary.
   `tenant-scoping: single-tenant — <reason>` exemption that must name a reason, sits in the
   first 40 lines, and is counted by a test so a second claim has to be noticed. One file
   claims it today.
-- **M18.4** Capability profiles wired: same prompt on cloud vs local produces adapted system prompt + toolset (snapshot-tested).
+- **M18.4** Capability profiles wired: same prompt on cloud vs local produces adapted system prompt + toolset (snapshot-tested). ✅ *(shipped: `panday_types::CapabilityProfile`, `ContextBuilder::with_capabilities`, on by default in `panday local`; suites in `crates/panday-harness/tests/capability_profiles.rs` and `crates/panday-local/tests/offline_turn.rs`.)*
+
+  **"Measured by the eval suite — not vibes" is enforced by a field.** Every profile carries
+  `Provenance`, and a `Declared` one makes the prompt say **(estimated)**. The numbers
+  shipped today are declared: M19.2 measures them. A model told "your JSON reliability is
+  0.7" by a number nobody measured is being lied to precisely, and the hedge is what keeps
+  the honesty in the product rather than in a comment.
+
+  **The adaptations are thresholds on the profile, not a "local" flag.** A large local model
+  needs none of them and a small hosted one needs all of them, so `wants_minimal_tools`
+  reads tool reliability, `wants_aggressive_reduction` reads the window, and
+  `wants_expectation_notice` reads both. Three things change, all in the **stable** band so
+  they ride in the cached prefix rather than being injected later (ADR-008): the prompt gains
+  a constraints section, the tool set shrinks to reads-plus-`bash`, and the window becomes
+  the profile's *usable* context — compaction at 70% of a number the model cannot use fires
+  too late, and too late means the turn fails instead of degrading.
+
+  **The constraints section is absent when there is nothing to say.** A frontier profile
+  produces no section at all; telling a 200k-context model its context size is a sentence
+  paid for on every turn to say nothing, and a section full of non-constraints teaches the
+  reader to skip it — which is how the real constraints get missed. Same reason the lines are
+  facts about the model ("you cannot see images") rather than advice ("be careful with
+  JSON"): a fact is checkable and advice is not actionable.
+
+  The dropped tools are the ones where being wrong costs work — `write_file`, `edit_file`, a
+  plugin tool — while a bad `read_file` costs a turn. And no profile means no claims:
+  assuming frontier capabilities when nobody said is what produces a local model confidently
+  promising to read an image.
 - **M18.5** mistral.rs as alternate runner behind a flag.
 - **M18.6** Sync: offline sessions appear in cloud account after reconnect; ledger reconciles.
 - **M18.7** Air-gap kit: one tarball (binary + catalog + models) installs on a machine with no internet; documented for enterprise.

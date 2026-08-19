@@ -77,6 +77,21 @@ fn label(origin: &Option<panday_types::model::Origin>) -> String {
         .unwrap_or_else(|| "untagged".into())
 }
 
+/// The tool set a low-reliability model gets: reads, search, and one way to run something.
+///
+/// docs/18 says schemas "shrink to the minimal set" and this is that set. Chosen by what a
+/// model cannot get wrong in a way that matters — a bad `read_file` wastes a turn, a bad
+/// `write_file` costs work — and kept as a name list rather than a count so it does not
+/// depend on registration order. An unrecognised tool is dropped: a plugin tool given to a
+/// model that cannot reliably call tools is the worst of both.
+fn minimal_tools(tools: Vec<ToolDef>) -> Vec<ToolDef> {
+    const MINIMAL: &[&str] = &["read_file", "grep", "glob", "bash"];
+    tools
+        .into_iter()
+        .filter(|t| MINIMAL.contains(&t.name.as_str()))
+        .collect()
+}
+
 /// Which band a message belongs to. Ordering is the cache contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Band {
@@ -156,6 +171,12 @@ pub struct ContextBuilder {
     /// How much of the model window to fill before compacting.
     pub compact_at_ratio: f32,
     pub model_window_tokens: u32,
+    /// What the serving model can actually do (docs/18, M18.4).
+    ///
+    /// `None` means nobody said, and the assembly makes no claims — the alternative
+    /// (assuming frontier capabilities) is what produces a local model confidently
+    /// promising to read an image.
+    capabilities: Option<panday_types::CapabilityProfile>,
 }
 
 impl ContextBuilder {
@@ -166,10 +187,35 @@ impl ContextBuilder {
             skills_index: String::new(),
             loaded_skills: Vec::new(),
             semi_stable: Vec::new(),
+            capabilities: None,
             // docs/13's default.
             compact_at_ratio: 0.70,
             model_window_tokens: 200_000,
         }
+    }
+
+    /// Declare what the serving model can do, and adapt to it (docs/18 M18.4).
+    ///
+    /// Three adaptations, all in the *stable* band so they are part of the cached prefix
+    /// rather than something injected later (ADR-008): the prompt gains a constraints
+    /// section, the tool set shrinks when tool reliability is low, and the window shrinks
+    /// to the profile's usable context so compaction fires at the right point.
+    ///
+    /// Called before the first turn, like the skills index — the stable band must be
+    /// byte-identical for the session's life.
+    pub fn with_capabilities(mut self, profile: panday_types::CapabilityProfile) -> Self {
+        // The usable context, not the advertised one: compaction that fires at 70% of a
+        // number the model cannot actually use is compaction that fires too late.
+        self.model_window_tokens = profile.max_context_tokens;
+        if profile.wants_minimal_tools() {
+            self.tools = minimal_tools(std::mem::take(&mut self.tools));
+        }
+        self.capabilities = Some(profile);
+        self
+    }
+
+    pub fn capabilities(&self) -> Option<panday_types::CapabilityProfile> {
+        self.capabilities
     }
 
     /// Append to the semi-stable band. **Append only**: inserting or editing
@@ -232,6 +278,12 @@ impl ContextBuilder {
         // rule that arrives after the untrusted content it governs is a rule the
         // attacker got to speak first.
         text.push_str(PROVENANCE_RULE);
+
+        // What the model is, before what it can do: a constraint stated after a tool list
+        // is a constraint the model reads after deciding to use the tool.
+        if let Some(profile) = &self.capabilities {
+            text.push_str(&profile.prompt_constraints());
+        }
 
         // Index before tools: both are stable, and a fixed order is what keeps
         // the band byte-identical across turns.

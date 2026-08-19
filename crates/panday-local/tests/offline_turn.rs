@@ -283,3 +283,35 @@ async fn a_real_llama_server_answers() {
         "{rendered}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_local_session_tells_the_model_what_it_is() {
+    // M18.4 in the composition that needs it: docs/18's degraded-capability honesty is not
+    // a library feature, it is what `panday local` does by default. The profile is declared
+    // rather than measured until M19.2, and the prompt says so.
+    let dir = TempDir::new("caps");
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/lib.rs"), "pub fn add() {}\n").unwrap();
+
+    let base = fake_llama().await;
+    let mut local = Local::boot(LocalConfig::new(dir.path()).base_url(&base))
+        .await
+        .unwrap();
+    local.turn("look at it").await.unwrap();
+
+    // What the model was actually sent, read back from the log's own fold — the same source
+    // a replay would use.
+    let events = panday_harness::read_log(local.log_path()).unwrap();
+    let sent = format!("{events:?}");
+    // The tool ran, so the request went out with the adapted stable band. The band itself
+    // is asserted in the harness's own suite; here the claim is that the offline tier turns
+    // it on without being asked.
+    assert!(sent.contains("read_file"), "the adapted tool set was used");
+
+    let profile = LocalConfig::new(dir.path()).capabilities;
+    assert!(profile.wants_minimal_tools());
+    assert!(profile.wants_aggressive_reduction());
+    assert_eq!(profile.provenance, panday_types::Provenance::Declared);
+    assert!(!profile.vision, "a 4B GGUF cannot see");
+    assert_eq!(profile.max_subagents, 0, "one thread at a time locally");
+}

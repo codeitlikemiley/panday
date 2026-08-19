@@ -82,6 +82,10 @@ active `CapabilityProfile` (max context, no vision, weaker JSON discipline)
 which the harness injects into the system prompt — the model is told what it
 is, so it stops promising what it can't do (18).
 
+The type landed at M18.4 in `panday_types::capability`, and `panday local` applies it by
+default; the router returning it per route arrives with the model catalog (M12.2/M18.2),
+which is where per-model profiles will live.
+
 ## Milestones
 
 - **M12.1** Policy file parse + first-match engine + unreachable-rule linter; table-driven tests. ✅ *(shipped: `panday_router::policy` — `Policy`/`PolicyRouter`, the shipped default at `crates/panday-router/policy/default.yaml`, and `Policy::lint()`.)*

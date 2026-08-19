@@ -37,6 +37,16 @@ use panday_types::{AccountId, SessionId};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// The offline system prompt.
+///
+/// Short: every token here is paid on every turn of a session running on a machine whose
+/// window is measured in thousands rather than hundreds of thousands. The capability
+/// constraints are appended by `ContextBuilder::with_capabilities`, so this says what the
+/// agent is *for* and the profile says what it can do.
+const SYSTEM_PROMPT: &str = "You are Panday, a coding agent running locally on the user's \
+machine. You have a jailed workspace and no network. Work in small steps, check your work \
+with the tools you have, and say when something is beyond what you can do here.";
+
 /// The policy with nowhere to go but local.
 pub const LOCAL_POLICY: &str = include_str!("../../panday-router/policy/local.yaml");
 
@@ -51,6 +61,11 @@ pub struct LocalConfig {
     /// schema (`panday_harness::JsonlStore`).
     pub log: PathBuf,
     pub profile: Profile,
+    /// What the local model can do (docs/18 §degraded-capability honesty, M18.4).
+    ///
+    /// Declared, not measured — M19.2 measures them, and the system prompt says
+    /// "(estimated)" until it does.
+    pub capabilities: panday_types::CapabilityProfile,
 }
 
 impl LocalConfig {
@@ -65,7 +80,14 @@ impl LocalConfig {
             // is willing to have happen, and running a model on your own laptop does not
             // make `rm -rf` welcome.
             profile: Profile::Dev,
+            capabilities: panday_types::CapabilityProfile::small_local(),
         }
+    }
+
+    /// Override the capability profile — what a bigger local model gets.
+    pub fn capabilities(mut self, profile: panday_types::CapabilityProfile) -> Self {
+        self.capabilities = profile;
+        self
     }
 
     pub fn base_url(mut self, url: impl Into<String>) -> Self {
@@ -187,6 +209,23 @@ impl Local {
 
         let tools = native_tools(&workspace).await?;
 
+        // The adaptations docs/18 asks for, applied where they belong: the stable band
+        // (system prompt, tool set, window). The reducer's aggressive mode is chosen from
+        // the same profile below.
+        let context = panday_harness::context::ContextBuilder::new(
+            SYSTEM_PROMPT,
+            tools
+                .specs()
+                .into_iter()
+                .map(|s| panday_types::model::ToolDef {
+                    name: s.name,
+                    description: s.description,
+                    parameters: s.parameters,
+                })
+                .collect(),
+        )
+        .with_capabilities(config.capabilities);
+
         let mut actor = SessionActor::new(
             session,
             AccountId::new(),
@@ -202,7 +241,8 @@ impl Local {
                 Arc::new(panday_reducer::MemoryArtifactStore::default()),
             )),
             TurnBudget::default(),
-        );
+        )
+        .with_context(context);
         // Fold the log back into memory, then finish anything that was in flight when the
         // process died — `resume_pending` refuses to replay what is not replay-safe
         // (docs/13), which is why this is safe to do on every boot.
