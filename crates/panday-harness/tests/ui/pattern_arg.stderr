@@ -1,0 +1,5 @@
+error: a tool's parameters must be plain names: the name becomes the JSON field the model fills in, and a pattern has no name to use
+ --> tests/ui/pattern_arg.rs:5:5
+  |
+5 |     (a, b): (String, String),
+  |     ^^^^^^

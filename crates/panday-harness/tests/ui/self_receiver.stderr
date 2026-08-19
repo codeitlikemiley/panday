@@ -1,0 +1,5 @@
+error: a tool is a free function, not a method: `self` has no place in a schema, and the registry holds one instance per tool
+ --> tests/ui/self_receiver.rs:6:21
+  |
+6 |     async fn lookup(&self, id: String) -> Result<String, String> {
+  |                     ^

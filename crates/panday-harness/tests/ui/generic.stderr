@@ -1,0 +1,5 @@
+error: a tool cannot be generic: its arguments become one JSON Schema, and a type parameter has no schema until it is chosen
+ --> tests/ui/generic.rs:3:16
+  |
+3 | async fn lookup<T: ToString>(
+  |                ^

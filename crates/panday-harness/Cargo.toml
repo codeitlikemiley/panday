@@ -16,6 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
+schemars.workspace = true
 futures-util.workspace = true
 regex.workspace = true
 tracing.workspace = true
@@ -23,6 +24,10 @@ tokio = { workspace = true, features = ["time", "macros", "rt"] }
 time.workspace = true
 
 [dev-dependencies]
+# Compile-fail UI tests for `#[tool]` (docs/10 M10.4). Approved as a dev-dependency:
+# a proc macro's error messages are most of its quality, and there is no other way to
+# assert that bad code fails to compile *with a good message*.
+trybuild = "1"
 tracing-subscriber.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 futures-core.workspace = true

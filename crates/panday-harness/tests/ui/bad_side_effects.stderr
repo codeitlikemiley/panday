@@ -1,0 +1,5 @@
+error: unknown side effect `mostly harmless`; expected "none", "idempotent" or "irreversible" (docs/13 §permission engine)
+ --> tests/ui/bad_side_effects.rs:2:35
+  |
+2 | #[panday_sdk::tool(side_effects = "mostly harmless")]
+  |                                   ^^^^^^^^^^^^^^^^^

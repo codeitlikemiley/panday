@@ -21,6 +21,12 @@ pub mod telemetry;
 
 pub use gateway::{connect, GatewayTransport};
 pub use middleware::{ModelClientExt, Retry, RetryPolicy, Timeout};
+/// `#[panday_sdk::tool]` (M10.4). Re-exported here because docs/10 puts the macro in
+/// the SDK's surface — it is the embedded-agent story's front door — while the code it
+/// generates targets `panday-harness`, which the SDK does not depend on. A crate using
+/// the macro therefore depends on both, which is what the embedded agent does anyway
+/// (docs/10 Layer 4: "This embeds `panday-harness`").
+pub use panday_macros::tool;
 pub use sessions::{After, ClientMessage, SessionStream, SessionsClient};
 
 use async_trait::async_trait;

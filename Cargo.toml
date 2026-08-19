@@ -13,6 +13,7 @@ members = [
     "crates/panday-platform",
     "crates/panday-local",
     "crates/panday-cli",
+    "crates/panday-macros",
     "xtask",
 ]
 # A deliberately broken crate used as a test target (M13.2). It must NOT be
@@ -40,6 +41,7 @@ panday-harness = { path = "crates/panday-harness" }
 panday-plugins = { path = "crates/panday-plugins" }
 panday-gateway = { path = "crates/panday-gateway" }
 panday-harnessd = { path = "crates/panday-harnessd" }
+panday-macros = { path = "crates/panday-macros" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -68,6 +70,9 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# Proc-macro toolchain for `#[tool]` (docs/10 M10.4). `syn`/`quote`/`proc-macro2` are
+# the only way to write a proc macro in Rust; they are build-time only and appear in
+# no shipped binary.
 # MCP host (docs/02 dependency table, docs/16 §MCP host). **stdio only** — the
 # `transport-child-process` feature and nothing that opens a socket: the streamable
 # HTTP transport and the OAuth flows stay unbuilt until they are asked for, so this

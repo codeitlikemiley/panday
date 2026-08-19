@@ -45,6 +45,24 @@ pub use replay::{render, turn_costs, ReplayOptions, TurnCost};
 pub use secrets::{env_for_tool, MemoryVault, Refusal, ScrubSecrets, SecretVault};
 pub use summarize::CheapPoolSummarizer;
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
+
+pub use panday_sandbox::SandboxTier;
+
+/// Re-exports for generated code. Not a public API.
+///
+/// `#[panday_sdk::tool]` expands to code that needs `serde`, `serde_json`, `schemars`
+/// and `async_trait`. Routing those through here means a crate defining a tool depends
+/// on `panday-harness` and `panday-sdk` and nothing else — without this, every tool
+/// author would have to add four unrelated crates to their manifest and keep their
+/// versions in step with ours.
+#[doc(hidden)]
+pub mod __private {
+    pub use async_trait::async_trait;
+    pub use panday_types::Json;
+    pub use schemars;
+    pub use serde;
+    pub use serde_json;
+}
 pub use wasm_plugin::{WasmPluginHook, WasmPluginTool};
 
 /// Where events live. PG in cloud, SQLite/file in `panday local`; in-memory

@@ -101,17 +101,29 @@ For customers who want the loop in-process rather than calling our hosted
 harness:
 
 ```rust
-#[panday::tool]                       // proc-macro: schema from types via schemars
 /// Look up an order by id.
-async fn lookup_order(ctx: &ToolCtx, order_id: String) -> Result<Order> { ... }
+#[panday_sdk::tool]                   // proc-macro: schema from types via schemars
+async fn lookup_order(ctx: &ToolCtx, order_id: String, verbose: Option<bool>)
+    -> Result<Order, String> { ... }
+
+let mut registry = ToolRegistry::default();
+registry.register(Box::new(LookupOrder));   // the type the macro generated
 
 let agent = Agent::builder()
     .model("auto")                    // router decides
-    .tools(tools![lookup_order])
+    .tools(registry)
     .policy(PermissionPolicy::allow_all())   // their process, their rules
     .build(client);
 let run = agent.run(session, "where is order 123?").await?;
 ```
+
+**Amended at M10.4: the macro generates `LookupOrder`, it does not take over
+`lookup_order`.** The original sketch's `tools![lookup_order]` implies a unit struct
+named after the function, which would occupy the value namespace the function lives
+in — so the function would no longer be callable, including from its own unit tests. A
+tool you can only reach through an agent loop is a tool whose business logic can only
+be tested through an agent loop. The function stays exactly as written; the macro adds
+`LookupOrder` (the `Tool`) and `LookupOrderArgs` (the schema).
 
 This embeds `panday-harness` (13) with in-memory event storage — the same
 state machine that powers the cloud, which is the honesty guarantee: our
@@ -164,7 +176,36 @@ method, not a guess.
   the same text rather than two renderings of the same facts. Its second invocation
   resumes from the printed `--after-seq`, which is how that flag gets exercised the
   way a person would use it.
-- **M10.4** `#[panday::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures.
+- **M10.4** `#[panday::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures. ✅ *(shipped: `crates/panday-macros`, re-exported as `panday_sdk::tool`; suite and eight UI fixtures in `crates/panday-harness/tests/tool_macro.rs` + `tests/ui/`.)*
+
+  **The parameter list is the schema.** The macro builds an args struct from the
+  parameters after `ctx` and derives `JsonSchema` from that, so a signature and its
+  schema cannot disagree — which is the entire reason to have the macro rather than a
+  hand-written `ToolSpec` next to each function. Required-ness comes from `Option`,
+  the reading a Rust developer already has. The description comes from the `///` doc
+  comment: it lands in the stable cached prefix (ADR-008) and is what the model reads
+  to decide whether to call, so taking it from the doc comment means one description
+  rather than two that drift.
+
+  **`deny_unknown_fields` is deliberate.** A misspelled argument that was silently
+  dropped would look like the tool ignoring its instructions, which is the hardest
+  kind of bug to see in a transcript. It comes back as a tool error naming the field,
+  which the next turn can fix.
+
+  **The error messages are the deliverable**, so they are the thing under test. Eight
+  fixtures cover not-async, generic, no-`Result`, missing `ctx`, `self`, a borrowed
+  argument, a pattern argument and an unknown `side_effects` value — each one asserting
+  that the error points at the developer's own tokens and says why the rule exists. A
+  macro that accepts a bad signature and then fails inside its own expansion produces an
+  error pointing at code nobody wrote, which is the experience these prevent.
+  Regenerate with `TRYBUILD=overwrite cargo test -p panday-harness --test tool_macro`.
+  The suite builds a scratch crate, so its first run in a cold CI cache costs a couple
+  of minutes; afterwards it is ~1s.
+
+  **Generated code routes through `panday_harness::__private`** (serde, serde_json,
+  schemars, async_trait). Without that, every tool author would have to add four
+  unrelated crates to their manifest and keep the versions in step with ours; with it,
+  a crate defining tools depends on `panday-harness` and `panday-sdk` and nothing else.
 - **M10.5** Embedded Agent runs a 3-tool loop offline against `panday local`.
 - **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline.
 

@@ -1,0 +1,5 @@
+error: a tool must be `async fn`: the loop awaits it, and a blocking tool would stall every other session on its runtime thread
+ --> tests/ui/not_async.rs:3:1
+  |
+3 | fn lookup(_ctx: &panday_harness::tools::ToolCtx, id: String) -> Result<String, String> {
+  | ^^

@@ -1,0 +1,5 @@
+error: a tool must return `Result<T, E>`: the model needs to be told when a call failed, and a `()` return cannot say so
+ --> tests/ui/no_result.rs:3:1
+  |
+3 | async fn lookup(_ctx: &panday_harness::tools::ToolCtx, id: String) {
+  | ^^^^^

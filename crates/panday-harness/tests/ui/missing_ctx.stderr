@@ -1,0 +1,5 @@
+error: a tool's first parameter must be `ctx: &ToolCtx` — it carries the account, session and turn every call is attributed to (docs/10 §CallMeta)
+ --> tests/ui/missing_ctx.rs:3:16
+  |
+3 | async fn lookup() -> Result<String, String> {
+  |                ^^

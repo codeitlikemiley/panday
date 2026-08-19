@@ -1,0 +1,5 @@
+error: a tool's arguments must be owned types: they are deserialized from JSON the model produced, and there is nothing for a reference to borrow from
+ --> tests/ui/borrowed_arg.rs:3:60
+  |
+3 | async fn lookup(_ctx: &panday_harness::tools::ToolCtx, id: &str) -> Result<String, String> {
+  |                                                            ^

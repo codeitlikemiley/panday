@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 panday-types.workspace = true
+panday-macros.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
