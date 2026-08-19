@@ -3,6 +3,8 @@
 //! The commercial spine: entitlements + the append-only ledger
 //! (docs/17-platform.md, ADR-009). Stripe is a projection; this is truth.
 
+pub mod tenancy;
+
 use panday_types::{AccountId, Json, Timestamp};
 use serde::{Deserialize, Serialize};
 

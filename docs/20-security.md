@@ -155,6 +155,32 @@ the audit trail *is* the product's data model (ADR-002).
   credential looks like and misses the one that does not match, while the vault knows
   exactly which strings are secret (pattern-based DLP belongs at the gateway, where a
   false positive costs a redaction rather than a broken turn).
-- **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults. *(Two thirds landed elsewhere: the cache-key audit's finding is built into `CacheKey` at M11.6 — `account_id` is part of the key by construction, with a test that one tenant's prompt cannot serve another's response — and trace-scrubbing defaults are audited statically and at runtime by M21.5. What remains here is the CI lint that catches a *new* query or cache key built without a tenant scope.)*
+- **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults. ✅ *(shipped in three places: `panday_platform::tenancy` + `crates/panday-platform/tests/tenant_scoping.rs` (the lint), `CacheKey` at M11.6 (the cache-key audit's finding, built in), `crates/panday-sdk/tests/scrub_audit.rs` at M21.5 (scrubbing defaults).)*
+
+  **The lint is armed before the first query exists.** Postgres is M3.5, so today the
+  scan finds no SQL — which is exactly when this is worth writing. The first unscoped
+  query is the one written while someone is debugging something else, and by the time
+  there are fifty queries a lint becomes a migration project instead of a guardrail.
+
+  **The rule is coarse on purpose.** A statement touching a tenant table must *mention*
+  `account_id`; whether the predicate is correct is a code review's job. `AND
+  account_id = $1` in the wrong place is a review finding, no `account_id` at all is a
+  data breach, and only the second is decidable by a lint. Comments are stripped first,
+  because a commented-out predicate is precisely how a scoped query becomes unscoped
+  during a debugging session. DDL gets the stronger check — a `CREATE TABLE` for a
+  tenant table must *declare* the column, since a query lint cannot help if there is
+  nothing to filter on.
+
+  Tenant tables and global tables are both explicit lists: a table not on the tenant
+  list is asserting it holds no tenant data, which is a claim someone makes on purpose
+  rather than by omission. Matching is on word boundaries, so `accounts` does not fire
+  on `service_accounts_audit` — a lint that cries wolf gets deleted.
+
+  Test code is skipped, and has to be: a lint's own fixtures are examples of the thing
+  it forbids. Which leaves the failure mode that "no SQL in the repo" and "the scanner
+  is broken" look identical, so a planted-violation test builds a temp tree with one
+  `.sql` file and one Rust string literal and requires both walkers to find them. It
+  plants outside the repo because writing into it would race the scan test running
+  concurrently — which the first draft did, and failed.
 - **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented.
 - **M20.5** SBOM + signed releases; dependency-update cadence with an owner.
