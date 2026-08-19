@@ -167,6 +167,8 @@ pub enum LocalError {
     Server(String),
     #[error("entitlement: {0}")]
     Entitlement(String),
+    #[error("sync: {0}")]
+    Sync(String),
 }
 
 /// A booted offline session.
@@ -187,6 +189,54 @@ pub struct Local {
     /// first. The log is the source of truth for what to render — the same fold a replay
     /// does (ADR-002).
     rendered: usize,
+}
+
+/// Push a finished session's log to a cloud account (docs/18 §Sync, M18.6).
+///
+/// Reads the file rather than the in-memory actor: the log *is* the state (ADR-002), so syncing
+/// what is on disk is the same thing as syncing what happened — and it works for a session this
+/// process never ran, which is what makes "sync yesterday's work" a one-liner.
+///
+/// Idempotent on the server, so a failed push is retried by running it again. Nothing here tracks
+/// what has been synced; a local high-water mark would be a second source of truth to get wrong.
+pub async fn sync_log(log: &Path, base_url: &str, api_key: &str) -> Result<SyncReport, LocalError> {
+    let body = std::fs::read_to_string(log)
+        .map_err(|e| LocalError::Sync(format!("read {}: {e}", log.display())))?;
+    if body.trim().is_empty() {
+        return Err(LocalError::Sync("the log is empty".into()));
+    }
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/v1/sync/sessions",
+            base_url.trim_end_matches('/')
+        ))
+        .header("authorization", format!("Bearer {api_key}"))
+        .header("content-type", "application/x-ndjson")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| LocalError::Sync(e.to_string()))?;
+
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(LocalError::Sync(format!("{status}: {}", text.trim())));
+    }
+    serde_json::from_str(&text).map_err(|e| LocalError::Sync(format!("{e}: {text}")))
+}
+
+/// What the server did with a pushed log.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SyncReport {
+    pub session_id: uuid::Uuid,
+    pub stored: u32,
+    pub already_present: u32,
+    pub ledger_entries: u32,
+    #[serde(default)]
+    pub unknown_events: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
 }
 
 /// Read and verify an entitlement file (M17.6).

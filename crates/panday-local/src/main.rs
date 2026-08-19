@@ -49,6 +49,7 @@ async fn run() -> ExitCode {
 
     let mut config = LocalConfig::new(std::env::current_dir().unwrap_or_else(|_| ".".into()));
     let mut prompt: Vec<String> = Vec::new();
+    let mut sync_url: Option<String> = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let mut next = || it.next().cloned();
@@ -84,6 +85,13 @@ async fn run() -> ExitCode {
             "--log" => match next() {
                 Some(v) => config = config.log(v),
                 None => return fail("--log needs a path"),
+            },
+            // M18.6. Sync and exit: a session that is finished is the thing worth pushing, and
+            // mixing "run a turn" with "upload" in one invocation would make a failed upload look
+            // like a failed turn.
+            "--sync" => match next() {
+                Some(url) => sync_url = Some(url),
+                None => return fail("--sync needs a base URL, e.g. https://api.panday.dev"),
             },
             // M17.6. Two flags rather than a baked-in key, for the same reason the model catalog
             // has none: we have published no key, and a placeholder would teach people to trust
@@ -122,6 +130,47 @@ async fn run() -> ExitCode {
             }
             other => prompt.push(other.to_string()),
         }
+    }
+
+    if let Some(url) = sync_url {
+        let Ok(key) = std::env::var("PANDAY_API_KEY") else {
+            return fail("--sync needs PANDAY_API_KEY (a `sessions`-scoped key from the platform)");
+        };
+        return match panday_local::sync_log(&config.log, &url, &key).await {
+            Ok(report) => {
+                println!(
+                    "session {} synced — {} new events, {} already there, {} ledger entr{} \
+                     ({} in / {} out tokens)",
+                    report.session_id,
+                    report.stored,
+                    report.already_present,
+                    report.ledger_entries,
+                    if report.ledger_entries == 1 {
+                        "y"
+                    } else {
+                        "ies"
+                    },
+                    report.input_tokens,
+                    report.output_tokens
+                );
+                // Said out loud, because a log the server could not interpret syncs
+                // "successfully" and reconciles to nothing.
+                if report.unknown_events > 0 {
+                    println!(
+                        "note: {} event(s) were stored but not understood by the server — \
+                         they are preserved, but they counted for nothing",
+                        report.unknown_events
+                    );
+                }
+                ExitCode::SUCCESS
+            }
+            // Retrying is running the command again: the push is idempotent, so there is nothing to
+            // clean up and no partial state to reason about.
+            Err(e) => fail(&format!(
+                "{e}\n\nThe push is idempotent — run it again when the \
+                                     connection is back."
+            )),
+        };
     }
 
     if prompt.is_empty() {
@@ -179,6 +228,7 @@ fn usage() -> String {
      --workspace  the directory tools are scoped to (default: cwd)\n  \
      --profile    read_only | dev | unleashed (default dev)\n  \
      --log        where the event log goes (default <workspace>/.panday/session.jsonl)\n  \
+     --sync <url>   push this session's log to a cloud account and exit; needs $PANDAY_API_KEY\n  \
      --entitlement  an offline licence file (with .sig beside it); needs\n                  \
      $PANDAY_ENTITLEMENT_KEY. Absent = community tier, which is a complete product\n  \
      --serve      start and supervise llama-server on this .gguf, instead of attaching to a\n               \

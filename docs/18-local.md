@@ -218,5 +218,34 @@ offline via ed25519 pubkey baked into the binary.
   assuming frontier capabilities when nobody said is what produces a local model confidently
   promising to read an image.
 - **M18.5** mistral.rs as alternate runner behind a flag.
-- **M18.6** Sync: offline sessions appear in cloud account after reconnect; ledger reconciles.
+- **M18.6** Sync: offline sessions appear in cloud account after reconnect; ledger reconciles. ✅ *(shipped: `panday_platform::sync` + migration `0006_session_events.sql` + `POST /v1/sync/sessions`, `panday local --sync <url>`.)*
+
+  **Idempotent, because the network it runs on is not.** Events are keyed `(session_id, seq)` and
+  the ledger entry carries `sync:{session_id}`. Pushing the same log twice — reconnect, crash,
+  reconnect — stores nothing new and bills nothing twice, and a push that dropped halfway is
+  completed by running it again with the whole log. Nothing on the laptop tracks what has been
+  synced: a local high-water mark would be a second source of truth to get wrong, and the server
+  already knows.
+
+  **Verified, not trusted.** The log arrives from a machine the customer controls, so its
+  gaplessness, its single-session-ness and its account are checked here — and the ledger effect is
+  *recomputed* from the events with `rebuild::from_log` (M3.5's primitive, reused) rather than taken
+  from anything the client asserts. What a laptop says about its own bill is a claim; the log is the
+  evidence.
+
+  **Zero money, real usage.** Local inference costs nothing, so the entry is zero-amount and carries
+  the token counts and `offline: true`. A free tier that recorded nothing for offline work could not
+  enforce fair use; one that invented a cost would bill for electricity it did not buy.
+
+  **An unreadable event is stored, counted, and reported.** Unknown kinds are preserved (docs/03),
+  so a laptop on a newer build does not lose events by syncing to an older server — but they
+  reconcile to nothing, which means a wholly-unknown log would sync "successfully" and count for
+  zero. `unknown_events` in the report is how anyone finds out; `panday local --sync` prints it.
+
+  **A rejected push leaves nothing behind.** The events go in one transaction, so a log refused for
+  a gap does not leave a prefix that the next push would read as a *different* gap.
+
+  **Syncing is its own invocation**, not a flag on a turn: mixing "run a turn" with "upload" would
+  make a failed upload look like a failed turn. And it reads the log file rather than the running
+  actor — the log *is* the state (ADR-002), so yesterday's session syncs with the same command.
 - **M18.7** Air-gap kit: one tarball (binary + catalog + models) installs on a machine with no internet; documented for enterprise.

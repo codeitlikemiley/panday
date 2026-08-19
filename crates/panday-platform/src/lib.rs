@@ -10,6 +10,7 @@ pub mod pg;
 pub mod rebuild;
 pub mod registry;
 pub mod routes;
+pub mod sync;
 pub mod tenancy;
 
 use panday_types::{AccountId, Json, Timestamp};

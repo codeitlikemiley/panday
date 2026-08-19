@@ -275,7 +275,7 @@ async fn run() -> Result<(), String> {
         // usage must be billed or refused — never served for free because a write failed.
         .usage_sink(Arc::new(LedgerSink::new(
             pool.clone(),
-            prices,
+            prices.clone(),
             OnWriteFailure::FailClosed,
         )))
         .budget(Arc::new(LedgerBudget::new(pool.clone(), Plan::free())))
@@ -295,7 +295,15 @@ async fn run() -> Result<(), String> {
         state = state.with_rate_limit(Arc::new(RateLimiter::per_minute(limit)));
     }
 
-    let app = panday_gateway::ingress::router(state);
+    // Two routers on one port: the model plane and the sync endpoint. A customer who has a key
+    // should not need a second host to push the sessions that key already paid for (M18.6).
+    let app = panday_gateway::ingress::router(state).merge(panday_platform::sync::http::router(
+        panday_platform::sync::http::SyncState {
+            pool: pool.clone(),
+            prices: prices.clone(),
+            auth: Arc::new(KeyAuthenticator::new(pool.clone())),
+        },
+    ));
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;
