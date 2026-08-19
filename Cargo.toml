@@ -27,6 +27,9 @@ license = "UNLICENSED"          # decide before anything is public
 repository = ""
 publish = false                 # nothing here goes to a registry (docs/00 §Naming)
 
+# The T1 demo guest builds only for wasm32-wasip2 (see its own manifest).
+exclude = ["fixtures/demo-tool"]
+
 [workspace.dependencies]
 panday-types = { path = "crates/panday-types" }
 panday-sdk = { path = "crates/panday-sdk" }
@@ -64,6 +67,12 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# T1 sandbox tier (docs/02 dependency table, docs/14 §tiers). Component model +
+# fuel + epoch interruption; `wasmtime-wasi` is linked with an EMPTY capability
+# set, which is what makes the tier's promise ("only the imports we grant") true
+# for a guest that std links WASI into whether it uses it or not.
+wasmtime = "47"
+wasmtime-wasi = "47"
 # ACP for editors (docs/02 dependency table, docs/16 §ACP bridge). The AEP⇄ACP
 # mapping is written against the official crate's types rather than a private
 # ACP-shaped struct, so M16.5 is transport wiring and not a second translation.

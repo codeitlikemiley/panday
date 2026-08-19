@@ -154,7 +154,67 @@ type error.
   Every must-fail case is paired with a **positive control** proving the same
   operation succeeds unsandboxed — the network test skips itself when the host
   has no egress, because a denial proves nothing on an offline machine.
-- **M14.4** T1 wasmtime: WIT world for plugin tools (`panday:plugin/tool`), fuel + epoch limits; a demo plugin tool runs.
+- **M14.4** T1 wasmtime: WIT world for plugin tools (`panday:plugin/tool`), fuel + epoch limits; a demo plugin tool runs. ✅ *(shipped: `crates/panday-sandbox/wit/tool.wit`, `panday_sandbox::t1_wasm`, 14-case suite in `crates/panday-sandbox/tests/t1_wasm.rs`, demo guests in `fixtures/{demo,greedy}-tool` built by `cargo xtask wasm-fixtures`.)*
+
+  **T1 is not a `Sandbox`.** That trait models a session you exec commands in —
+  create, exec, put, get, destroy. A T1 guest has no filesystem to put a file into
+  and no process to exec; its unit of work is a function call. Implementing the
+  trait would mean four `Unsupported` methods and one that lies about what `exec`
+  means, so the tier has its own type and `SandboxTier::T1Wasm` stays the label the
+  permission engine and the metering use.
+
+  **The capability story, and the part `std` forces.** `wit/tool.wit` is the whole
+  world: one import (`host.log`), one export (`run`). But a Rust guest links WASI
+  into its binary whether it uses it or not — the demo component imports
+  `wasi:filesystem`, `wasi:cli/environment` and eleven more purely by having `std`.
+  Refusing to link those would fail instantiation on every real guest, so they are
+  linked with an **empty** `WasiCtx`: no preopens, no environment, no stdio, no
+  sockets. The guest can call `wasi:filesystem` and find nothing to open. That is
+  the same guarantee by a different route, and it is a claim about behaviour rather
+  than configuration, so the suite tests it — including a canary environment
+  variable the guest must not see.
+
+  | Guarantee | Mechanism | Status |
+  |---|---|---|
+  | Only granted imports reachable | WIT world + linker | **strict** (refused at instantiation) |
+  | No filesystem | empty `WasiCtx` (no preopens) | **strict** |
+  | No environment inherited | empty `WasiCtx` | **strict** |
+  | No network egress | sockets never linked | **strict** |
+  | Instruction ceiling | wasmtime fuel | **strict** |
+  | Wall-clock ceiling | epoch interruption (1ms tick) | **strict** |
+  | Memory ceiling | `StoreLimits` | **strict** |
+  | No state across calls | fresh `Store` per call | **strict** |
+
+  **Two limits, because they stop different things.** Fuel counts instructions, so
+  it bounds work deterministically — the same guest stops at the same place on a
+  fast laptop and a loaded CI runner, which is what makes a reproducible limit test
+  possible. Epochs bound wall-clock, which is what an operator actually cares
+  about, and are the only limit that can stop a guest blocked in a host call rather
+  than burning instructions. Fuel alone lets a slow import hang a turn; epochs
+  alone make every limit test a race against a timer.
+
+  **The escape-suite case docs/14 names** ("T1: import not granted in WIT world")
+  is a real plugin, not a synthetic one: `fixtures/greedy-tool` is built against
+  the same package name with the same `run` export plus a `secrets` import the host
+  does not link. It compiles fine — a plugin author can write it — and it is
+  refused at instantiation, before it executes an instruction. The error is its own
+  variant (`CapabilityNotGranted`) rather than a generic trap, because "the plugin
+  asked for something it was not given" and "wasm broke" call for different
+  responses.
+
+  **Two bugs the tests caught.** The store limits started at `instances(1)` — a
+  *component* is several core instances (guest module plus WASI adapter), so every
+  real component failed to instantiate. And the demo guest's `spin` op counted to
+  `u64::MAX` and returned: LLVM proved that terminates and folded the loop away, so
+  the fuel and deadline tests both passed with `Ok("{}")` — limit tests that never
+  reached a limit. It is `black_box`ed now.
+
+  The components are **checked in** (`tests/fixtures/*.wasm`) and rebuilt by `cargo
+  xtask wasm-fixtures`. A suite that needed `wasm32-wasip2` and a component
+  toolchain installed would skip itself on most machines, and a sandbox suite that
+  skips itself is a sandbox nobody is testing — the same argument docs/14 already
+  makes about bubblewrap in CI. Cost of the dependency: wasmtime is a large build,
+  which adds a few minutes to a cold CI compile.
 - **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95.
 - **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo.
 - **M14.7** sandbox-seconds metering events → ledger (17).

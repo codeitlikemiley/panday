@@ -5,6 +5,7 @@
 //! cargo xtask schemas          # regenerate proto/
 //! cargo xtask schemas --check  # fail if proto/ is stale (CI)
 //! cargo xtask reduce-bench     # reduce-then-solve scorecard + regression gate
+//! cargo xtask wasm-fixtures    # rebuild the checked-in T1 plugin components
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -35,6 +36,16 @@ fn main() -> ExitCode {
         // to run and one artifact to keep, and so a human can read the scorecard
         // without decoding `cargo test` output.
         "reduce-bench" => reduce_bench(rest.iter().any(|a| a == "--quiet")),
+        // M14.4. The built components are checked in, so this is run by a human
+        // when a fixture's source changes — not by CI, which must not need a wasm
+        // toolchain to gate the sandbox.
+        "wasm-fixtures" => match wasm_fixtures() {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask wasm-fixtures: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "help" | "--help" | "-h" => {
             usage();
             ExitCode::SUCCESS
@@ -52,8 +63,53 @@ fn usage() {
         "usage: cargo xtask <task>\n\n\
          tasks:\n  \
          schemas [--check]   export JSON Schema for the event protocol to proto/\n  \
-         reduce-bench        run the reduce-then-solve eval; non-zero on regression\n"
+         reduce-bench        run the reduce-then-solve eval; non-zero on regression\n  \
+         wasm-fixtures       rebuild fixtures/*-tool into the T1 test fixtures\n"
     );
+}
+
+/// Rebuild the T1 demo components and copy them where the escape suite reads them.
+///
+/// The output is checked in on purpose (see `crates/panday-sandbox/tests/t1_wasm.rs`):
+/// a suite that needed `wasm32-wasip2` and `cargo-component` installed would skip
+/// itself on most machines, and a sandbox suite that skips itself is a sandbox
+/// nobody is testing.
+fn wasm_fixtures() -> Result<ExitCode, String> {
+    const TARGET: &str = "wasm32-wasip2";
+    let root = repo_root();
+    let dest = root.join("crates/panday-sandbox/tests/fixtures");
+    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+
+    for (dir, artifact) in [
+        ("fixtures/demo-tool", "demo_tool.wasm"),
+        ("fixtures/greedy-tool", "greedy_tool.wasm"),
+    ] {
+        let crate_dir = root.join(dir);
+        let status = std::process::Command::new(env!("CARGO"))
+            .current_dir(&crate_dir)
+            .args(["build", "--release", "--target", TARGET])
+            .status()
+            .map_err(|e| format!("{dir}: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "{dir}: build failed (is the {TARGET} target installed? \
+                 `rustup target add {TARGET}`)"
+            ));
+        }
+        let built = crate_dir
+            .join("target")
+            .join(TARGET)
+            .join("release")
+            .join(artifact);
+        std::fs::copy(&built, dest.join(artifact))
+            .map_err(|e| format!("copy {}: {e}", built.display()))?;
+        println!("{} -> {}", built.display(), dest.join(artifact).display());
+    }
+    println!(
+        "\nThe components are checked in; commit them with the change that \
+         produced them so a reviewer sees both."
+    );
+    Ok(ExitCode::SUCCESS)
 }
 
 /// docs/15 M15.5: "nightly job + regression gate". The gate is the exit code.

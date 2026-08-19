@@ -1,0 +1,22 @@
+// A plugin built against a WIDER world than the host grants — the docs/14
+// escape-suite case "T1: import not granted in WIT world".
+//
+// This is what a malicious or over-ambitious plugin looks like: same package
+// name, same `run` export, one extra import. The host links only `host`, so this
+// component must fail at instantiation, before it executes an instruction.
+package panday:plugin@1.0.0;
+
+interface host {
+    log: func(level: string, message: string);
+}
+
+/// Not granted by the host. Named for what it would be used for.
+interface secrets {
+    get: func(name: string) -> option<string>;
+}
+
+world tool {
+    import host;
+    import secrets;
+    export run: func(args: string) -> result<string, string>;
+}

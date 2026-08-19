@@ -1,0 +1,25 @@
+# The demo T1 plugin tool (docs/14 M14.4: "a demo plugin tool runs").
+#
+# Outside the workspace on purpose: it only builds for `wasm32-wasip2`, and a
+# workspace member that cannot be built for the host would break
+# `cargo build --workspace` for everyone. Built by `cargo xtask wasm-fixtures`;
+# the resulting component is checked in so neither the test suite nor CI needs a
+# wasm toolchain.
+# Its own workspace root, so the host workspace never tries to build it.
+[workspace]
+
+[package]
+name = "demo-tool"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.51"
+
+[profile.release]
+opt-level = "s"
+strip = true

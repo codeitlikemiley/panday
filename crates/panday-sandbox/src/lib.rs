@@ -133,6 +133,7 @@ pub enum SandboxError {
 pub mod exec_stream;
 pub mod path;
 pub mod t0;
+pub mod t1_wasm;
 #[cfg(target_os = "linux")]
 pub mod t2_linux;
 #[cfg(target_os = "macos")]
