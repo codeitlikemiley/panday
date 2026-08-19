@@ -176,6 +176,13 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   only `pre-tool` returns a `verdict`; `post-tool` and `on-stop` return nothing, so
   there is no value for a caller to misread as a vote and no way for a plugin to try.
 
+  **The budget covers the plugin's code, not our linking.** CI caught this: docs/16 gives
+  a hook 10ms, and instantiating a component on a loaded runner takes longer than that, so
+  every hook was reported over budget before its own code ran — a hook that does nothing
+  but log failed with `Deadline(10ms)`. Fuel and the epoch deadline are now armed *after*
+  instantiation, with a generous bootstrap allowance for the linking itself. A budget the
+  runtime can exhaust on its own is not a budget on the guest.
+
   **A budget breach is `Proceed`.** docs/16 says a hook that exceeds its 10ms budget
   "is skipped and the event logged", and docs/13 gives the same rule for any hook
   failure. Both other readings are wrong in a specific way: treating the breach as a

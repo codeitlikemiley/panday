@@ -105,6 +105,11 @@ impl T1Runtime {
         let instance = Hook::instantiate(&mut store, &hook.component, &linker)
             .map_err(|e| classify(e, &store, limits))?;
 
+        // The budget covers the hook's code, not our linking. docs/16 gives a hook 10ms;
+        // CI showed that instantiating a component can take longer than that on a loaded
+        // runner, which skipped every hook before it ran.
+        T1Runtime::arm(&mut store, limits)?;
+
         let result = match call {
             HookCall::PreTool { tool, args } => instance.call_pre_tool(&mut store, tool, args),
             HookCall::PostTool { tool, output } => instance

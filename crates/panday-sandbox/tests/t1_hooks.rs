@@ -233,3 +233,24 @@ fn a_tool_component_is_not_a_hook() {
         .unwrap_err();
     assert!(matches!(err, T1Error::Trap(_)), "{err:?}");
 }
+
+#[test]
+fn the_budget_covers_the_hooks_code_and_not_our_linking() {
+    // CI found this: docs/16 gives a hook 10ms, and instantiating a component on a loaded
+    // runner can take longer than that — so every hook was reported over budget before
+    // its code ran (`Deadline(10ms)` from a hook that does nothing but log). The budget is
+    // armed after instantiation now, which is what makes 10ms a statement about the
+    // plugin rather than about the machine.
+    let rt = T1Runtime::new().unwrap();
+    let h = hook(&rt);
+    for _ in 0..5 {
+        let verdict = rt
+            .call_hook(
+                &h,
+                HookCall::OnStop { reason: "end_turn" },
+                T1Limits::hook(),
+            )
+            .expect("a trivial hook must fit in its budget");
+        assert!(matches!(verdict, Verdict::Proceed));
+    }
+}
