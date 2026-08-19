@@ -56,16 +56,43 @@ fn indented(body: &str) -> String {
 
 /// Render a log the way the CLI would have shown it.
 pub fn render(events: &[Envelope], opts: ReplayOptions) -> String {
-    let mut out = String::new();
-    let mut turn = 0u32;
-    let mut turn_usage = Usage::default();
+    let mut renderer = Renderer::new(opts);
+    events.iter().map(|e| renderer.push(e)).collect()
+}
 
-    for env in events {
+/// Incremental renderer.
+///
+/// The same formatter a replay uses, driven one event at a time — because a live
+/// session and a replay must look identical (docs/21: a replay "renders any
+/// session's event log as the CLI would have shown it"). Two formatters would drift
+/// the moment one got a fix, and the whole value of the replay is that it is not a
+/// separate rendering of the same facts.
+pub struct Renderer {
+    opts: ReplayOptions,
+    turn: u32,
+    turn_usage: Usage,
+}
+
+impl Renderer {
+    pub fn new(opts: ReplayOptions) -> Self {
+        Self {
+            opts,
+            turn: 0,
+            turn_usage: Usage::default(),
+        }
+    }
+
+    /// Render one event, advancing the turn counter and usage fold.
+    pub fn push(&mut self, env: &Envelope) -> String {
+        let opts = self.opts;
+        let turn = &mut self.turn;
+        let turn_usage = &mut self.turn_usage;
+        let mut out = String::new();
         // Time travel: everything after the cut is simply not part of this
         // rendering. No interpolation — the log at seq N is a real state the
         // session actually passed through.
         if opts.at_seq.is_some_and(|at| env.seq > at) {
-            break;
+            return String::new();
         }
 
         match &env.event {
@@ -77,8 +104,8 @@ pub fn render(events: &[Envelope], opts: ReplayOptions) -> String {
                 ));
             }
             Event::TurnStarted { model, .. } => {
-                turn += 1;
-                turn_usage = Usage::default();
+                *turn += 1;
+                *turn_usage = Usage::default();
                 out.push_str(&format!(
                     "\n[{}] ── turn {turn} · {} ──\n",
                     env.seq, model.0
@@ -182,8 +209,8 @@ pub fn render(events: &[Envelope], opts: ReplayOptions) -> String {
                 ));
             }
         }
+        out
     }
-    out
 }
 
 /// A per-turn cost summary, folded from the log alone.

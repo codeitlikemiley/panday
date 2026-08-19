@@ -129,7 +129,41 @@ method, not a guess.
 
 - **M10.1** Model IR + streaming trait compile ✅ *(in workspace)*; round-trip serde tests.
 - **M10.2** Gateway transport with retry/timeout middleware; streams a real completion end to end via one provider. ✅ *(shipped: `panday_sdk::gateway::GatewayTransport` + `connect()`, `panday_sdk::middleware::{Retry, Timeout}`. The wire layer moved from `panday-gateway` to `panday_sdk::providers` so both sides share it.)*
-- **M10.3** Sessions client over WS with resume-after-seq; used by panday-cli (dogfood — the CLI has no private APIs).
+- **M10.3** Sessions client over WS with resume-after-seq; used by panday-cli (dogfood — the CLI has no private APIs). ✅ *(shipped: `panday_sdk::sessions`, `panday-harnessd`'s `SessionDriver` + inbound socket handling, `panday session` in the CLI; suites in `crates/panday-sdk/tests/sessions.rs` and `crates/panday-cli/tests/session_dogfood.rs`.)*
+
+  **The socket is bidirectional**, and that is a design decision rather than a
+  convenience. An earlier shape had events arriving on the WS and input going over
+  POST, which gives two orderings to reason about — an input accepted after a
+  disconnect but before its events — and leaves the client unable to tell whether
+  its input landed before the events it is missing. One socket means one order: what
+  a client sends is sequenced against what it receives, and if the socket dies both
+  halves die together and resume replays the truth.
+
+  **Resume is the only sync mechanism** (docs/03), so the client has no reconcile
+  step, no "am I in sync" handshake and no local queue. `resume_point()` advances
+  only when an event is *returned to the caller*, never when it is received — an
+  event dropped between the socket and the application must be replayed, and
+  advancing on receipt would skip it. The acceptance case is docs/03's: the test
+  *drops* a live connection mid-turn rather than closing it politely, then resumes
+  and asserts it receives exactly the missed events, no repeats and no gap.
+
+  A resume point past the head is surfaced as a **protocol** error and reported
+  non-retryable, so a client does not loop against a condition retrying cannot fix.
+  Input to a server with no driver is refused with a close reason rather than
+  dropped: a client whose message vanished would wait forever for events that were
+  never coming. Same for a malformed frame.
+
+  `panday-harnessd` takes a `SessionDriver` rather than embedding a `SessionActor`
+  (docs/01: "libraries take traits, binaries do the wiring") — which model, tools and
+  sandbox a hosted session gets is a deployment decision, and it is what lets this
+  suite drive a real socket against a scripted session with no provider.
+
+  **The dogfood is a test, not a claim.** `panday session` reaches the platform only
+  through `panday_sdk::sessions`, and it renders events with the *same*
+  `replay::Renderer` that `panday replay` uses — so a live session and its replay are
+  the same text rather than two renderings of the same facts. Its second invocation
+  resumes from the printed `--after-seq`, which is how that flag gets exercised the
+  way a person would use it.
 - **M10.4** `#[panday::tool]` macro with schemars-derived schemas; compile-fail UI tests for bad signatures.
 - **M10.5** Embedded Agent runs a 3-tool loop offline against `panday local`.
 - **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline.

@@ -39,6 +39,7 @@ panday-sandbox = { path = "crates/panday-sandbox" }
 panday-harness = { path = "crates/panday-harness" }
 panday-plugins = { path = "crates/panday-plugins" }
 panday-gateway = { path = "crates/panday-gateway" }
+panday-harnessd = { path = "crates/panday-harnessd" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -67,6 +68,14 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# WebSocket client for the sessions API (docs/10 M10.3). Approved as a table
+# amendment: axum's server side already uses tungstenite underneath, so this keeps
+# one implementation of RFC 6455 in the graph rather than a hand-rolled second one.
+# rustls only, matching the reqwest policy — no openssl linkage.
+tokio-tungstenite = { version = "0.28", default-features = false, features = [
+    "connect",
+    "rustls-tls-webpki-roots",
+] }
 # T1 sandbox tier (docs/02 dependency table, docs/14 §tiers). Component model +
 # fuel + epoch interruption; `wasmtime-wasi` is linked with an EMPTY capability
 # set, which is what makes the tier's promise ("only the imports we grant") true

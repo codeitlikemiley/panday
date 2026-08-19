@@ -16,10 +16,12 @@ pub mod gateway;
 pub mod metrics;
 pub mod middleware;
 pub mod providers;
+pub mod sessions;
 pub mod telemetry;
 
 pub use gateway::{connect, GatewayTransport};
 pub use middleware::{ModelClientExt, Retry, RetryPolicy, Timeout};
+pub use sessions::{After, ClientMessage, SessionStream, SessionsClient};
 
 use async_trait::async_trait;
 use panday_types::model::{ChatRequest, StreamItem};

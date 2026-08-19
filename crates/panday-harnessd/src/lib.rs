@@ -32,14 +32,54 @@ struct Session {
     live: broadcast::Sender<Envelope>,
 }
 
+pub mod testing;
+
+/// What turns client input into events.
+///
+/// A trait rather than an embedded `SessionActor` because docs/01 is explicit that
+/// "libraries take traits, binaries do the wiring": `panday-harnessd` serves the
+/// protocol, and which model, tools and sandbox a session gets is a deployment
+/// decision. It is also what lets the M10.3 client suite drive a real socket
+/// against a scripted session with no provider.
+///
+/// Implementations receive the state so they can `publish` — every effect a driver
+/// has on a session is an appended event, which is what keeps the log the whole
+/// truth (ADR-002).
+#[async_trait::async_trait]
+pub trait SessionDriver: Send + Sync {
+    async fn user_input(&self, state: &AppState, session: SessionId, text: String);
+    async fn decision(
+        &self,
+        state: &AppState,
+        session: SessionId,
+        call_id: panday_types::CallId,
+        decision: panday_types::event::PermDecision,
+    );
+    async fn cancel(&self, _state: &AppState, _session: SessionId) {}
+}
+
 #[derive(Clone, Default)]
 pub struct AppState {
     sessions: Arc<std::sync::Mutex<HashMap<SessionId, Arc<Session>>>>,
+    /// Absent means read-only: the socket still streams events, and client input is
+    /// refused rather than silently dropped — a client whose input vanished would
+    /// wait forever for events that were never going to come.
+    driver: Option<Arc<dyn SessionDriver>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Wire the thing that runs turns (M10.3).
+    pub fn with_driver(mut self, driver: Arc<dyn SessionDriver>) -> Self {
+        self.driver = Some(driver);
+        self
+    }
+
+    pub fn accepts_input(&self) -> bool {
+        self.driver.is_some()
     }
 
     /// Create a session and return its handle.
@@ -220,6 +260,20 @@ async fn serve(mut socket: WebSocket, state: AppState, id: SessionId, after_seq:
                 // the state. Reconnecting with `after_seq` is the whole
                 // recovery story (docs/03).
                 None | Some(Err(_)) | Some(Ok(WsMessage::Close(_))) => return,
+                Some(Ok(WsMessage::Text(text))) => {
+                    if let Err(reason) = handle_client_message(&state, id, &text).await {
+                        // Closed with a reason rather than ignored: a client whose
+                        // input silently vanished would wait forever for events
+                        // that were never going to come.
+                        let _ = socket
+                            .send(WsMessage::Close(Some(axum::extract::ws::CloseFrame {
+                                code: 1003,
+                                reason: reason.into(),
+                            })))
+                            .await;
+                        return;
+                    }
+                }
                 Some(Ok(_)) => {}
             },
             event = live.recv() => match event {
@@ -243,6 +297,33 @@ async fn serve(mut socket: WebSocket, state: AppState, id: SessionId, after_seq:
             },
         }
     }
+}
+
+/// Dispatch one client frame. `Err(reason)` closes the socket.
+///
+/// Input is driven, not queued: the driver appends events, and the same socket
+/// delivers them — so a client sees the consequence of its own message in order,
+/// and a disconnect loses nothing that the log did not already have.
+async fn handle_client_message(state: &AppState, id: SessionId, text: &str) -> Result<(), String> {
+    let message: panday_sdk::sessions::ClientMessage =
+        serde_json::from_str(text).map_err(|e| format!("not a client message: {e}"))?;
+
+    let Some(driver) = state.driver.clone() else {
+        return Err("this server does not accept session input".into());
+    };
+
+    match message {
+        panday_sdk::sessions::ClientMessage::UserInput { text } => {
+            driver.user_input(state, id, text).await;
+        }
+        panday_sdk::sessions::ClientMessage::Decide { call_id, decision } => {
+            driver.decision(state, id, call_id, decision).await;
+        }
+        panday_sdk::sessions::ClientMessage::Cancel => {
+            driver.cancel(state, id).await;
+        }
+    }
+    Ok(())
 }
 
 async fn send(socket: &mut WebSocket, envelope: &Envelope) -> Result<(), ()> {

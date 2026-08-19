@@ -126,6 +126,18 @@ pub enum Command {
         diff_against: Option<String>,
         summary: bool,
     },
+    /// docs/10 M10.3: "used by panday-cli (dogfood — the CLI has no private
+    /// APIs)". This subcommand talks to a `panday-harnessd` through
+    /// `panday_sdk::sessions` and nothing else — if the public client cannot do
+    /// something, neither can we.
+    Session {
+        url: String,
+        prompt: String,
+        /// Join an existing session instead of creating one.
+        session: Option<String>,
+        /// Resume from a `seq` — proves the resume path from a shell.
+        after_seq: Option<u64>,
+    },
     Help,
     Version,
 }
@@ -152,6 +164,7 @@ where
         "version" | "--version" | "-V" => return Ok(Command::Version),
         "chat" => {}
         "replay" => return parse_replay(it),
+        "session" => return parse_session(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -230,6 +243,128 @@ fn parse_replay<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command
     })
 }
 
+fn parse_session<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let mut url = "http://127.0.0.1:8082".to_string();
+    let mut session = None;
+    let mut after_seq = None;
+    let mut words: Vec<String> = Vec::new();
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--url" => {
+                url = it
+                    .next()
+                    .ok_or_else(|| "--url needs a base URL".to_string())?
+                    .clone()
+            }
+            "--session" => {
+                session = Some(
+                    it.next()
+                        .ok_or_else(|| "--session needs a session id".to_string())?
+                        .clone(),
+                )
+            }
+            "--after-seq" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| "--after-seq needs a seq".to_string())?;
+                after_seq = Some(
+                    v.parse::<u64>()
+                        .map_err(|_| format!("--after-seq wants a number, got `{v}`"))?,
+                );
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag `{other}` (try `panday help`)"))
+            }
+            other => words.push(other.to_string()),
+        }
+    }
+    if after_seq.is_some() && session.is_none() {
+        // Resuming into a session that was just created has nothing to resume.
+        return Err("--after-seq needs --session: a resume point belongs to a session".into());
+    }
+    Ok(Command::Session {
+        url,
+        prompt: words.join(" "),
+        session,
+        after_seq,
+    })
+}
+
+/// Run a session through the public SDK client (M10.3).
+///
+/// Events are rendered with the *same* renderer `panday replay` uses
+/// (`panday_harness::replay::Renderer`), so a live session and its replay look
+/// identical — which is the property that makes a replay trustworthy rather than a
+/// second rendering of the same facts.
+pub async fn run_session(cmd: &Command, out: &mut dyn Output) -> Result<u64, String> {
+    let Command::Session {
+        url,
+        prompt,
+        session,
+        after_seq,
+    } = cmd
+    else {
+        return Err("not a session".into());
+    };
+
+    let client = panday_sdk::sessions::SessionsClient::new(
+        url.clone(),
+        std::env::var("PANDAY_API_KEY").ok(),
+    );
+    let id = match session {
+        Some(raw) => panday_types::SessionId(
+            uuid::Uuid::parse_str(raw).map_err(|e| format!("session id: {e}"))?,
+        ),
+        None => client.create().await.map_err(|e| e.to_string())?,
+    };
+    out.line(&format!("session {id}", id = id.0));
+
+    let after = match after_seq {
+        Some(n) => panday_sdk::sessions::After::Seq(*n),
+        None => panday_sdk::sessions::After::Beginning,
+    };
+    let mut stream = client
+        .subscribe(id, after)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !prompt.trim().is_empty() {
+        stream
+            .send(panday_sdk::sessions::ClientMessage::text(prompt.clone()))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let mut renderer = panday_harness::replay::Renderer::new(ReplayOptions {
+        costs: true,
+        ..Default::default()
+    });
+    while let Some(item) = stream.next_event().await {
+        let envelope = item.map_err(|e| e.to_string())?;
+        let text = renderer.push(&envelope);
+        if !text.is_empty() {
+            out.text(&text);
+        }
+        // One turn per invocation: the CLI is a shell command, not a chat UI. The
+        // resume point is printed so the next invocation can pick it up, which is
+        // how `--after-seq` gets used for real.
+        if matches!(
+            envelope.event,
+            panday_types::event::Event::TurnFinished { .. }
+        ) {
+            break;
+        }
+    }
+    out.line(&format!(
+        "\nresume with: --session {} --after-seq {}",
+        id.0,
+        stream.resume_point()
+    ));
+    Ok(stream.resume_point())
+}
+
 /// Render a replay, or a diff between two of them.
 ///
 /// docs/21's stated use for `--diff` is "before/after a reducer change", so the
@@ -273,10 +408,15 @@ pub fn help() -> String {
         "panday — a Rust AI platform\n\n\
          USAGE:\n  \
          panday chat [--model <provider/model>] <prompt>\n  \
-         panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n\n\
+         panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n  \
+         panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
+         SESSION FLAGS:\n  \
+         --url          a panday-harnessd base URL (default http://127.0.0.1:8082)\n  \
+         --session      join an existing session instead of creating one\n  \
+         --after-seq    resume that session from this seq\n\n\
          REPLAY FLAGS:\n  \
          --at <seq>     render the session as it stood at that seq (time travel)\n  \
          --costs        per-turn usage and dollar overlay\n  \
@@ -393,6 +533,46 @@ pub async fn run_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_session_with_a_resume_point() {
+        let cmd = parse_args([
+            "session",
+            "--url",
+            "http://h:8082",
+            "--session",
+            "01930000-0000-7000-8000-000000000001",
+            "--after-seq",
+            "7",
+            "fix",
+            "it",
+        ])
+        .unwrap();
+        assert_eq!(
+            cmd,
+            Command::Session {
+                url: "http://h:8082".into(),
+                prompt: "fix it".into(),
+                session: Some("01930000-0000-7000-8000-000000000001".into()),
+                after_seq: Some(7),
+            }
+        );
+    }
+
+    #[test]
+    fn a_resume_point_without_a_session_is_rejected() {
+        // Resuming a session that is about to be created has nothing to resume, and
+        // silently ignoring the flag would look like it worked.
+        let err = parse_args(["session", "--after-seq", "3", "hi"]).unwrap_err();
+        assert!(err.contains("needs --session"), "{err}");
+    }
+
+    #[test]
+    fn help_documents_session() {
+        let h = help();
+        assert!(h.contains("panday session"), "{h}");
+        assert!(h.contains("--after-seq"), "{h}");
+    }
 
     #[test]
     fn parses_a_replay_with_flags() {

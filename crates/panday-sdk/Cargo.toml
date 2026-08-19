@@ -14,6 +14,8 @@ thiserror.workspace = true
 async-trait.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
+tokio-tungstenite.workspace = true
+uuid.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -26,3 +28,10 @@ tokio = { workspace = true, features = ["time"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util", "time"] }
 uuid.workspace = true
+# The M10.3 suite drives the real server over a real socket (docs/10: "dogfood —
+# the CLI has no private APIs"), which means the client's tests depend on the
+# service. A dev-dependency only: nothing in the shipped SDK knows about harnessd.
+panday-harnessd.workspace = true
+axum.workspace = true
+time.workspace = true
+async-trait.workspace = true

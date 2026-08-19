@@ -55,6 +55,18 @@ async fn run() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         },
+        // The dogfood path (M10.3): everything here goes through the public SDK
+        // sessions client, so a capability the CLI has is one every customer has.
+        cmd @ Command::Session { .. } => {
+            let mut out = Stdout;
+            return match panday_cli::run_session(&cmd, &mut out).await {
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
         Command::Chat { model, prompt } => (model, prompt),
     };
 
