@@ -136,6 +136,12 @@ compile-fail suite that runs only when someone remembers stops matching the macr
   tenant-scoping lint, which reads `.sql` files. The loop is ten lines and keeps both properties
   — and the lint duly passed on the first real SQL in the repo, which is what it was armed for.
 
+  **MinIO is in the compose file and not in the CI job.** docs/02's step 3 names PG *and* MinIO, but no
+  test reads a bucket yet — artifacts spill to memory (docs/15) — and a service container nothing uses
+  is a failure mode with no benefit. It proved that immediately: the job went red because
+  `bitnami/minio:latest` stopped existing, for a service the suite never connected to. It returns to CI
+  with the first test that needs object storage.
+
   The compose file uses **non-default ports** (5433, 9100) and `tmpfs` for the data directory: a
   developer's own Postgres on 5432 is a coin flip between "the tests passed against the wrong
   database" and "the tests wiped something", and the lane's database is disposable by

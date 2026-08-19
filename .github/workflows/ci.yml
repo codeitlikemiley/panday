@@ -100,12 +100,11 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: panday
-          MINIO_ROOT_PASSWORD: pandaypanday
-        ports: ["9100:9000"]
+      # MinIO is deliberately *not* here yet. No test needs object storage — artifacts spill to
+      # memory today (docs/15) — and a service container nothing uses is a failure mode with no
+      # benefit: this job went red because `bitnami/minio:latest` stopped existing, for a service the
+      # suite never connected to. It is in `deploy/integration-compose.yml` for local use, and it
+      # comes back here with the first test that reads a bucket.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -114,4 +113,7 @@ jobs:
         with: { tool: cargo-nextest }
       - env:
           PANDAY_TEST_DATABASE_URL: postgres://panday:panday@127.0.0.1:5433/panday_test
-        run: cargo nextest run --run-ignored all -E 'binary(pg_integration)'
+        # The whole platform crate, not one binary: the ledger, rebuild and sandbox lanes are all
+        # `#[ignore]`d PG tests, and a filter naming one file silently stopped covering the others as
+        # soon as they were added (which it did, for three commits).
+        run: cargo nextest run --run-ignored all -E 'package(panday-platform)'
