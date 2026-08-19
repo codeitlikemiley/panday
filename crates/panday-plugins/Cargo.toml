@@ -9,4 +9,8 @@ publish.workspace = true
 [dependencies]
 panday-types.workspace = true
 serde.workspace = true
+serde_yaml_ng.workspace = true
+toml.workspace = true
+ed25519-dalek.workspace = true
+sha2.workspace = true
 thiserror.workspace = true

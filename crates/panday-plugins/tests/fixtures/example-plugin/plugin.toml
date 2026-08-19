@@ -1,0 +1,12 @@
+name = "example-plugin"
+version = "0.1.0"
+description = "Checks a deploy is safe before it runs."
+# Top-level keys must come BEFORE any table: written after `[capabilities]`
+# they would become keys of that table instead.
+skills = ["skills/deploy-check"]
+hooks = ["pre_tool"]
+
+[capabilities]
+fs = "workspace-ro"
+net = ["api.github.com"]
+secrets = ["GITHUB_TOKEN"]

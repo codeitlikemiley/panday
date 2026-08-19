@@ -74,7 +74,35 @@ of one adapter — the best distribution-per-line-of-code in the plan.
 
 ## Milestones
 
-- **M16.1** plugin.toml parse + capability model + signature verify; skill loader with frontmatter (types ✅ for manifest basics).
+- **M16.1** plugin.toml parse + capability model + signature verify; skill loader with frontmatter. ✅ *(shipped: `PluginManifest::parse`, `FsCapability`, `panday_plugins::signature`, `panday_plugins::skill`.)*
+
+  **The manifest is a consent document, and the validation follows from that.**
+  A wildcard domain is *refused, not expanded*: `*.example.com` reads as a
+  narrow grant and is in fact a grant to anything anyone can register under it,
+  which nobody can meaningfully consent to. `fs` became a typed enum because the
+  seed's free string accepted `workspac-ro` and then read as "no access
+  requested" — a typo that made a plugin look *less* dangerous than it is. A
+  name that could traverse the filesystem, or carries control characters, is
+  refused. Unknown keys are refused too: writing `hooks = [...]` after
+  `[capabilities]` makes it a key of that table, and permissively that request
+  is dropped and the plugin installs with no hooks and no complaint.
+
+  The consent prompt names every grant individually and echoes the author's own
+  spelling (`pre_tool`, not `PreTool`) — a user comparing prompt to manifest
+  should not have to wonder whether they match.
+
+  **Signature validity and signer trust are kept apart.** `verify_archive`
+  returns the *key identity*; nothing in that module returns a trust level.
+  Verifying against a key that shipped inside the archive proves only internal
+  consistency, which an attacker arranges trivially by signing their own
+  payload — so `verify_from_trusted_key` is the form a registry client uses, and
+  a test demonstrates the attack the loose form permits.
+
+  **Skills port with zero edits, which drives the loader's tolerance.** Unknown
+  frontmatter keys are kept, not rejected; a BOM is tolerated; a `---`
+  horizontal rule in the body does not end the frontmatter early. An oversized
+  body is *reported*, never silently truncated — spilling its tail belongs to
+  whoever owns an artifact store.
 - **M16.2** Skills index/lazy-body in harness assembly; two real skills ported unmodified from the existing ecosystem.
 - **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
 - **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite.
