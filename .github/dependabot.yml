@@ -1,0 +1,35 @@
+# M20.5 — the dependency-update cadence, with an owner.
+#
+# Weekly rather than daily: a stream of PRs nobody merges is the same as no updates, with extra
+# noise. Weekly is a batch a person can actually review, and `cargo deny` + the full test suite gate
+# every one of them — an update that breaks a lint or a licence rule never reaches a human.
+#
+# The owner is the repo owner (@codeitlikemiley), stated here rather than assumed: an update cadence
+# with no name attached is a cadence that stops the first busy week.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    reviewers: ["codeitlikemiley"]
+    # Patch bumps of the same crate arrive as one PR. Reviewing thirty individually is how a
+    # security patch ends up behind twenty-nine cosmetic ones.
+    groups:
+      patch-and-minor:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+
+  # The actions are supply chain too: a compromised action runs with the workflow's token, and this
+  # repo's release workflow can sign artifacts.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    reviewers: ["codeitlikemiley"]
+    commit-message:
+      prefix: "ci"

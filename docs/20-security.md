@@ -191,4 +191,32 @@ the audit trail *is* the product's data model (ADR-002).
   plants outside the repo because writing into it would race the scan test running
   concurrently — which the first draft did, and failed.
 - **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented.
-- **M20.5** SBOM + signed releases; dependency-update cadence with an owner.
+- **M20.5** SBOM + signed releases; dependency-update cadence with an owner. ✅ *(shipped: `cargo xtask sbom`, the checked-in `sbom.cdx.json`, the `sign` job in `.github/workflows/release.yml`, `.github/dependabot.yml`.)*
+
+  **The SBOM is checked in, not only released.** A document produced at release time answers "what
+  did we ship"; a reviewer needs "what are we about to ship". `cargo xtask sbom --check` runs in CI,
+  so a dependency change without a regenerated SBOM fails — an SBOM that disagrees with the lockfile
+  describes a build nobody is making, and is worse than none because it is believed.
+
+  **Reproducible by construction.** No timestamp, no serial number, components sorted. Two runs on
+  the same tree produce byte-identical files, so a diff in a PR is a real dependency change rather
+  than noise — which is the only condition under which anyone reads one.
+
+  **Hand-rolled from `cargo metadata --locked`**, like the Prometheus exposition and for the same
+  reasons: the output is a documented format, the input is one command's JSON, and the alternative
+  is a tool fetched from the network on every CI run. Licences are emitted as SPDX *expressions*,
+  not ids — `MIT OR Apache-2.0` is not a licence id, and a consumer that reads it as one records a
+  licence that does not exist.
+
+  **Signing is keyless.** Sigstore/OIDC: there is no private key to store, rotate, or leak, the
+  signature is bound to the release workflow's identity in a public transparency log, and a fork
+  cannot produce one that verifies against this repository. One signature over one `SHA256SUMS`
+  manifest, because signing N artifacts means verifying N signatures and nobody does that. The
+  release body carries the two commands that verify it — an unverifiable release is an unsigned one
+  with extra steps.
+
+  **The cadence has a name on it.** Dependabot, weekly (a batch a person reviews; a daily stream is
+  the same as no updates, with noise), minor and patch grouped into one PR so a security fix is not
+  queued behind twenty-nine cosmetic ones, reviewer `@codeitlikemiley`. GitHub Actions are updated
+  on the same schedule: a compromised action runs with this workflow's token, and this workflow can
+  sign artifacts. `cargo deny` and the full suite gate every one of them.

@@ -69,6 +69,9 @@ jobs:
       - run: cargo test --workspace --doc
       # docs/03 M3.2: a schema change without a regenerated proto/ fails.
       - run: cargo xtask schemas --check
+      # docs/20 M20.5: a dependency change without a regenerated SBOM fails, because an SBOM that
+      # disagrees with the lockfile describes a build nobody is making.
+      - run: cargo xtask sbom --check
 
   docs:
     runs-on: ubuntu-latest
