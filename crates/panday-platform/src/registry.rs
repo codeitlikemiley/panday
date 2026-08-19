@@ -191,7 +191,7 @@ fn digest(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("{:x}", h.finalize())
+    panday_types::hex(h.finalize())
 }
 
 // ── HTTP surface ─────────────────────────────────────────────────────────────

@@ -283,7 +283,7 @@ async fn an_api_key_is_stored_as_a_hash_and_revoked_by_timestamp() {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
         h.update(plaintext.as_bytes());
-        format!("{:x}", h.finalize())
+        panday_types::hex(h.finalize())
     };
 
     let key_id = Uuid::now_v7();

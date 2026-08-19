@@ -14,7 +14,7 @@ pub mod scorecard;
 
 pub use capability::{CapabilityProfile, Provenance};
 pub use event::{Envelope, Event, PROTOCOL_VERSION};
-pub use id::{AccountId, ArtifactRef, CallId, RequestId, SessionId, TurnId};
+pub use id::{hex, AccountId, ArtifactRef, CallId, RequestId, SessionId, TurnId};
 pub use model::{
     CacheHints, CallMeta, ChatRequest, ContentBlock, Message, ModelRef, Role, Sampling, StopReason,
     StreamItem, TaskClass, ToolDef, Usage,

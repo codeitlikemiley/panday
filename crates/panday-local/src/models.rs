@@ -219,12 +219,26 @@ impl Store {
 }
 
 fn digest_file(path: &Path) -> Result<String, ModelError> {
+    use std::io::Read;
+
     let mut file = std::fs::File::open(path).map_err(|e| ModelError::Io(e.to_string()))?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|e| ModelError::Io(e.to_string()))?;
+    // An explicit loop with a megabyte buffer rather than `io::copy`: these files are multiple
+    // gigabytes, and `sha2` 0.11 no longer implements `io::Write` anyway. Reading in fixed chunks
+    // keeps memory flat whatever the model's size.
+    let mut buffer = vec![0u8; 1 << 20];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| ModelError::Io(e.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
     Ok(hex(&hasher.finalize()))
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    panday_types::hex(bytes)
 }

@@ -127,7 +127,7 @@ pub fn hash(plaintext: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(plaintext.as_bytes());
-    format!("{:x}", h.finalize())
+    panday_types::hex(h.finalize())
 }
 
 /// Mint a key: 256 bits of randomness behind a typed prefix.

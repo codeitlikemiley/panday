@@ -79,3 +79,35 @@ pub struct ArtifactRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
 }
+
+/// Lowercase hex, the encoding docs/03 §Identifiers specifies for every digest on the wire.
+///
+/// One function because there were six copies of it, and because `sha2` 0.11 removed the
+/// `LowerHex` impl that had been holding them together — `format!("{:x}", hasher.finalize())`
+/// stopped compiling everywhere at once. A digest that is rendered differently in two places is a
+/// content address that does not match itself, which is the class of bug that shows up as a cache
+/// that never hits and an artifact that cannot be found.
+pub fn hex(bytes: impl AsRef<[u8]>) -> String {
+    use std::fmt::Write;
+    bytes.as_ref().iter().fold(String::new(), |mut out, byte| {
+        // `write!` to a String cannot fail; the result is discarded rather than unwrapped so this
+        // stays allocation-free per byte.
+        let _ = write!(out, "{byte:02x}");
+        out
+    })
+}
+
+#[cfg(test)]
+mod hex_tests {
+    use super::hex;
+
+    #[test]
+    fn every_byte_is_two_lowercase_characters() {
+        // The failure this pins down: a `{:x}` formatter drops leading zeros per byte, so a digest
+        // with a zero byte in it would render one character short and stop matching itself.
+        assert_eq!(hex([0x00, 0x0f, 0xff]), "000fff");
+        assert_eq!(hex([0xab, 0xcd]), "abcd");
+        assert_eq!(hex([]), "");
+        assert_eq!(hex(vec![1u8; 32]).len(), 64);
+    }
+}

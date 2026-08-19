@@ -156,7 +156,7 @@ fn digest(req: &ChatRequest) -> String {
             }
         }
     }
-    format!("{:x}", h.finalize())[..16].to_string()
+    panday_types::hex(h.finalize())[..16].to_string()
 }
 
 impl<I: Classifier, C: Classifier> Classifier for ShadowClassifier<I, C> {

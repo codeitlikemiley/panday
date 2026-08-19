@@ -82,7 +82,7 @@ impl CacheKey {
         h.update(serde_json::to_vec(&req.cache).unwrap_or_default());
         Self {
             account: req.metadata.account,
-            digest: format!("{:x}", h.finalize()),
+            digest: panday_types::hex(h.finalize()),
         }
     }
 }
