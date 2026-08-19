@@ -95,6 +95,14 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // M19.2. Measures a model through the gateway and prints the catalog entry to paste.
+        "profile" => match profile(rest) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask profile: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "wasm-fixtures" => match wasm_fixtures() {
             Ok(code) => code,
             Err(e) => {
@@ -126,13 +134,61 @@ fn usage() {
          ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n  \
          json-bench          schema-validity against a running gateway; needs a model\n  \
          airgap [--models <dir>] [--out <dir>]  build the offline install kit (M18.7)\n  \
-         mine --logs <dir> --out <file> [--consent granted]  mine training pairs (M19.4)\n"
+         mine --logs <dir> --out <file> [--consent granted]  mine training pairs (M19.4)\n  \
+         profile --model <ref> [--base-url <url>] [--ceiling <tokens>]  measure a model (M19.2)\n"
     );
 }
 
 mod sbom;
 mod sdk;
 mod ts;
+
+/// Measure a model's real capabilities (docs/19 M19.2).
+///
+/// Prints a catalog entry rather than editing the catalog. A measurement rewriting a checked-in
+/// routing table unattended is one model's bad afternoon silently becoming everyone's routing
+/// decisions; a person pastes it, and the diff is the review.
+fn profile(args: &[String]) -> Result<ExitCode, String> {
+    let flag = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let model = flag("--model").ok_or("--model <provider/model> is required")?;
+    let base_url = flag("--base-url").unwrap_or_else(|| "http://127.0.0.1:8088".to_string());
+    let ceiling: u32 = flag("--ceiling")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(65_536);
+    let at = flag("--at").unwrap_or_else(|| "unstamped".to_string());
+
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let measured = runtime.block_on(async {
+        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::new(
+            &base_url,
+            std::env::var("PANDAY_API_KEY").ok(),
+        );
+        let model_ref = panday_types::model::ModelRef(model.clone());
+        // The declared profile supplies only what a text probe cannot reach — vision and subagent
+        // fan-out. Everything else is measured or reported as zero.
+        let declared = panday_types::capability::CapabilityProfile::small_local();
+        panday_harness::profiling::measure(&client, &model_ref, declared, ceiling).await
+    });
+
+    let model_ref = panday_types::model::ModelRef(model);
+    print!(
+        "{}",
+        panday_harness::profiling::to_yaml(&model_ref, &measured, &at)
+    );
+
+    if measured.profile.max_context_tokens == 0 {
+        // A model that failed the smallest context probe is not a model this measurement can
+        // describe, and emitting a profile of zeroes as if it were a result would be worse than
+        // saying so.
+        return Err("the model answered nothing at any context size — is it running?".into());
+    }
+    Ok(ExitCode::SUCCESS)
+}
 
 /// Transcript mining (docs/19 M19.4).
 ///

@@ -220,7 +220,37 @@ artifacts; CI runs eval gates nightly.
   an eval that quietly measured something else is worse than one that did not run. Nothing in
   `training/` runs in CI beyond a syntax check, and that is stated in its README: a green tick that
   means "we did not measure" is how an eval suite rots.
-- **M19.2** Capability profiles for 3 local catalog models, generated not hand-written.
+- **M19.2** Capability profiles for 3 local catalog models, generated not hand-written. ✅ *(shipped: `panday_harness::profiling`, `cargo xtask profile --model <ref>`. **No model has been measured** — the three catalog profiles are still `declared`, and the generator says so rather than guessing.)*
+
+  **Every probe is a question with a checkable answer.** Asking a model to rate itself measures its
+  confidence; asking it to find a fact in the middle of 30,000 tokens measures whether it can.
+
+  **Usable context is bisected, and the reported number is one that actually passed** — never an
+  interpolation. docs/18 wants "where a 4B model stops following a long transcript", not what the
+  spec sheet claims, and the failures are kept alongside the result because "we tried 64k and it
+  failed" is a different claim from "it does 16k".
+
+  **The needle sits in the middle.** A model that only reads the tail passes an end-placed needle
+  while being useless for the case that matters: a long transcript whose important fact was three
+  tool calls ago.
+
+  **A zero is a result and is kept.** A model that fails the smallest probe measures zero, and the
+  command exits non-zero saying "is it running?" rather than quietly substituting the declared
+  number — which would hide the only interesting outcome.
+
+  **Tool reliability counts correct calls, not parseable ones.** A well-formed call with the wrong
+  path reads the wrong file, which is worse than a malformed one that fails loudly. JSON reliability
+  is json-bench's rate (M19.1), reused rather than reimplemented.
+
+  **It prints a catalog entry; it does not edit the catalog.** A measurement rewriting a checked-in
+  routing table unattended is one model's bad afternoon silently becoming everyone's routing
+  decisions. A person pastes it, and the diff is the review — with the probe results in a comment
+  above the numbers.
+
+  **What is missing is a model.** The generator is driven in the suite by fakes that fail in specific
+  ways — a short real context behind a large advertised one, a model that answers prose where JSON
+  was asked for, one that emits well-formed calls with the wrong arguments — because a generator that
+  cannot report a bad model as bad is not worth running against a good one.
 - **M19.3** Model 1 shipped: classifier behind `Classifier` trait beats heuristic on route-bench by ≥10pt; deployed in shadow, then live.
 - **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset. ✅ *(shipped: `panday_harness::mining`, `cargo xtask mine --logs <dir> --out <file>`. **The 10k-pair dataset is not here** — it needs 10k consented transcripts, and this repo has none.)*
 

@@ -27,6 +27,7 @@ pub mod mcp_tool;
 pub mod mining;
 pub mod native;
 pub mod permissions;
+pub mod profiling;
 pub mod replay;
 pub mod secrets;
 pub mod store_conformance;
