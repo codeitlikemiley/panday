@@ -87,6 +87,15 @@ commercial product; know your license graph early.
 5. Docs lane: `mdbook build docs` + link check — docs that don't build are
    broken builds
 
+**The isolation suite is required nightly, not per-PR.** T2 Linux jails through `bubblewrap`, which
+means `apt`, which means an Ubuntu mirror. One mirror stall hung a job for 3.5 hours (bounded and
+retried since); then the Azure mirror went dark for an afternoon and every retry hit the same dead
+host, failing every PR on this repo for reasons unrelated to the code. A mirror outage is not an
+isolation regression, and blocking merges on one teaches people to ignore a red tick. So PR CI
+installs best-effort and emits a **warning annotation** when it could not, while
+`.github/workflows/nightly.yml` requires `bwrap` and fails without it — a regression is caught
+within a day, and somebody else's outage is not our merge queue's problem.
+
 **One test has its own timeout** (`.config/nextest.toml`): the `#[tool]` compile-fail
 suite (docs/10 M10.4) builds a scratch crate, so on a cold cache it compiles the
 dependency tree a second time. The default 2-minute kill ended the run before rustc

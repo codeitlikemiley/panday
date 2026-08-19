@@ -14,6 +14,37 @@ on:
   workflow_dispatch:
 
 jobs:
+  # docs/14 M14.2 / docs/20 M20.1: the T2 escape suite is the isolation gate, and it is *required*
+  # here rather than in PR CI — where a dead apt mirror would otherwise fail every merge for
+  # reasons unrelated to the code. Nightly means an isolation regression is caught within a day,
+  # and an outage at a package mirror is visible without holding anyone's work.
+  isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-nextest }
+      - name: install bubblewrap
+        timeout-minutes: 6
+        run: |
+          set -eux
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o Acquire::Retries=2 && \
+               sudo apt-get install -y --no-install-recommends bubblewrap; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying"
+            sleep 20
+          done
+          exit 1
+      # No skipping: if the suite cannot run, this job fails, which is the whole point of it
+      # existing separately.
+      - run: command -v bwrap
+      - run: cargo nextest run -E 'binary(t2_linux_escape) or binary(t1_wasm) or binary(t0_scoping)'
+      - run: cargo nextest run -E 'package(panday-harness) and binary(injection_canaries)'
+
   reduce-bench:
     runs-on: ubuntu-latest
     steps:

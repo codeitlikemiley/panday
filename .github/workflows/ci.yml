@@ -32,18 +32,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with: { tool: cargo-nextest }
-      # T2 Linux (docs/14 M14.2) jails through bubblewrap; its escape suite
-      # skips itself without it, which would silently stop gating isolation.
-      # Bounded and retried: an apt mirror stall once hung this step for 3.5 hours on a run
-      # whose only other jobs had already passed. A package install that cannot finish in a
-      # minute is a mirror problem, and the useful behaviour is to fail (or retry) rather than
-      # to hold a runner all afternoon.
+      # T2 Linux (docs/14 M14.2) jails through bubblewrap, and its escape suite skips itself
+      # without it. Best-effort here, required nightly — see below.
+      #
+      # The history: an apt mirror stall once hung this step for 3.5 hours, so it was bounded and
+      # retried; then GitHub's Azure Ubuntu mirror went dark for an afternoon and all three retries
+      # hit the same dead host, which failed every PR on this repo for reasons that had nothing to
+      # do with the code. A mirror outage is not an isolation regression, and blocking work on one
+      # teaches people to ignore a red tick.
+      #
+      # So: PR CI installs if it can and says loudly if it could not, and `.github/workflows/
+      # nightly.yml` *requires* bubblewrap and fails without it. An isolation regression is caught
+      # within a day; an outage at Microsoft is not our merge queue's problem.
       - name: install bubblewrap
-        timeout-minutes: 4
+        id: bwrap
+        continue-on-error: true
+        timeout-minutes: 3
         run: |
           set -eux
-          for attempt in 1 2 3; do
-            if sudo apt-get update -o Acquire::Retries=2 && \
+          for attempt in 1 2; do
+            if sudo apt-get update -o Acquire::Retries=1 && \
                sudo apt-get install -y --no-install-recommends bubblewrap; then
               exit 0
             fi
@@ -51,14 +59,14 @@ jobs:
             sleep 5
           done
           exit 1
-      # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor, so
-      # bwrap installs fine and then every jail dies with
-      # `loopback: Failed RTM_NEWADDR`. The sandbox needs them.
-      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-      # /lib64 matters: without it the dynamic loader is missing and execvp
-      # reports ENOENT, which reads as "binary not found" rather than
-      # "interpreter not found".
-      - run: |
+      - name: check the jail actually works
+        run: |
+          if ! command -v bwrap >/dev/null; then
+            echo "::warning title=T2 escape suite skipped::bubblewrap could not be installed \
+          (apt mirror). The Linux isolation suite did not run in this job; the nightly job \
+          requires it."
+            exit 0
+          fi
           bwrap --unshare-all \
             --ro-bind /usr /usr \
             --symlink usr/bin /bin --symlink usr/lib /lib \
