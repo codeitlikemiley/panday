@@ -43,7 +43,14 @@ wildcards = "deny"
 allow-wildcard-paths = true
 # docs/02: "time or chrono — pick ONE (we pick `time`), enforce with clippy".
 # Enforcing it here too: cheaper than a lint, and it catches transitive pulls.
-deny = [{ crate = "chrono", reason = "docs/02 picks `time`; chrono must not enter the graph" }]
+#
+# ONE exception, added at M16.3: `rmcp` (the official MCP SDK, which docs/16 names)
+# depends on chrono unconditionally on non-wasm targets. The ban's purpose is that
+# *our* code has one date library, and that still holds — nothing of ours may use
+# chrono, and no other crate may pull it in. `wrappers` is how that distinction is
+# expressed: chrono is allowed only where rmcp brings it, so adding it anywhere else
+# still fails the build.
+deny = [{ crate = "chrono", reason = "docs/02 picks `time`; chrono must not enter the graph except inside rmcp (M16.3)", wrappers = ["rmcp"] }]
 
 [sources]
 unknown-registry = "deny"

@@ -8,9 +8,26 @@ publish.workspace = true
 
 [dependencies]
 panday-types.workspace = true
+rmcp.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["process", "io-util"] }
 serde.workspace = true
 serde_yaml_ng.workspace = true
 toml.workspace = true
 ed25519-dalek.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+
+# A foreign MCP server for the M16.3 suite — hand-written against the wire rather
+# than built with rmcp's server half, so the test proves interop rather than
+# self-agreement.
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-util"] }
+
+# Outside `tests/` so cargo does not also auto-discover it as an integration test —
+# it warns about the double role, and running a stdio server as a test hangs on
+# stdin.
+[[bin]]
+name = "fixture-mcp-server"
+path = "fixtures/mcp_server.rs"
+test = false

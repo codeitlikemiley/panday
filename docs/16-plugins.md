@@ -129,7 +129,47 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   the ecosystem's format rather than copies of a third party's work — copying
   someone's skill verbatim into this repo is a licensing question, not a
   technical demonstration.
-- **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
+- **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating. ✅ *(shipped: `panday_plugins::mcp`, `panday_harness::McpTool`; suites in `crates/panday-plugins/tests/mcp_host.rs` and `crates/panday-harness/tests/mcp_in_the_loop.rs`.)*
+
+  **stdio only, by compilation.** `rmcp` is built with `transport-child-process` and
+  nothing that opens a socket, so this host cannot reach the network even by mistake.
+  The streamable-HTTP transport and OAuth are a separate decision with a separate
+  threat model — a remote MCP server is a third party reading your prompts — and they
+  are deliberately unwired.
+
+  **`Irreversible` is the default, and MCP's own hints do not change it.** The
+  protocol carries `readOnlyHint`/`destructiveHint`, but those are the *server's*
+  claims about itself, and treating an unverified claim as a permission grant is how
+  a consent model becomes decorative. So every mounted tool asks in every profile
+  until a human grants it, per tool — consenting to `github:list_issues` is not
+  consenting to `github:delete_repo` — and a grant relaxes the gate without touching
+  the tier: the server is still a child process, and its seconds still meter as T2.
+  Nothing is replay-safe: re-running a `create_issue` after a crash reaches somebody's
+  inbox.
+
+  **The server inherits no environment** (`env_clear`, then only what the manifest
+  declared), which is T2's `--clearenv` rule applied to third-party code. Both halves
+  are tested: a canary variable is invisible, and a declared one does arrive —
+  without the second test the first would pass with a broken `env()` builder.
+
+  **The test server is hand-written**, not built with `rmcp`'s server half: "mount a
+  public MCP server" means talking to somebody else's implementation, and a test where
+  both ends come from one crate proves only that the crate agrees with itself. The
+  fixture speaks line-delimited JSON-RPC the way a Python or TypeScript server does,
+  including returning no response to a notification — the detail a naive server gets
+  wrong and then hangs a client on.
+
+  Schema hygiene is `MountedTool::brief()`: a tool schema lands in the *stable* cached
+  prefix (ADR-008), so a 40kB schema is 40kB paid on every turn of the session. Tools
+  are captured at mount rather than re-listed per call, because a server changing its
+  tools mid-session is a cache break, and docs/13 makes that a deliberate logged act
+  rather than something a third party can do to us silently.
+
+  **One dependency conflict, resolved on the record.** `rmcp` depends on `chrono`
+  unconditionally on non-wasm targets, and docs/02 bans chrono ("pick ONE — we pick
+  `time`"). The ban's purpose is that *our* code has one date library, and that still
+  holds: `deny.toml` now allows chrono only with `wrappers = ["rmcp"]`, so anything
+  else pulling it in still fails the build.
 - **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite. ✅ *(shipped: `panday_sandbox::t1_hook` + the `hook` world in `crates/panday-sandbox/wit/plugin.wit`, `panday_harness::{WasmPluginTool, WasmPluginHook}`; suites in `crates/panday-sandbox/tests/t1_hooks.rs` and `crates/panday-harness/tests/wasm_plugin.rs`; demo hook in `fixtures/demo-hook`.)*
 
   **"Vetoes limited to `pre_tool`" is a type, not a policy check.** In the WIT world

@@ -68,6 +68,14 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# MCP host (docs/02 dependency table, docs/16 §MCP host). **stdio only** — the
+# `transport-child-process` feature and nothing that opens a socket: the streamable
+# HTTP transport and the OAuth flows stay unbuilt until they are asked for, so this
+# dependency cannot reach the network at all.
+rmcp = { version = "3", default-features = false, features = [
+    "client",
+    "transport-child-process",
+] }
 # WebSocket client for the sessions API (docs/10 M10.3). Approved as a table
 # amendment: axum's server side already uses tungstenite underneath, so this keeps
 # one implementation of RFC 6455 in the graph rather than a hand-rolled second one.

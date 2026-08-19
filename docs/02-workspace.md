@@ -59,7 +59,7 @@ Rules that keep a workspace this size sane:
 | signing | ed25519-dalek | `.plugin` archive signatures and registry verification (docs/16) |
 | config | serde_yaml_ng | YAML policy files (docs/12). Upstream `serde_yaml` is deprecated; this is its maintained continuation |
 | schemas | schemars | derive JSON Schema for tool params; in `panday-types` it is **optional** behind the `schema` feature so the near-zero-dependency rule above still holds — only `cargo xtask schemas` enables it |
-| MCP | rmcp (official) | client + server features |
+| MCP | rmcp (official) | **client + stdio transport only** (M16.3); no socket transports, no OAuth. Pulls `chrono` transitively — allowed with `wrappers = ["rmcp"]` in `deny.toml`, banned everywhere else |
 | ACP | agent-client-protocol | official Rust crate |
 | WASM | wasmtime | plugins tier, WASI 0.3 |
 | TUI | ratatui + crossterm | |
