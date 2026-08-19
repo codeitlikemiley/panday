@@ -1,0 +1,11 @@
+{
+  "name": "@panday/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generated TypeScript client for the Panday gateway. Not published — see README.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "license": "MIT OR Apache-2.0",
+  "files": ["src"]
+}

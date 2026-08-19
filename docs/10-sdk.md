@@ -236,7 +236,39 @@ method, not a guess.
   the suite are defined with `#[panday_sdk::tool]` so the seam between M10.4 and M10.5 is
   covered rather than assumed, and the run's events render with `panday replay`'s own
   renderer — which is the observable form of "the same state machine".
-- **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline.
+- **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline. ✅ *(shipped: `cargo xtask ts-sdk`, `panday_gateway::openapi`, `proto/openapi.json`, `sdk/typescript/`. **Publishing deliberately deferred** — see below.)*
+
+  **The OpenAPI document lives with the handlers.** `panday_gateway::openapi::ROUTES` is the single
+  list of paths: `ingress::router` builds its routes from it, a test asserts every documented path
+  is described *and* that nothing is described that is not routed, and the SDK generator reads the
+  document. A YAML file next to the code would be a fourth copy, and the fourth copy is the one
+  that is wrong.
+
+  **The emitter is hand-rolled**, for the reason the SBOM and the Prometheus exposition are: the
+  schema subset in this repo is small and closed, and the alternative is making a Rust repo's CI
+  depend on npm to check a file it generates itself. Unknown constructs emit `unknown`, never
+  `any` — `any` switches off the checking the file exists to provide.
+
+  **CI regenerates and type-checks.** `cargo xtask ts-sdk --check` fails on drift, and `deno check`
+  runs on the result, because a byte-comparison alone would happily pass a file no TypeScript
+  compiler accepts.
+
+  **Two namespaces, because the protocols genuinely disagree.** The HTTP surface is exported flat;
+  the event protocol is under `aep`. `Usage` in the OpenAI dialect counts prompt and completion
+  tokens; `Usage` in the event log counts fresh input, cache reads and cache writes separately
+  (ADR-007, because those price differently). Flattening would have to rename one, and a generated
+  name that does not match the protocol it came from is a trap.
+
+  **The client does not retry.** The gateway owns failover, circuit breaking and rate limits
+  (docs/11); a client retrying on top of that turns one 429 into five.
+
+  **Not published, and that is a decision rather than a gap.** `package.json` sets
+  `"private": true`, so `npm publish` refuses outright. Publishing is a commitment with a name
+  attached — a scope, a release cadence, a deprecation policy, somebody who answers issues — and a
+  package on a registry without those is how an unmaintained SDK becomes somebody's dependency. The
+  generator is the half that had to exist first; the pipeline is a decision for whoever takes that
+  on. Until then the package is vendored: `src/` is TypeScript source with explicit `.ts` import
+  extensions, which is what Deno, Bun and a bundler-free Node all resolve.
 
 Acceptance across all: no public API returns a provider-specific type; a
 change of provider behind the gateway is invisible in SDK-land.

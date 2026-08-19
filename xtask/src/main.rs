@@ -59,6 +59,15 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // M10.6. Generated from the schemas and the OpenAPI document, checked in, and re-checked
+        // by CI: a protocol change that forgets the SDK breaks our build rather than a user's.
+        "ts-sdk" => match ts_sdk(rest.iter().any(|a| a == "--check")) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask ts-sdk: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "wasm-fixtures" => match wasm_fixtures() {
             Ok(code) => code,
             Err(e) => {
@@ -86,11 +95,71 @@ fn usage() {
          reduce-bench        run the reduce-then-solve eval; non-zero on regression\n  \
          wasm-fixtures       rebuild fixtures/*-tool into the T1 test fixtures\n  \
          scorecard [--write] the weekly eval scorecard; --write saves it under scorecards/\n  \
-         sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n"
+         sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n  \
+         ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n"
     );
 }
 
 mod sbom;
+mod sdk;
+mod ts;
+
+/// The generated TypeScript SDK and the OpenAPI document (docs/10 M10.6).
+fn ts_sdk(check: bool) -> Result<ExitCode, String> {
+    let root = repo_root();
+    let envelope: serde_json::Value = {
+        let path = root.join("proto/aep-envelope.schema.json");
+        let raw = std::fs::read_to_string(&path).map_err(|e| {
+            format!(
+                "read {}: {e} — run `cargo xtask schemas` first",
+                path.display()
+            )
+        })?;
+        serde_json::from_str(&raw).map_err(|e| format!("{}: {e}", path.display()))?
+    };
+
+    let openapi = panday_gateway::openapi::document();
+    let mut openapi_json = serde_json::to_string_pretty(&openapi).map_err(|e| e.to_string())?;
+    openapi_json.push('\n');
+
+    let mut outputs: Vec<(PathBuf, String)> = vec![(root.join("proto/openapi.json"), openapi_json)];
+    for file in sdk::files(&envelope, &openapi)? {
+        outputs.push((root.join("sdk/typescript").join(file.path), file.contents));
+    }
+
+    let mut stale = Vec::new();
+    for (path, contents) in &outputs {
+        if check {
+            if std::fs::read_to_string(path).unwrap_or_default() != *contents {
+                stale.push(path.display().to_string());
+            }
+            continue;
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        std::fs::write(path, contents).map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+
+    if check {
+        if !stale.is_empty() {
+            eprintln!(
+                "the generated SDK is stale: {stale:?}\n\n\
+                 The protocol or the HTTP surface changed without regenerating. Run:\n  \
+                 cargo xtask ts-sdk\n"
+            );
+            return Ok(ExitCode::FAILURE);
+        }
+        println!("sdk/typescript and proto/openapi.json match the schemas");
+    } else {
+        println!(
+            "wrote proto/openapi.json and {} SDK files",
+            outputs.len() - 1
+        );
+    }
+    Ok(ExitCode::SUCCESS)
+}
 
 /// The CycloneDX SBOM (docs/20 M20.5).
 ///

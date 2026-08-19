@@ -73,6 +73,23 @@ jobs:
       # disagrees with the lockfile describes a build nobody is making.
       - run: cargo xtask sbom --check
 
+  # docs/10 M10.6. Separate from the lint job because it needs a JavaScript runtime, and the point
+  # of generating the SDK is that the result compiles — a check that only compares bytes would pass
+  # on a file no TypeScript compiler accepts.
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sdk
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      # A protocol or ingress change that forgets the SDK fails here, not in a user's build.
+      - run: cargo xtask ts-sdk --check
+      - run: deno check sdk/typescript/src/index.ts
+
   docs:
     runs-on: ubuntu-latest
     steps:

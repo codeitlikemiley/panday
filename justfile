@@ -66,6 +66,11 @@ it:
 deny:
     cargo deny check
 
-# Regenerate the schemas, scorecards and fixtures that are checked in.
+# Regenerate everything that is checked in and derived: schemas, SBOM, the TypeScript SDK.
+generated:
+    cargo xtask schemas
+    cargo xtask sbom
+    cargo xtask ts-sdk
+
 schemas:
     cargo xtask schemas

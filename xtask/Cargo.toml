@@ -10,4 +10,6 @@ publish.workspace = true
 panday-types = { workspace = true, features = ["schema"] }
 schemars.workspace = true
 panday-router.workspace = true
+# For the OpenAPI document, which lives with the handlers it describes (M10.6).
+panday-gateway.workspace = true
 serde_json.workspace = true

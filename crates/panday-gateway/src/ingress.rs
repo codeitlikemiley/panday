@@ -313,9 +313,14 @@ impl IngressState {
 }
 
 pub fn router(state: IngressState) -> Router {
+    // The paths are named once, in `openapi::ROUTES`, so the description and the server cannot
+    // disagree about what exists (M10.6).
     Router::new()
-        .route("/v1/chat/completions", post(chat_completions))
-        .route("/metrics", axum::routing::get(metrics_endpoint))
+        .route(crate::openapi::ROUTES[0].1, post(chat_completions))
+        .route(
+            crate::openapi::ROUTES[1].1,
+            axum::routing::get(metrics_endpoint),
+        )
         .with_state(state)
 }
 

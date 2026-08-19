@@ -9,6 +9,7 @@ pub mod cache;
 pub mod circuit;
 pub mod gateway;
 pub mod ingress;
+pub mod openapi;
 
 pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};
 pub use circuit::{BreakerConfig, Breakers, State as CircuitState};
