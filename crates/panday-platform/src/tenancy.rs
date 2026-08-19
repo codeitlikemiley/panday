@@ -68,6 +68,18 @@ pub const GLOBAL_TABLES: &[&str] = &[
 /// and one that needs no reason is one that spreads.
 pub const SINGLE_TENANT_MARKER: &str = "tenant-scoping: single-tenant";
 
+/// The marker one *statement* puts in its own SQL comment.
+///
+/// The file-level exemption is too blunt for a module that holds both kinds of query:
+/// `panday_platform::routes` reads one account's decisions (must be scoped) and aggregates every
+/// account's rule health for an operator (cannot be). Exempting the file would silently un-lint the
+/// scoped query next to it — which is the query that matters.
+///
+/// A cross-tenant statement is legitimate only when it returns no tenant data: an aggregate keyed
+/// by something that is not an account, or a retention delete keyed by age. If the result set can
+/// name a customer, this marker is the wrong tool.
+pub const CROSS_TENANT_MARKER: &str = "tenant-scoping: cross-tenant";
+
 /// Whether a file claims the exemption, and gives a reason for it.
 ///
 /// A marker with nothing after it is *not* an exemption: the reason is the whole point,
@@ -99,7 +111,13 @@ pub struct Unscoped {
 /// how a scoped query becomes unscoped during a debugging session.
 pub fn unscoped_statements(sql: &str) -> Vec<Unscoped> {
     let mut out = Vec::new();
-    for statement in strip_comments(sql).split(';') {
+    // Split *before* stripping, so a statement's own comment can carry its exemption. The account_id
+    // check still runs on the stripped text, so a commented-out column still fails.
+    for raw in sql.split(';') {
+        if claims_cross_tenant(raw).is_some() {
+            continue;
+        }
+        let statement = strip_comments(raw);
         let normalized = statement.split_whitespace().collect::<Vec<_>>().join(" ");
         if normalized.is_empty() {
             continue;
@@ -134,6 +152,22 @@ pub fn unscoped_statements(sql: &str) -> Vec<Unscoped> {
         }
     }
     out
+}
+
+/// Whether one statement claims the cross-tenant exemption, with a reason.
+///
+/// A bare marker is not an exemption, for the same reason a bare file marker is not: the reason is
+/// the thing a reviewer reads.
+pub fn claims_cross_tenant(statement: &str) -> Option<String> {
+    let at = statement.find(CROSS_TENANT_MARKER)?;
+    let rest = &statement[at + CROSS_TENANT_MARKER.len()..];
+    let reason = rest
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim_start_matches([':', '—', '-', ' '])
+        .trim();
+    (!reason.is_empty()).then(|| reason.to_string())
 }
 
 /// Whether a `CREATE TABLE` for a tenant table declares `account_id`.

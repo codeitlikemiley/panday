@@ -23,12 +23,17 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 time.workspace = true
+# `rt` only: the route audit hands its write to a background task so inference never waits on the
+# database (src/routes.rs). The runtime itself is the binary's to choose.
+# `rt` for the route audit's background write; the service binary needs a real runtime and a
+# listener, and `macros` for `#[tokio::main]`.
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net"] }
+panday-router.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
 time.workspace = true
 futures-util.workspace = true
-panday-router.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true

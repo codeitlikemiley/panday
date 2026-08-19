@@ -35,7 +35,7 @@ before the harness. It forces the whole spine.)*
   Scope deliberately excluded, each already owned elsewhere: chain failover
   (M11.3), the Postgres ledger behind `UsageSink` (M11.4), HTTP ingress so the
   CLI can talk to a *remote* gateway (M11.5), accounts and entitlements
-  (M17.x), and glob→model catalog resolution (M12.2).
+  (M17.x), and glob→model catalog resolution (M12.2). *All since shipped.*
 
 ## Phase 1 — The agent (~weeks 5–14)
 

@@ -49,6 +49,14 @@ pub struct RouteDecision {
     /// Filled in shadow mode: what the learned policy would have picked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counterfactual: Option<Vec<ModelRef>>,
+    /// What the head of the chain can actually do (M12.2, docs/12 §offline).
+    ///
+    /// The harness injects this into the system prompt so the model is told what it is and stops
+    /// promising what it cannot deliver (docs/18). `None` when no catalog is configured or the
+    /// catalog does not know the model — which the harness must read as "no claim", not as "no
+    /// capabilities".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<panday_types::capability::CapabilityProfile>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -62,9 +70,11 @@ pub enum RouteError {
     Policy(String),
 }
 
+pub mod catalog;
 pub mod classify;
 pub mod policy;
 
+pub use catalog::{CatalogError, ModelCatalog, ModelEntry};
 pub use classify::{classify_or_default, TRUST_THRESHOLD};
 pub use policy::{Policy, PolicyRouter};
 

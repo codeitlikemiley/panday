@@ -91,6 +91,70 @@ impl UsageSink for CollectUsage {
     }
 }
 
+/// One routing decision, as the audit trail sees it (docs/12 M12.2).
+///
+/// Content-free by construction (docs/20 T5): model ids, a rule name, a pool, counts. No prompt,
+/// no completion, nothing a customer would mind being in an operational table — which is what makes
+/// it safe to keep long enough to answer "which rule is sending traffic where, and how often does
+/// that chain fail over".
+#[derive(Debug, Clone, PartialEq)]
+pub struct RouteRecord {
+    pub account: panday_types::id::AccountId,
+    pub request: panday_types::id::RequestId,
+    /// What the caller asked for: `auto`, or the model they pinned.
+    pub requested: String,
+    pub task: panday_types::model::TaskClass,
+    pub matched_rule: String,
+    pub pool: String,
+    /// The resolved chain, in the order failover would walk it.
+    pub chain: Vec<String>,
+    /// The model that answered. `None` means every leg failed — the rows worth alerting on.
+    pub chosen: Option<String>,
+    /// Legs actually attempted. `1` is the healthy case; more is failover, and a rule whose
+    /// attempts climb is a rule pointing at a sick provider.
+    pub attempts: u32,
+}
+
+/// Where routing decisions go. Postgres implements this (`panday_platform::routes`).
+///
+/// **Awaited on the request path, and therefore required to be cheap.** Unlike usage, an audit row
+/// is evidence rather than money: an implementation that talks to a database should hand the write
+/// to a background task rather than make inference wait for it, and losing a row must never fail a
+/// request. The seam is async only so such an implementation is possible at all.
+#[async_trait::async_trait]
+pub trait RouteAudit: Send + Sync {
+    async fn record(&self, record: RouteRecord);
+}
+
+/// Keeps no audit trail. The default: a laptop gateway has no Postgres to write to.
+pub struct DiscardRoutes;
+#[async_trait::async_trait]
+impl RouteAudit for DiscardRoutes {
+    async fn record(&self, _record: RouteRecord) {}
+}
+
+/// Collects decisions in memory — what tests assert on.
+#[derive(Default)]
+pub struct CollectRoutes {
+    records: std::sync::Mutex<Vec<RouteRecord>>,
+}
+
+impl CollectRoutes {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn take(&self) -> Vec<RouteRecord> {
+        std::mem::take(&mut self.records.lock().unwrap())
+    }
+}
+
+#[async_trait::async_trait]
+impl RouteAudit for CollectRoutes {
+    async fn record(&self, record: RouteRecord) {
+        self.records.lock().unwrap().push(record);
+    }
+}
+
 /// The model plane.
 pub struct Gateway {
     /// Keyed by the `provider` half of a `ModelRef` ("anthropic", "local", …).
@@ -109,6 +173,8 @@ pub struct Gateway {
     costs: Arc<dyn CostModel>,
     /// Refuses a call before it is made (M11.4).
     budget: Arc<dyn BudgetGate>,
+    /// Where routing decisions are written (M12.2).
+    routes: Arc<dyn RouteAudit>,
     /// Exact-response cache (M11.6). `NoCache` unless a TTL is configured.
     cache: Arc<dyn ExactCache>,
     cache_ttl: Duration,
@@ -124,6 +190,7 @@ impl Gateway {
             classifier: Arc::new(HeuristicClassifier),
             costs: Arc::new(NoPrices),
             budget: Arc::new(NoBudget),
+            routes: Arc::new(DiscardRoutes),
             cache: Arc::new(NoCache),
             cache_ttl: Duration::ZERO,
             breakers: Arc::new(Breakers::default()),
@@ -146,12 +213,12 @@ impl Gateway {
         self.adapters.keys().map(String::as_str).collect()
     }
 
-    /// Resolve a request to a concrete (provider, model) target.
+    /// Resolve a request to callable targets, keeping the decision that produced them.
     ///
-    /// Returns the routing decision alongside it so the caller can report
-    /// which rule fired — the audit record docs/12 asks for. Persisting it is
-    /// M12.2.
-    pub fn resolve_chain(&self, req: &ChatRequest) -> Result<Vec<Resolved>, PandayError> {
+    /// Separate from `resolve_chain` because "the router picked a chain and none of it is callable
+    /// here" is a routing outcome worth *recording*, not just an error to return: a rule whose pool
+    /// names models this deployment has no adapter for is invisible otherwise (M12.2).
+    pub fn resolve(&self, req: &ChatRequest) -> Result<Resolution, PandayError> {
         // A declared class wins; otherwise classify, and fall back to `Chat`
         // when the guess is not trusted (docs/12: confidence "gates whether we
         // trust it").
@@ -205,25 +272,51 @@ impl Gateway {
                     adapter: adapter.clone(),
                     matched_rule: decision.matched_rule.clone(),
                     pool: decision.pool.clone(),
+                    task,
                 });
                 continue;
             }
             skipped.push(format!("{} (no adapter configured)", target.0));
         }
 
-        if usable.is_empty() {
-            return Err(PandayError::ModelUnavailable { tried: skipped });
+        Ok(Resolution {
+            decision,
+            task,
+            usable,
+            skipped,
+        })
+    }
+
+    /// The callable chain, or the error a caller sees when there is none.
+    pub fn resolve_chain(&self, req: &ChatRequest) -> Result<Vec<Resolved>, PandayError> {
+        let resolution = self.resolve(req)?;
+        if resolution.usable.is_empty() {
+            return Err(PandayError::ModelUnavailable {
+                tried: resolution.skipped,
+            });
         }
-        Ok(usable)
+        Ok(resolution.usable)
     }
 
     /// The single best target — the head of the chain.
-    pub fn resolve(&self, req: &ChatRequest) -> Result<Resolved, PandayError> {
+    pub fn resolve_one(&self, req: &ChatRequest) -> Result<Resolved, PandayError> {
         self.resolve_chain(req)?
             .into_iter()
             .next()
             .ok_or_else(|| PandayError::ModelUnavailable { tried: vec![] })
     }
+}
+
+/// What the router decided, and how much of it this deployment can actually call.
+pub struct Resolution {
+    pub decision: panday_router::RouteDecision,
+    /// The class the router keyed on — declared, or the classifier's guess.
+    pub task: panday_types::model::TaskClass,
+    /// Targets with an adapter behind them, in failover order.
+    pub usable: Vec<Resolved>,
+    /// Targets that were dropped, each with the reason. The message a caller sees when `usable` is
+    /// empty, and the thing an operator reads to find out why.
+    pub skipped: Vec<String>,
 }
 
 /// Pre-flight budget and entitlement check (docs/11 §quotas, docs/17).
@@ -265,6 +358,10 @@ pub struct Resolved {
     pub adapter: Arc<dyn ProviderAdapter>,
     pub matched_rule: String,
     pub pool: String,
+    /// The class the router actually keyed on — declared by the caller, or the classifier's guess.
+    /// Carried because the audit row is only useful if it says *why* a rule matched, and the guess
+    /// is not recoverable from the request afterwards.
+    pub task: panday_types::model::TaskClass,
 }
 
 impl Resolved {
@@ -354,17 +451,56 @@ impl Gateway {
             metrics::metrics().cache_lookups.inc(&["miss"]);
         }
 
-        let chain = self.resolve_chain(&req)?;
-        if let Some(head) = chain.first() {
+        let resolution = self.resolve(&req)?;
+        if let Some(head) = resolution.usable.first() {
             span.record("provider", head.provider.as_str());
             span.record("matched_rule", head.matched_rule.as_str());
         }
         let account = req.metadata.account;
         let request = req.metadata.request;
 
+        // The decision, before anything is attempted. What varies from here is which leg answered
+        // and how many it took — the two facts the row exists to record.
+        //
+        // The chain recorded is what the *router* chose, not what this deployment can call. A rule
+        // whose pool resolves to models nobody configured an adapter for is exactly the thing worth
+        // seeing in the table, and recording only the callable subset would hide it.
+        let mut audit = RouteRecord {
+            account,
+            request,
+            requested: req.model.0.clone(),
+            task: resolution.task,
+            matched_rule: resolution.decision.matched_rule.clone(),
+            pool: if resolution.decision.pool.is_empty() {
+                "pinned".to_string()
+            } else {
+                resolution.decision.pool.clone()
+            },
+            chain: resolution
+                .decision
+                .chain
+                .iter()
+                .map(|m| m.0.clone())
+                .collect(),
+            chosen: None,
+            attempts: 0,
+        };
+
+        if resolution.usable.is_empty() {
+            // Nothing to attempt: `attempts: 0, chosen: NULL` is the signature of a rule this
+            // deployment cannot serve at all, which reads differently from one whose providers are
+            // failing.
+            self.routes.record(audit).await;
+            return Err(PandayError::ModelUnavailable {
+                tried: resolution.skipped,
+            });
+        }
+        let chain = resolution.usable;
+
         let mut failed: Vec<FailedLeg> = Vec::new();
 
         for leg in chain {
+            audit.attempts += 1;
             let mut attempt = req.clone();
             // The adapter must see the model the router chose, not `auto`.
             attempt.model = leg.model.clone();
@@ -417,6 +553,8 @@ impl Gateway {
                         started.elapsed().as_secs_f64(),
                     );
                     let pool = leg.pool_label().to_string();
+                    audit.chosen = Some(leg.model.0.clone());
+                    self.routes.record(audit).await;
                     return Ok(Box::pin(capture_usage(
                         stream,
                         self.usage.clone(),
@@ -468,6 +606,10 @@ impl Gateway {
                     // would turn one clear error into N confusing ones — while
                     // spending the caller's quota to do it.
                     if !retryable {
+                        // Recorded with no `chosen`: a request that died on the caller's own
+                        // mistake still routed somewhere, and a rule that only ever produces
+                        // unchosen rows is a rule pointing at something broken.
+                        self.routes.record(audit).await;
                         return Err(e);
                     }
                 }
@@ -482,6 +624,8 @@ impl Gateway {
         // into `ModelUnavailable` would strip the one signal the caller can act
         // on — back off and retry — and turn a 429 into a 503 that reads like
         // an outage.
+        self.routes.record(audit).await;
+
         if !failed.is_empty() && failed.iter().all(|f| f.rate_limited) {
             return Err(PandayError::RateLimited { retry_after_ms: 0 });
         }
@@ -653,6 +797,7 @@ pub struct GatewayBuilder {
     classifier: Arc<dyn Classifier>,
     costs: Arc<dyn CostModel>,
     budget: Arc<dyn BudgetGate>,
+    routes: Arc<dyn RouteAudit>,
     cache: Arc<dyn ExactCache>,
     cache_ttl: Duration,
     breakers: Arc<Breakers>,
@@ -676,6 +821,12 @@ impl GatewayBuilder {
 
     pub fn usage_sink(mut self, sink: Arc<dyn UsageSink>) -> Self {
         self.usage = sink;
+        self
+    }
+
+    /// Where routing decisions are recorded (M12.2). Unset keeps no trail.
+    pub fn route_audit(mut self, audit: Arc<dyn RouteAudit>) -> Self {
+        self.routes = audit;
         self
     }
 
@@ -725,6 +876,7 @@ impl GatewayBuilder {
             classifier: self.classifier,
             costs: self.costs,
             budget: self.budget,
+            routes: self.routes,
             cache: self.cache,
             cache_ttl: self.cache_ttl,
             breakers: self.breakers,

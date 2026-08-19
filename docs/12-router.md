@@ -82,9 +82,12 @@ active `CapabilityProfile` (max context, no vision, weaker JSON discipline)
 which the harness injects into the system prompt — the model is told what it
 is, so it stops promising what it can't do (18).
 
-The type landed at M18.4 in `panday_types::capability`, and `panday local` applies it by
-default; the router returning it per route arrives with the model catalog (M12.2/M18.2),
-which is where per-model profiles will live.
+The type landed at M18.4 in `panday_types::capability`, and `panday local` applies it by default.
+Since M12.2 the router returns it per route: profiles live in the model catalog, and
+`RouteDecision.profile` carries the *head* of the chain's — the model the turn will actually run
+against. A failover to a weaker leg is a different conversation, and one the harness is told about
+when it happens rather than pre-emptively. `None` means no catalog is configured or the catalog does
+not know the model, which reads as "no claim", not as "no capabilities".
 
 ## Milestones
 
@@ -93,17 +96,62 @@ which is where per-model profiles will live.
   Two notes from the implementation:
 
   - **Pool entries are globs, but `RouteDecision.chain` is `Vec<ModelRef>`.**
-    Nothing yet resolves `anthropic/claude-opus-*` to a concrete model, so
-    v1 chains carry the pattern through. Resolution needs the adapter
-    registry (docs/11) and the local catalog (docs/18) — it lands with M12.2,
-    when the router is wired into the gateway.
+    v1 chains carried the pattern through because nothing could resolve
+    `anthropic/claude-opus-*` to a concrete model. **Closed at M12.2** by
+    `panday_router::catalog`; a router with no catalog still passes patterns
+    through, which is what keeps the offline tier working.
   - **`BudgetPressure::Hard` filters the chain to `local/` and can empty it**,
     yielding `NoRoute`. That is deliberate — a hit ceiling must never fall
     through to a paid call — but it means a policy whose pools contain no
     local model will hard-fail at the ceiling instead of degrading. The
     gateway turns that into a typed `budget_exceeded` and a graceful session
     pause (docs/11 §Quotas), rather than a 500.
-- **M12.2** Wired into gateway: `auto` resolves through rules; RouteDecision audit rows land in PG.
+- **M12.2** Wired into gateway: `auto` resolves through rules; RouteDecision audit rows land in PG. ✅ *(shipped: `panday_router::catalog` — `ModelCatalog`, the shipped file at `crates/panday-router/catalog/default.yaml`, `PolicyRouter::with_catalog`; `panday_gateway::RouteAudit`/`RouteRecord`; `panday_platform::routes` with migration `0005_route_decisions.sql`.)*
+
+  **The catalog is what closes M12.1's note.** Pool entries are patterns so a policy outlives a
+  model release; the catalog is the ordered list of models that exist, and expansion happens last —
+  after every constraint — so privacy, demotion and the hard-budget filter all still reason in the
+  vocabulary the policy file is written in. Expansion order is catalog order, which means editing
+  the file reorders failover. That is the intended control, and it is why the list is not sorted.
+
+  **Absent catalog ≠ empty catalog.** No catalog passes patterns through unchanged, exactly as
+  before M12.2 — `panday local` routes to whatever model name the llama-server in front of it is
+  serving, which is not a fact our file can know (ADR-011). An *empty* catalog is the other
+  statement — "this deployment has no models" — and correctly yields `NoRoute`. Collapsing the two
+  into one possibly-empty list would force the offline tier to maintain a catalog of models it
+  cannot enumerate.
+
+  **The chain is deduplicated.** A pool and its fallback routinely overlap (`cheap` and `local-only`
+  share the 4B model). Left alone, failover would retry a model that just failed before moving on:
+  a retry that does nothing, slowly.
+
+  **Only hard capabilities filter.** A model that cannot hold the context or cannot see the image is
+  dropped from the chain. `json_reliability` and `tool_reliability` are in the profile and are
+  deliberately *not* admission criteria — they are soft numbers the harness adapts to (docs/18: the
+  model is told what it is), and a router that filtered on them would make every local-only
+  deployment unroutable the moment a request carried a tool. A model the catalog does not know is
+  kept, because dropping it would punish a request for our file being incomplete; a *pinned* model
+  the catalog does not know fails here rather than at the provider, which is a typo caught for the
+  price of a string comparison instead of a round trip.
+
+  **The audit row is one per request, not one per attempt.** `attempts` and `chosen` carry the
+  failover story: `attempts: 2, chosen: together/...` is the row that explains why a healthy-looking
+  rule is slow, and `chosen: NULL` is the row worth alerting on. A row per leg would multiply the
+  largest table in the system by the failure rate of the worst provider.
+
+  **Written off the request path, and content-free.** `PgRouteAudit` hands the insert to a
+  background task and warns on failure: an audit row is evidence, not money, and losing one to a
+  database blip must degrade the dashboard rather than the request — the exact opposite of the
+  ledger's `OnWriteFailure` contract, and the difference is the point. The row carries model ids, a
+  rule name, a pool and counts; no prompt, no completion (docs/20 T5), which is what makes it safe
+  to keep long enough to be useful. `routes::prune` exists because an audit table with no retention
+  is a disk-full incident with a scheduled date.
+
+  **Prices live in the catalog too.** One file answers "what models are there" and "what do they
+  cost", because a model in a pool with no price is a call the meter cannot cost. A model with no
+  `price` row is *unpriced* rather than free — `panday_unpriced_calls_total` counts it — while local
+  models carry an explicit zero, because "this reduction saved no money" is a true and useful
+  statement (ADR-007).
 - **M12.3** Heuristic classifier + confidence; misclassification harness with labeled fixtures. ✅ *(shipped: `panday_router::classify` — `HeuristicClassifier`, `TRUST_THRESHOLD`, `classify_or_default`; harness in `crates/panday-router/tests/classification.rs`.)*
 
   **Measured: 92% on the labelled corpus, zero confidently-wrong.** The second

@@ -285,15 +285,36 @@ impl Policy {
 /// The first-match policy engine.
 pub struct PolicyRouter {
     policy: Policy,
+    /// Turns pool patterns into models that exist (M12.2).
+    ///
+    /// Optional, and absent means *pass patterns through* rather than *expand to nothing*: a
+    /// deployment whose adapters know their own model names — `panday local`, a test, anything
+    /// pinning concrete ids in its pools — routes correctly without a catalog, and gets the same
+    /// behaviour it had before the catalog existed. Configuring an empty catalog is the other
+    /// statement, and yields `NoRoute`.
+    catalog: Option<crate::catalog::ModelCatalog>,
 }
 
 impl PolicyRouter {
     pub fn new(policy: Policy) -> Self {
-        Self { policy }
+        Self {
+            policy,
+            catalog: None,
+        }
     }
 
     pub fn from_yaml(src: &str) -> Result<Self, RouteError> {
         Ok(Self::new(Policy::from_yaml(src)?))
+    }
+
+    /// Resolve pool patterns against this catalog, and enforce the hard capabilities in it.
+    pub fn with_catalog(mut self, catalog: crate::catalog::ModelCatalog) -> Self {
+        self.catalog = Some(catalog);
+        self
+    }
+
+    pub fn catalog(&self) -> Option<&crate::catalog::ModelCatalog> {
+        self.catalog.as_ref()
     }
 
     pub fn policy(&self) -> &Policy {
@@ -389,9 +410,13 @@ impl Router for PolicyRouter {
             chain.retain(|m| m.0.starts_with("local/"));
         }
 
+        // Patterns become models. Last, so every constraint above still reasons about the pool
+        // vocabulary the policy file is written in.
+        chain = self.expand(chain);
+
         // Capability filtering: a model that cannot do what the request needs
         // is not a fallback, it is a failure waiting to happen.
-        chain = Self::filter_caps(chain, &q.needs);
+        chain = self.filter_caps(chain, &q.needs, q.context_tokens);
 
         if chain.is_empty() {
             return Err(RouteError::NoRoute {
@@ -400,27 +425,75 @@ impl Router for PolicyRouter {
             });
         }
 
+        // The head's profile, because that is the model the turn will actually run against; a
+        // failover to a weaker leg is a different conversation, and one the harness is told about
+        // when it happens rather than pre-emptively.
+        let profile = self
+            .catalog
+            .as_ref()
+            .and_then(|c| chain.first().and_then(|m| c.profile(m)));
+
         Ok(RouteDecision {
             chain,
             matched_rule,
             pool: pool_name,
             counterfactual: None,
+            profile,
         })
     }
 }
 
 impl PolicyRouter {
-    /// v1 capability filter.
+    /// Pool patterns → models that exist, in catalog order, without duplicates.
     ///
-    /// The policy file carries no per-model capability table yet — that
-    /// arrives with the model catalog (docs/18) and adapter `capabilities()`
-    /// (docs/11). Until then the only capability we can assert from a model
-    /// *name* is context size, and guessing would be worse than not
-    /// filtering: silently dropping a capable model is as bad as keeping an
-    /// incapable one. So this is intentionally a no-op placeholder that keeps
-    /// the seam visible rather than pretending to enforce.
-    fn filter_caps(chain: Vec<ModelRef>, _needs: &Caps) -> Vec<ModelRef> {
+    /// A pool and its fallback routinely overlap (`cheap` and `local-only` share the 4B model), and
+    /// a chain that lists the same model twice would retry a model that just failed before moving
+    /// on — failover that does nothing, twice as slowly.
+    fn expand(&self, chain: Vec<ModelRef>) -> Vec<ModelRef> {
+        let Some(catalog) = &self.catalog else {
+            return chain;
+        };
+        let mut out: Vec<ModelRef> = Vec::new();
+        for pattern in chain {
+            for model in catalog.expand(&pattern.0) {
+                if !out.contains(&model) {
+                    out.push(model);
+                }
+            }
+        }
+        out
+    }
+
+    /// Drop models that *cannot* serve the request.
+    ///
+    /// Hard limits only: the context it cannot hold and the image it cannot see. The reliability
+    /// numbers in a profile are deliberately not admission criteria — see `catalog` for why a
+    /// router that filtered on them would make every local-only deployment unroutable.
+    ///
+    /// A model the catalog does not know is kept. The alternative is dropping a model because our
+    /// file is incomplete, and silently dropping a capable model is as bad as keeping an incapable
+    /// one. Without a catalog at all this is a no-op, as it was before M12.2.
+    fn filter_caps(
+        &self,
+        chain: Vec<ModelRef>,
+        needs: &Caps,
+        context_tokens: u32,
+    ) -> Vec<ModelRef> {
+        let Some(catalog) = &self.catalog else {
+            return chain;
+        };
+        // What the request declares it needs, or what it actually carries — whichever is larger. A
+        // caller that says nothing still cannot fit 40k of context into a 16k model.
+        let context_floor = needs.min_context.max(context_tokens);
         chain
+            .into_iter()
+            .filter(|model| match catalog.profile(model) {
+                Some(profile) => {
+                    (!needs.vision || profile.vision) && profile.max_context_tokens >= context_floor
+                }
+                None => true,
+            })
+            .collect()
     }
 }
 

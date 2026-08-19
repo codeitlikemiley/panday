@@ -1,0 +1,98 @@
+# The default model catalog (docs/12 M12.2).
+#
+# What the pool patterns in policy/*.yaml resolve to. Order within a provider is preference: a
+# glob expands in the order written here, and that order becomes the failover chain.
+#
+# `context` is the context the model is *usable* at, not the advertised number. Every profile here
+# is `declared` — somebody's estimate, honestly labelled — until the eval suite measures it
+# (docs/19 M19.2), at which point the scorecard rewrites these rows and marks them `measured`.
+#
+# Prices are micro-dollars per million tokens: 3_000_000 is $3.00/Mtok. A model with no `price` is
+# *unpriced*, which the meter reports as such; it is not free. Local models carry an explicit zero,
+# because "this reduction saved no money" is a true and useful statement (ADR-007).
+#
+# Prices change without warning. This file is a starting point a deployment overrides, not a
+# billing source of truth — the ledger prices from what it was configured with at call time.
+version: 1
+
+models:
+  # --- frontier -----------------------------------------------------------------------------
+  - id: anthropic/claude-opus-4-1
+    context: 200000
+    json: 0.99
+    tools: 0.98
+    vision: true
+    max_subagents: 4
+    price:
+      input_per_mtok_micros: 15000000
+      output_per_mtok_micros: 75000000
+      cache_read_pct: 10
+      cache_write_pct: 125
+      cache_write_1h_pct: 200
+
+  - id: openai/gpt-5
+    context: 200000
+    json: 0.98
+    tools: 0.96
+    vision: true
+    max_subagents: 4
+    price:
+      input_per_mtok_micros: 1250000
+      output_per_mtok_micros: 10000000
+      # Automatic prefix caching: reads are discounted, writes carry no premium (ADR-007).
+      cache_read_pct: 10
+      cache_write_pct: 100
+      cache_write_1h_pct: 100
+
+  # --- workhorse ----------------------------------------------------------------------------
+  - id: anthropic/claude-sonnet-4-5
+    context: 200000
+    json: 0.98
+    tools: 0.96
+    vision: true
+    max_subagents: 3
+    price:
+      input_per_mtok_micros: 3000000
+      output_per_mtok_micros: 15000000
+      cache_read_pct: 10
+      cache_write_pct: 125
+      cache_write_1h_pct: 200
+
+  - id: together/qwen3.5-32b-instruct
+    context: 128000
+    json: 0.9
+    tools: 0.85
+    max_subagents: 2
+    price:
+      input_per_mtok_micros: 800000
+      output_per_mtok_micros: 800000
+
+  # --- cheap --------------------------------------------------------------------------------
+  - id: together/qwen3.5-9b
+    context: 64000
+    json: 0.82
+    tools: 0.7
+    max_subagents: 1
+    price:
+      input_per_mtok_micros: 200000
+      output_per_mtok_micros: 200000
+
+  # --- local (docs/18) ----------------------------------------------------------------------
+  # No marginal token cost, so an explicit zero rather than an omitted price.
+  - id: local/qwen3.5-4b
+    context: 16000
+    json: 0.7
+    tools: 0.6
+    max_subagents: 1
+    price:
+      input_per_mtok_micros: 0
+      output_per_mtok_micros: 0
+
+  - id: local/gpt-oss-20b
+    context: 32000
+    json: 0.85
+    tools: 0.75
+    max_subagents: 2
+    price:
+      input_per_mtok_micros: 0
+      output_per_mtok_micros: 0

@@ -353,3 +353,38 @@ fn the_scanner_finds_a_planted_violation() {
         "the Rust-literal walker missed a planted query: {findings:?}"
     );
 }
+
+#[test]
+fn a_statement_may_exempt_itself_with_a_reason() {
+    let sql = "-- tenant-scoping: cross-tenant — operator aggregate, no tenant data
+               SELECT count(*) FROM ledger_entries";
+    assert!(unscoped_statements(sql).is_empty());
+}
+
+#[test]
+fn a_bare_marker_exempts_nothing() {
+    // The reason is the whole point: an exemption that needs no argument is one that spreads.
+    let sql = "-- tenant-scoping: cross-tenant
+               SELECT count(*) FROM ledger_entries";
+    assert_eq!(unscoped_statements(sql).len(), 1);
+}
+
+#[test]
+fn an_exemption_covers_only_its_own_statement() {
+    // The failure this prevents: one justified aggregate at the top of a file quietly
+    // legitimising every query written under it.
+    let sql = "-- tenant-scoping: cross-tenant — operator aggregate
+               SELECT count(*) FROM ledger_entries;
+               SELECT amount_micros FROM ledger_entries";
+    let found = unscoped_statements(sql);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].statement.contains("amount_micros"));
+}
+
+#[test]
+fn a_commented_out_account_id_still_fails() {
+    // Splitting on `;` before stripping comments must not weaken this: it is exactly how a
+    // scoped query becomes unscoped during a debugging session.
+    let sql = "SELECT * FROM ledger_entries WHERE true -- AND account_id = $1";
+    assert_eq!(unscoped_statements(sql).len(), 1);
+}

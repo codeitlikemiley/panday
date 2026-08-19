@@ -13,7 +13,8 @@ pub mod ingress;
 pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};
 pub use circuit::{BreakerConfig, Breakers, State as CircuitState};
 pub use gateway::{
-    BudgetGate, CollectUsage, DiscardUsage, Gateway, NoBudget, UsageRecord, UsageSink,
+    BudgetGate, CollectRoutes, CollectUsage, DiscardRoutes, DiscardUsage, Gateway, NoBudget,
+    RouteAudit, RouteRecord, UsageRecord, UsageSink,
 };
 pub use ingress::{IngressRequest, IngressState};
 

@@ -26,8 +26,12 @@ async fn main() {
     let addr =
         std::env::var("PANDAY_GATEWAY_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
 
+    // Pool patterns resolve against the shipped catalog, which also supplies the prices the COGS
+    // metric needs (M12.2). Without it a glob is uncallable and every priced call is unpriced.
+    let catalog = panday_router::ModelCatalog::shipped();
+    let prices = catalog.price_table();
     let router = match PolicyRouter::from_yaml(DEV_POLICY) {
-        Ok(r) => r,
+        Ok(r) => r.with_catalog(catalog),
         Err(e) => {
             eprintln!("panday-gateway: bundled policy is invalid: {e}");
             std::process::exit(1);
@@ -35,7 +39,9 @@ async fn main() {
     };
 
     let usage = Arc::new(CollectUsage::new());
-    let mut builder = Gateway::builder(Arc::new(router)).usage_sink(usage);
+    let mut builder = Gateway::builder(Arc::new(router))
+        .usage_sink(usage)
+        .costs(Arc::new(prices));
 
     // Same environment contract as the CLI, so one set of variables configures
     // either entry point.

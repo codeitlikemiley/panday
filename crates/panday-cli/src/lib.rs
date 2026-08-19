@@ -22,7 +22,7 @@ use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat
 pub use panday_gateway::CollectUsage;
 use panday_gateway::{Gateway, ProviderAdapter};
 use panday_harness::ReplayOptions;
-use panday_router::PolicyRouter;
+use panday_router::{ModelCatalog, PolicyRouter};
 use panday_sdk::{ModelClient, PandayError};
 use panday_types::id::{AccountId, RequestId};
 use panday_types::model::{
@@ -61,8 +61,18 @@ impl Config {
 
     /// The `ModelRef` provider prefix each configured adapter answers to.
     pub fn build_gateway(&self, policy: &str, usage: Arc<CollectUsage>) -> Result<Gateway, String> {
-        let router = PolicyRouter::from_yaml(policy).map_err(|e| format!("policy: {e}"))?;
-        let mut b = Gateway::builder(Arc::new(router)).usage_sink(usage);
+        // The catalog is what turns the policy's pool patterns into models that exist, and it
+        // carries the prices the per-call summary is priced with (M12.2). Shipped rather than
+        // configurable for now: a deployment that needs different models edits one file, and a
+        // deployment that needs different *prices* is doing billing, which is the platform's job.
+        let catalog = ModelCatalog::shipped();
+        let prices = catalog.price_table();
+        let router = PolicyRouter::from_yaml(policy)
+            .map_err(|e| format!("policy: {e}"))?
+            .with_catalog(catalog);
+        let mut b = Gateway::builder(Arc::new(router))
+            .usage_sink(usage)
+            .costs(Arc::new(prices));
 
         if let Some(key) = &self.anthropic_key {
             b = b.adapter(
