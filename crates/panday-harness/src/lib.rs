@@ -15,6 +15,7 @@ pub mod actor;
 pub mod context;
 pub mod expand;
 pub mod hooks;
+pub mod load_skill;
 pub mod native;
 pub mod permissions;
 pub mod testing;
@@ -26,6 +27,7 @@ pub use actor::{
 };
 pub use expand::ExpandArtifact;
 pub use hooks::{CollectFailures, Hook, HookEngine, HookReporter, PreTool};
+pub use load_skill::{LoadSkill, SkillBodies};
 pub use permissions::{Gate, PermissionEngine, Profile};
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 

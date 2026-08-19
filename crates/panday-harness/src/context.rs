@@ -78,6 +78,17 @@ impl Context {
 pub struct ContextBuilder {
     system_prompt: String,
     tools: Vec<ToolDef>,
+    /// The skills INDEX — names and descriptions only (docs/16).
+    ///
+    /// Lives in the stable band, so it is paid for on every turn of the
+    /// session. That is why it is an index and not the bodies: a dozen skills
+    /// cost a dozen lines here, and their bodies cost nothing until used.
+    skills_index: String,
+    /// Skills whose body has been loaded, so a second trigger is a no-op.
+    ///
+    /// docs/16: a loaded body "stays for the session (unloading churns cache,
+    /// ADR-008)". Re-injecting would churn it just as badly.
+    loaded_skills: Vec<String>,
     /// Compaction summaries and loaded skill bodies — append-only.
     semi_stable: Vec<String>,
     /// How much of the model window to fill before compacting.
@@ -90,6 +101,8 @@ impl ContextBuilder {
         Self {
             system_prompt: system_prompt.into(),
             tools,
+            skills_index: String::new(),
+            loaded_skills: Vec::new(),
             semi_stable: Vec::new(),
             // docs/13's default.
             compact_at_ratio: 0.70,
@@ -103,6 +116,38 @@ impl ContextBuilder {
         self.semi_stable.push(summary.into());
     }
 
+    /// Publish the skills index into the stable band.
+    ///
+    /// Must be set before the first turn: the stable band has to be
+    /// byte-identical for the life of the session, so adding a skill later is
+    /// a cache break — which docs/13 calls "a deliberate, logged act", not
+    /// something to do casually.
+    pub fn set_skills_index(&mut self, index: impl Into<String>) {
+        self.skills_index = index.into();
+    }
+
+    /// Load a skill body into the semi-stable band.
+    ///
+    /// Returns false when it was already loaded. Idempotence matters: a second
+    /// trigger appending the body again would both waste tokens and churn the
+    /// cache behind it.
+    pub fn load_skill_body(&mut self, name: &str, body: &str) -> bool {
+        if self.loaded_skills.iter().any(|n| n == name) {
+            return false;
+        }
+        self.loaded_skills.push(name.to_string());
+        self.semi_stable.push(format!("# Skill: {name}\n{body}"));
+        true
+    }
+
+    pub fn is_skill_loaded(&self, name: &str) -> bool {
+        self.loaded_skills.iter().any(|n| n == name)
+    }
+
+    pub fn loaded_skills(&self) -> &[String] {
+        &self.loaded_skills
+    }
+
     pub fn summaries(&self) -> &[String] {
         &self.semi_stable
     }
@@ -114,6 +159,18 @@ impl ContextBuilder {
     /// cache break and therefore a deliberate, logged act").
     fn stable_message(&self) -> Message {
         let mut text = self.system_prompt.clone();
+
+        // Index before tools: both are stable, and a fixed order is what keeps
+        // the band byte-identical across turns.
+        if !self.skills_index.trim().is_empty() {
+            text.push_str("\n\n");
+            text.push_str(self.skills_index.trim_end());
+            text.push_str(
+                "\n\nA skill's full instructions are not shown above. \
+                 Call `load_skill` with its name to load them.",
+            );
+        }
+
         if !self.tools.is_empty() {
             text.push_str("\n\n# Tools\n");
             for t in &self.tools {

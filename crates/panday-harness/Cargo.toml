@@ -11,6 +11,7 @@ panday-types.workspace = true
 panday-sdk.workspace = true
 panday-sandbox.workspace = true
 panday-reducer.workspace = true
+panday-plugins.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

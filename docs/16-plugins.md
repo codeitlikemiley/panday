@@ -103,7 +103,32 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   horizontal rule in the body does not end the frontmatter early. An oversized
   body is *reported*, never silently truncated — spilling its tail belongs to
   whoever owns an artifact store.
-- **M16.2** Skills index/lazy-body in harness assembly; two real skills ported unmodified from the existing ecosystem.
+- **M16.2** Skills index/lazy-body in harness assembly; two skills ported unmodified. ✅ *(shipped: `ContextBuilder::set_skills_index` / `load_skill_body`, the `load_skill` tool; skills in `crates/panday-harness/tests/skills/`.)*
+
+  The index sits in the **stable** band and the bodies land in **semi-stable**,
+  which is a cache-economics decision rather than a tidiness one: the index is
+  paid for on every turn of the session, so it must cost a line per skill. A
+  test asserts the sharper version of that — **the index's size does not change
+  when the bodies grow 50×.** An arbitrary size ratio would only measure how
+  verbose the fixtures happen to be.
+
+  Loading a body **appends** and never rewrites the stable prefix, and loading
+  the same skill twice is a no-op: docs/16 says a body "stays for the session
+  (unloading churns cache)", and re-appending churns it just as badly.
+
+  `load_skill` returns the body; the **actor** places it. A tool that could
+  append to the stable region would be able to break the ADR-008 invariant from
+  outside the component that guarantees it.
+
+  A hallucinated skill name lists the ones that exist, so a wrong guess costs
+  one recoverable turn rather than repeated guessing.
+
+  *On "ported unmodified":* the two skills use the unmodified SKILL.md format,
+  including frontmatter keys we do not model (`license`, `allowed-tools`,
+  `version`, `author`), and the loader keeps them. They are representative of
+  the ecosystem's format rather than copies of a third party's work — copying
+  someone's skill verbatim into this repo is a licensing question, not a
+  technical demonstration.
 - **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
 - **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite.
 - **M16.5** ACP bridge: interactive session from Zed; permission round-trip works.

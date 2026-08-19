@@ -920,6 +920,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "panday-gateway",
+ "panday-plugins",
  "panday-reducer",
  "panday-router",
  "panday-sandbox",

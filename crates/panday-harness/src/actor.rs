@@ -255,6 +255,11 @@ impl SessionActor {
         self
     }
 
+    /// Whether a skill's body is currently in this session's context.
+    pub fn context_has_skill(&self, name: &str) -> bool {
+        self.context.is_skill_loaded(name)
+    }
+
     pub fn depth(&self) -> u8 {
         self.depth
     }
@@ -755,6 +760,26 @@ impl SessionActor {
         futures_util::future::join_all(futures).await
     }
 
+    /// A `load_skill` result belongs in the semi-stable band, not the rolling
+    /// window.
+    ///
+    /// Placed here rather than in the tool because only the actor owns the
+    /// layout: a tool that could append to the stable region would be able to
+    /// break the ADR-008 cache invariant from outside the component that
+    /// guarantees it. Appending also means the skill "stays for the session"
+    /// (docs/16) without ever churning what is already cached.
+    fn absorb_skill(&mut self, call: &PendingCall, outcome: &crate::tools::ToolOutcome) {
+        if call.name != crate::load_skill::LoadSkill::NAME || outcome.is_error {
+            return;
+        }
+        let Some(name) = call.args.get("name").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if self.context.load_skill_body(name, &outcome.raw) {
+            tracing::debug!(skill = %name, "skill body loaded into the semi-stable band");
+        }
+    }
+
     /// Reduce an outcome and commit its `ToolResult`.
     async fn record_outcome(
         &mut self,
@@ -762,6 +787,8 @@ impl SessionActor {
         outcome: crate::tools::ToolOutcome,
         duration_ms: u64,
     ) -> Result<(), HarnessError> {
+        self.absorb_skill(&call, &outcome);
+
         let _reduce_span = tracing::info_span!("reduce", tool = %call.name).entered();
 
         // Tool output NEVER enters context raw (ADR-007).
