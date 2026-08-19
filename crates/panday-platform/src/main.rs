@@ -37,6 +37,8 @@ panday-platform — the hosted control plane (docs/17)
   panday-platform prune-routes <days>            drop route audit rows older than <days>
   panday-platform entitle <subject> <plan> <seats> <days> --key-file <path>
                                                  sign an offline licence (docs/17 M17.6)
+  panday-platform drift <provider> <report.csv> <from> <to>
+                                                 reconcile the ledger against a usage report
 
 Scopes are comma-separated: models,sessions,admin (default: models,sessions).
 PANDAY_DATABASE_URL is required by every subcommand.
@@ -63,6 +65,7 @@ async fn main() {
         ["entitle", subject, plan, seats, days, "--key-file", key_file] => {
             entitle(subject, plan, seats, days, key_file)
         }
+        ["drift", provider, report, from, to] => drift(provider, report, from, to).await,
         ["-h" | "--help" | "help"] => {
             print!("{USAGE}");
             return;
@@ -234,6 +237,52 @@ fn entitle(
         entitlement.grace_days,
         keys.public_key_hex(),
     );
+    Ok(())
+}
+
+/// Reconcile a period against a provider's usage report (M21.4).
+///
+/// Exits non-zero when anything needs a person, so a cron job's own failure handling is the alarm
+/// of last resort — a monitor whose only output is a log line is a monitor nobody reads.
+async fn drift(provider: &str, report: &str, from: &str, to: &str) -> Result<(), String> {
+    use panday_platform::drift;
+
+    let rfc3339 = time::format_description::well_known::Rfc3339;
+    let parse_at = |s: &str, what: &str| {
+        time::OffsetDateTime::parse(s, &rfc3339)
+            .map_err(|_| format!("{what} `{s}` is not an RFC 3339 timestamp"))
+    };
+    let from = parse_at(from, "from")?;
+    let to = parse_at(to, "to")?;
+
+    let csv = std::fs::read_to_string(report).map_err(|e| format!("read {report}: {e}"))?;
+    let theirs = drift::parse_report(&csv).map_err(|e| e.to_string())?;
+
+    let pool = admin_pool().await?;
+    let ours = drift::recorded_cogs(&pool, from, to)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 1% and one cent: rounding differs on every call because we price from our table and they
+    // price from theirs. Both are overridable by an operator who knows their own noise floor.
+    let tolerance_bp = env("PANDAY_DRIFT_TOLERANCE_BP")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
+    let floor = env("PANDAY_DRIFT_FLOOR_MICROS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000);
+
+    let report = drift::compare(&ours, &theirs, tolerance_bp, floor);
+    print!("{}", report.to_text());
+    drift::publish(provider, &report);
+
+    let alarms = report.alarms().len();
+    if alarms > 0 {
+        return Err(format!(
+            "{alarms} model(s) need a look — a difference means either our metering is wrong or \
+             the invoice is, and which one is a person's job"
+        ));
+    }
     Ok(())
 }
 

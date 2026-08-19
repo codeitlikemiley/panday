@@ -157,7 +157,44 @@ else about the tool changes.
   a hole produces a state no session ever held, and a debugger that invents
   history is worse than no debugger. Every rendered line is anchored to its
   `[seq]` (continuations indented under it) so a finding can be cited.
-- **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing.
+- **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing. ✅ *(shipped: `panday_platform::drift`, `panday-platform drift <provider> <report.csv> <from> <to>`, `panday_ledger_drift_micros` + `panday_ledger_drift_direction`.)*
+
+  **Two different questions, and this is the second one.** Internal drift — does the cached balance
+  match the sum of the entries — is bookkeeping with a mechanical answer (`balance_drift`,
+  `repair_balance`, M17.2). External drift — does what we recorded as COGS match what the provider
+  actually billed — has no mechanical answer: a difference means either our metering is wrong or
+  the invoice is, and finding out which is a person's job. What the monitor owes them is a number, a
+  direction, and enough breakdown to start.
+
+  **Direction is a separate series from magnitude.** Recording *more* than the provider billed may
+  mean we over-charged a customer: a refund and an apology. Recording *less* means we are eating the
+  difference: a margin problem. Same absolute number, opposite response, so an alert that could not
+  tell them apart would page the wrong person.
+
+  **A missing model is louder than a wrong number.** A model on the invoice and absent from our
+  ledger is traffic we did not meter at all (`Unmetered`); the reverse is usually an invoice line
+  that has not arrived (`Unbilled`). Both are their own class rather than a percentage, because a
+  percentage would average an unmetered model away against everything that matched.
+
+  **It compares cost to cost.** `quantity->>'provider_cost_micros'` — what the gateway metered —
+  not the credits the customer was charged. Comparing an invoice to a *price* would make the margin
+  look exactly like drift, and there is a test whose ledger rows charge double the provider cost
+  precisely to catch that mistake.
+
+  **Tolerance exists because rounding is real**: we price per token from our table, they bill from
+  theirs, and the two round differently on every call. 1% and one cent by default, both overridable
+  — and an absolute floor as well as a percentage, because 40% of two cents is not an incident. A
+  malformed line in the report is an error rather than a skipped row: skipping under-counts the
+  invoice and reports drift in our favour, which is the direction nobody double-checks.
+
+  **The alerting rule lives in the monitoring system.** This publishes a gauge and logs; a threshold
+  compiled into a release is a threshold nobody can change at 3am. The command exits non-zero when
+  anything needs a look, so a cron job's own failure handling is the alarm of last resort — a
+  monitor whose only output is a log line is a monitor nobody reads.
+
+  **The provider's own CSV is converted outside this binary.** The monitor reads a normalised
+  four-column shape, so a vendor renaming a column is a one-line change in a shell script rather
+  than a release.
 - **M21.5** Content-scrub audit: grep-proof that no content fields leak into spans/logs at default levels. ✅ *(shipped: `crates/panday-sdk/tests/scrub_audit.rs`.)*
 
   Two halves, because either alone is easy to satisfy and wrong. The **static**

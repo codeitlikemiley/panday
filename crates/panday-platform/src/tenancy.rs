@@ -113,11 +113,11 @@ pub fn unscoped_statements(sql: &str) -> Vec<Unscoped> {
     let mut out = Vec::new();
     // Split *before* stripping, so a statement's own comment can carry its exemption. The account_id
     // check still runs on the stripped text, so a commented-out column still fails.
-    for raw in sql.split(';') {
-        if claims_cross_tenant(raw).is_some() {
+    for raw in split_statements(sql) {
+        if claims_cross_tenant(&raw).is_some() {
             continue;
         }
-        let statement = strip_comments(raw);
+        let statement = strip_comments(&raw);
         let normalized = statement.split_whitespace().collect::<Vec<_>>().join(" ");
         if normalized.is_empty() {
             continue;
@@ -150,6 +150,51 @@ pub fn unscoped_statements(sql: &str) -> Vec<Unscoped> {
                 break;
             }
         }
+    }
+    out
+}
+
+/// Split on `;`, ignoring semicolons inside comments.
+///
+/// A plain `split(';')` was the first version and it was wrong in a way only a prose comment
+/// reveals: `-- COGS is what we paid across all accounts; keyed by model` splits *there*, leaving a
+/// fragment that holds the table name and not the `account_id` that scoped it — a false positive on
+/// a correct query, and a false negative waiting to happen on the other side of it.
+fn split_statements(sql: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '-' if chars.peek() == Some(&'-') => {
+                current.push(c);
+                for c in chars.by_ref() {
+                    current.push(c);
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                current.push(c);
+                let mut last = ' ';
+                for c in chars.by_ref() {
+                    current.push(c);
+                    if last == '*' && c == '/' {
+                        break;
+                    }
+                    last = c;
+                }
+            }
+            ';' => {
+                out.push(std::mem::take(&mut current));
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.trim().is_empty() {
+        out.push(current);
     }
     out
 }

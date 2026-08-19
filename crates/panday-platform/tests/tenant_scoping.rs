@@ -388,3 +388,23 @@ fn a_commented_out_account_id_still_fails() {
     let sql = "SELECT * FROM ledger_entries WHERE true -- AND account_id = $1";
     assert_eq!(unscoped_statements(sql).len(), 1);
 }
+
+#[test]
+fn a_semicolon_inside_a_comment_does_not_split_a_statement() {
+    // Found by the lint tripping on its own exemption (M21.4): a prose comment containing a
+    // semicolon split the statement there, leaving a fragment that held the table name and not the
+    // `account_id` that scoped it. A false positive on a correct query — and the same bug would
+    // hide a genuinely unscoped one whose scope happened to land in the other half.
+    let sql = "-- we read this across accounts; keyed by model
+               SELECT amount_micros FROM ledger_entries WHERE account_id = $1";
+    assert!(
+        unscoped_statements(sql).is_empty(),
+        "{:?}",
+        unscoped_statements(sql)
+    );
+
+    // And the exemption survives a semicolon in its own reason.
+    let exempt = "-- tenant-scoping: cross-tenant — summed across accounts; names no customer
+                  SELECT sum(amount_micros) FROM ledger_entries";
+    assert!(unscoped_statements(exempt).is_empty());
+}

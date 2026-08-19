@@ -487,9 +487,20 @@ pub struct Metrics {
     // "turn stop-reasons distribution"
     pub turn_stop_reasons: Family<Counter>,
     pub turns: Family<Counter>,
-    // "ledger vs provider-invoice drift" is M21.4 — it needs the provider
-    // usage report to compare against, and there is no ledger yet (M11.4).
     pub tokens: Family<Counter>,
+    /// "ledger vs provider-invoice drift" (M21.4), in micro-dollars, per provider.
+    ///
+    /// A gauge rather than a counter: drift is a *level* — what the last reconciliation found —
+    /// and a counter would accumulate every month's difference into a number that only ever grows.
+    /// Signed magnitude is carried in `panday_ledger_drift_direction`, because Prometheus gauges
+    /// are floats and an alert on `abs(drift) > x` should not have to know which way round.
+    pub ledger_drift_micros: Family<Gauge>,
+    /// `1` when our ledger recorded MORE than the provider billed, `0` when less.
+    ///
+    /// The two are different incidents: over-recording means we may have over-charged a customer,
+    /// under-recording means we are eating cost. Same magnitude, opposite response, so an alert
+    /// that could not tell them apart would route the wrong person to the wrong page.
+    pub ledger_drift_direction: Family<Gauge>,
 }
 
 impl Default for Metrics {
@@ -563,6 +574,16 @@ impl Metrics {
                 "time to establish a model stream (not to finish it)",
                 &["provider", "model"],
                 LATENCY_BUCKETS,
+            ),
+            ledger_drift_micros: Family::gauge(
+                "panday_ledger_drift_micros",
+                "ledger vs provider usage report, in micro-dollars, from the last reconciliation (M21.4)",
+                &["provider"],
+            ),
+            ledger_drift_direction: Family::gauge(
+                "panday_ledger_drift_direction",
+                "1 when our ledger recorded more than the provider billed, 0 when less (M21.4)",
+                &["provider"],
             ),
             circuit_open: Family::gauge(
                 "panday_circuit_open",
