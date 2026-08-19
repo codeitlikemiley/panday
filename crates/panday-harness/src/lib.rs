@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod actor;
 pub mod agent;
+pub mod canary;
 pub mod context;
 pub mod eval;
 pub mod expand;

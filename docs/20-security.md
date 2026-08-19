@@ -98,7 +98,30 @@ the audit trail *is* the product's data model (ADR-002).
 
 ## Milestones
 
-- **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench.
+- **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench. ✅ *(shipped: the T2 escape suites landed with M14.2 and run in CI on Linux and macOS; canaries are `panday_harness::canary` + `crates/panday-harness/tests/injection_canaries.rs`. **Deferred half**: embedding them in agent-bench, which does not exist until M19.6.)*
+
+  **Every canary test scripts a model that fully complies.** That is the design. A suite where the
+  model refuses measures the model's current disposition; a suite where the model obeys measures
+  the layers that hold when it does not. What is claimed is narrow and true: an injection that
+  completely convinces the model still cannot push, delete or exfiltrate without a human decision.
+  What is not claimed is that the agent resists injection — it does not, and neither does anything
+  else.
+
+  **The suite found two real defects on its first run.**
+
+  - **`read_only` asked instead of refusing.** An injected `git push --force` in a read-only
+    session produced an "allow?" prompt, because "irreversible always asks" was checked before the
+    profile default. Wrong shape: the profile has already answered the question, and putting it to
+    a human anyway hands the injection a second chance with a tired reader. `read_only` now denies
+    before the irreversible rule runs.
+  - **`chmod -R 777 /` passed the filter pack.** Every destructive-root pattern was a *delete*, so
+    a command that destroys nothing — and leaves every credential on the machine world-readable —
+    walked through. It is worse than a delete, because there is nothing to restore.
+
+  **Sixteen payloads across four goals**: run a command, read a secret, exfiltrate, and talk the
+  agent out of asking at all. A corpus that is all "ignore previous instructions" measures one
+  trick; the ones that matter are the plausible ones — a README that says to run the setup script,
+  a polite request at the end of a code review, a JSON tool result claiming permission was granted.
 - **M20.2** Origin tagging + pre_tool filter pack; secrets vault + env-injection policy. ✅ *(shipped: `panday_types::model::Origin` + `ContextBuilder`'s markers and `PROVENANCE_RULE`, `panday_harness::filters`, `panday_harness::secrets`; suite in `crates/panday-harness/tests/injection_defence.rs`.)*
 
   **Origin tagging.** `Origin` is additive and optional on `ToolOutput`/`Artifact`

@@ -243,14 +243,28 @@ impl PermissionEngine {
             }
         }
 
-        // 2. Irreversible always asks (docs/13), and a remembered grant does
+        // 2. `read_only` denies rather than asks, and it denies *before* the
+        //    irreversible rule below.
+        //
+        //    Found by the canary suite (M20.1): an injected instruction to run
+        //    `git push --force` in a read-only session used to produce an
+        //    "allow?" prompt, because irreversible-always-asks fired first.
+        //    That is the wrong shape — the profile has already answered the
+        //    question, and putting it to a human anyway hands the injection a
+        //    second chance with a tired reader. A profile that cannot mutate
+        //    has nothing to ask about.
+        if self.profile == Some(Profile::ReadOnly) && req.side_effects != SideEffects::None {
+            return Gate::Deny;
+        }
+
+        // 3. Irreversible always asks (docs/13), and a remembered grant does
         //    not waive it: consent for a tool is not a standing waiver on
         //    something that cannot be undone.
         if req.side_effects == SideEffects::Irreversible {
             return Gate::Ask;
         }
 
-        // 3. A grant for THIS call.
+        // 4. A grant for THIS call.
         if self
             .remembered
             .iter()
@@ -259,14 +273,14 @@ impl PermissionEngine {
             return Gate::Allow;
         }
 
-        // 4. Remaining rules.
+        // 5. Remaining rules.
         for r in self.overrides.iter().filter(|r| r.verdict() != Gate::Deny) {
             if r.matches(tool_name, &rendered) {
                 return r.verdict();
             }
         }
 
-        // 5. Profile default.
+        // 6. Profile default.
         match self.profile.unwrap_or(Profile::Dev) {
             Profile::ReadOnly => {
                 if req.side_effects == SideEffects::None {

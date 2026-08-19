@@ -246,6 +246,12 @@ impl Filter for DestructiveRoot {
                 "mkfs",
                 "dd if=/dev/zero of=/dev/",
                 ":(){ :|:& };:",
+                // M20.1: found by the canary suite. `chmod -R 777 /` does not delete anything, so
+                // none of the patterns above caught it — and it ends with every credential on the
+                // machine world-readable, which is worse than a delete you can restore.
+                "chmod -r 777 /",
+                "chmod -r 777 ~",
+                "chown -r ",
             ] {
                 if lower.contains(pattern) {
                     return Some(format!("`{pattern}` destroys the machine, not the task"));
