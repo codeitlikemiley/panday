@@ -1,5 +1,10 @@
 //! M12.3 — the misclassification harness.
 //!
+//! The corpus and the scoring moved into `panday_router::bench` at M12.4: an eval that lives
+//! only inside a `#[test]` can be checked but never reported, and docs/12's weekly review is
+//! a report. This file is now one caller of that library; `cargo xtask scorecard` is the
+//! other, and both see the same numbers by construction.
+//!
 //! docs/12 asks for "misclassification harness with labeled fixtures". This is
 //! it: a labelled corpus, a measured accuracy floor, and — the part that
 //! actually matters — an assertion that the classifier's **confidence is
@@ -11,251 +16,15 @@
 //! flagged low-confidence and therefore fell back (docs/12: confidence "gates
 //! whether we trust it").
 
+use panday_router::bench::{case, corpus, request, score, Case};
 use panday_router::classify::{classify_or_default, HeuristicClassifier, TRUST_THRESHOLD};
 use panday_router::Classifier;
-use panday_types::id::{AccountId, RequestId};
-use panday_types::model::{
-    CallMeta, ChatRequest, ContentBlock, Message, ModelRef, Role, Sampling, TaskClass, ToolDef,
-};
-
-struct Case {
-    name: &'static str,
-    expect: TaskClass,
-    prompt: &'static str,
-    tools: bool,
-    tool_results: bool,
-}
-
-const fn case(name: &'static str, expect: TaskClass, prompt: &'static str) -> Case {
-    Case {
-        name,
-        expect,
-        prompt,
-        tools: false,
-        tool_results: false,
-    }
-}
-
-fn request(c: &Case) -> ChatRequest {
-    let mut messages = vec![Message {
-        role: Role::User,
-        content: vec![ContentBlock::Text {
-            text: c.prompt.to_string(),
-        }],
-        call_id: None,
-        provider_call_id: None,
-    }];
-    if c.tool_results {
-        messages.push(Message {
-            role: Role::Tool,
-            content: vec![ContentBlock::Text {
-                text: "test result: FAILED. 1 failed".into(),
-            }],
-            call_id: None,
-            provider_call_id: None,
-        });
-    }
-
-    ChatRequest {
-        model: ModelRef::auto(),
-        messages,
-        tools: if c.tools {
-            vec![ToolDef {
-                name: "bash".into(),
-                description: "run a command".into(),
-                parameters: serde_json::json!({"type": "object"}),
-            }]
-        } else {
-            vec![]
-        },
-        sampling: Sampling::default(),
-        cache: Default::default(),
-        stream: true,
-        metadata: CallMeta {
-            account: AccountId::new(),
-            request: RequestId::new(),
-            session: None,
-            turn: None,
-            // Unset: the whole point is that the classifier guesses.
-            task: None,
-        },
-    }
-}
-
-/// The labelled corpus. Deliberately includes cases the heuristic is expected
-/// to find hard — a corpus of only easy examples measures nothing.
-fn corpus() -> Vec<Case> {
-    vec![
-        case(
-            "fix a failing test",
-            TaskClass::Code,
-            "cargo test fails on main, please fix the bug",
-        ),
-        case(
-            "compiler error",
-            TaskClass::Code,
-            "error[E0308]: mismatched types in gateway.rs:142",
-        ),
-        case(
-            "refactor ask",
-            TaskClass::Code,
-            "refactor this function to take a slice",
-        ),
-        case(
-            "stack trace",
-            TaskClass::Code,
-            "here is a traceback, the app panics on startup",
-        ),
-        case(
-            "file reference",
-            TaskClass::Code,
-            "why does src/lib.rs not compile?",
-        ),
-        Case {
-            tools: true,
-            tool_results: true,
-            ..case("mid agent loop", TaskClass::Code, "keep going")
-        },
-        Case {
-            tools: true,
-            ..case(
-                "tools offered",
-                TaskClass::Code,
-                "have a look around the repo",
-            )
-        },
-        case(
-            "explicit summarise",
-            TaskClass::Summarize,
-            "summarize this thread for me",
-        ),
-        case(
-            "tldr",
-            TaskClass::Summarize,
-            "tldr of the discussion above?",
-        ),
-        case(
-            "key points",
-            TaskClass::Summarize,
-            "give me the key points, condense it",
-        ),
-        case(
-            "extract json",
-            TaskClass::Extract,
-            "extract the invoice fields as json",
-        ),
-        case(
-            "list all",
-            TaskClass::Extract,
-            "list all email addresses in this text",
-        ),
-        case(
-            "return only",
-            TaskClass::Extract,
-            "return only the version numbers, as json",
-        ),
-        case("greeting", TaskClass::Chat, "hey, how are you doing today?"),
-        case(
-            "open question",
-            TaskClass::Chat,
-            "what do you think about remote work?",
-        ),
-        case(
-            "opinion",
-            TaskClass::Chat,
-            "which city would you rather live in?",
-        ),
-        // --- deliberately hard ---
-        //
-        // A corpus the classifier aces measures nothing. These are the cases
-        // where two classes genuinely compete, plus keyword traps where a
-        // marker appears in ordinary prose. The suite does not require the
-        // heuristic to get them right — it requires it not to be CONFIDENTLY
-        // wrong about them.
-        case(
-            "summarise a function (code vs summarize)",
-            TaskClass::Code,
-            "can you summarize what this function in parser.rs does?",
-        ),
-        case(
-            "extract from a log (extract vs code)",
-            TaskClass::Extract,
-            "extract the error message from this build log",
-        ),
-        case(
-            "tldr on a failure (summarize vs code)",
-            TaskClass::Code,
-            "tldr on why the cargo build broke?",
-        ),
-        case(
-            "list failing tests (extract vs code)",
-            TaskClass::Code,
-            "list all the tests that fail right now",
-        ),
-        // Keyword traps: a marker word used in ordinary conversation.
-        case(
-            "trap: class dismissed",
-            TaskClass::Chat,
-            "the teacher said class dismissed and everyone left",
-        ),
-        case(
-            "trap: fix the meeting",
-            TaskClass::Chat,
-            "can we fix a time to talk next week?",
-        ),
-        case(
-            "trap: git as a word",
-            TaskClass::Chat,
-            "he is a legit good cook, honestly",
-        ),
-        case(
-            "trap: implement a policy",
-            TaskClass::Chat,
-            "should the company implement a four day week?",
-        ),
-    ]
-}
-
-struct Score {
-    total: usize,
-    correct: usize,
-    /// Wrong AND confident enough to be trusted — the dangerous quadrant.
-    confidently_wrong: Vec<&'static str>,
-    /// Wrong but low-confidence, so the trust gate caught it.
-    caught_by_the_gate: Vec<&'static str>,
-}
-
-fn score() -> Score {
-    let c = HeuristicClassifier;
-    let mut s = Score {
-        total: 0,
-        correct: 0,
-        confidently_wrong: Vec::new(),
-        caught_by_the_gate: Vec::new(),
-    };
-
-    for k in corpus() {
-        let req = request(&k);
-        let (class, confidence) = c.classify(&req);
-        s.total += 1;
-
-        if class == k.expect {
-            s.correct += 1;
-            continue;
-        }
-        if confidence >= TRUST_THRESHOLD {
-            s.confidently_wrong.push(k.name);
-        } else {
-            s.caught_by_the_gate.push(k.name);
-        }
-    }
-    s
-}
+use panday_types::model::{ContentBlock, TaskClass};
 
 #[test]
 fn the_classifier_is_right_more_often_than_not() {
-    let s = score();
-    let accuracy = s.correct as f64 / s.total as f64;
+    let s = score(&HeuristicClassifier);
+    let accuracy = s.accuracy();
     println!(
         "accuracy {:.0}% ({}/{}), confidently wrong: {:?}, gated: {:?}",
         accuracy * 100.0,
@@ -278,7 +47,7 @@ fn the_classifier_is_never_confidently_wrong() {
     // The property that makes a weak classifier safe to ship. Being wrong is
     // tolerable; being wrong *and* trusted is not, because the router acts on
     // it and nothing downstream can tell.
-    let s = score();
+    let s = score(&HeuristicClassifier);
     assert!(
         s.confidently_wrong.is_empty(),
         "misclassified with confidence >= {TRUST_THRESHOLD}: {:?}",

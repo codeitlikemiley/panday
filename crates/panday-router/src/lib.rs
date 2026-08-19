@@ -80,6 +80,7 @@ pub trait Classifier: Send + Sync {
     fn classify(&self, req: &ChatRequest) -> (TaskClass, f32);
 }
 
+pub mod bench;
 pub mod shadow;
 
 pub use classify::HeuristicClassifier;

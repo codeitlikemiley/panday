@@ -1,0 +1,58 @@
+name: weekly-review
+# docs/12 M12.4: "Scorecard generator from eval runs; the weekly review is a generated PR
+# against the YAML."
+#
+# The PR *is* the review. It carries the scorecard as a committed file so the numbers have a
+# history — a report that only exists in a job log cannot be compared with last week's, and
+# "is the router earning its keep" is a question about a trend.
+#
+# What this job deliberately does not do is edit the routing policy. Removing a rule changes
+# where traffic goes; the scorecard names what the linter found and a human makes the edit.
+on:
+  schedule:
+    # Monday 05:00 UTC — after the nightly reduce-bench, before anyone starts the week.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Non-zero exit means an eval fell below its gate; the PR is still opened, because a
+      # failing scorecard is the most important one to read.
+      - id: scorecard
+        continue-on-error: true
+        run: cargo run -p xtask -- scorecard --write | tee scorecard.txt
+
+      - run: cargo run -p xtask -- reduce-bench | tee -a scorecard.txt
+        continue-on-error: true
+
+      - name: open the review PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          date=$(date -u +%Y-%m-%d)
+          branch="review/$date"
+          if [ -z "$(git status --porcelain scorecards/)" ]; then
+            echo "no scorecard change; nothing to review"
+            exit 0
+          fi
+          git config user.name  "panday-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add scorecards/
+          git commit -m "review: scorecard for $date"
+          git push -u origin "$branch"
+          gh pr create \
+            --title "Weekly review — $date" \
+            --body-file scorecard.txt \
+            --label review || true

@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 panday-types.workspace = true
 sha2.workspace = true
+serde_json.workspace = true
 serde.workspace = true
 regex.workspace = true
 serde_yaml_ng.workspace = true

@@ -347,6 +347,69 @@ fn transcript_of(content: &[ContentBlock]) -> String {
         .collect()
 }
 
+/// The recorded corpus, loaded from a directory of tool outputs plus the facts each one turns
+/// on.
+///
+/// Moved out of the test at M12.4 for the same reason route-bench was: an eval that lives only
+/// inside a `#[test]` can be checked but never reported, and docs/12's weekly review is a
+/// report. The facts stay in code rather than in a sidecar file — they are assertions about
+/// what a human needs, and a `.txt` file of them would drift from the fixture it describes
+/// without anything failing.
+pub fn recorded_corpus(dir: &std::path::Path) -> Vec<Scenario> {
+    let read = |name: &str| -> String {
+        let path = dir.join(format!("{name}.txt"));
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+    };
+    vec![
+        Scenario::new(
+            "cargo test failure",
+            "bash",
+            read("cargo_test_failure"),
+            // docs/15's own example of what a reducer must not eat.
+            &["module::envelope_round_trips", "assertion `left == right`"],
+        ),
+        Scenario::new(
+            "cargo build error",
+            "bash",
+            read("cargo_build_error"),
+            // The code AND the location: keeping `error[E0308]` while dropping
+            // `--> file:line:col` is the regression this pair exists to catch.
+            &[
+                "error[E0308]",
+                "crates/panday-gateway/src/gateway.rs:142:23",
+            ],
+        ),
+        Scenario::new(
+            "pytest failure",
+            "bash",
+            read("pytest_failure"),
+            &["test_token_expiry", "tests/test_auth.py:88"],
+        ),
+        Scenario::new(
+            "git status",
+            "bash",
+            read("git_status"),
+            &["crates/panday-sdk/src/file_1.rs"],
+        )
+        .clean(),
+        Scenario::new(
+            "large file read",
+            "read_file",
+            read("file_read_large"),
+            &["generated_1"],
+        )
+        .clean(),
+    ]
+}
+
+/// The shipping reducer stack, so the eval and the product cannot diverge.
+pub fn production_reducer() -> Box<dyn Reducer> {
+    Box::new(panday_reducer::SpillingReducer::new(
+        panday_reducer::StructuralReducer::new(panday_reducer::GenericReducer::default()),
+        std::sync::Arc::new(panday_reducer::MemoryArtifactStore::default()),
+    ))
+}
+
 /// Run the corpus with reduction off and on, and diff task success.
 ///
 /// `make_reducer` is a factory because a reducer carries per-session state (the

@@ -127,7 +127,35 @@ which is where per-model profiles will live.
 
   An earlier draft of the corpus scored 100%, which is why the hard cases exist:
   a corpus the classifier aces measures nothing.
-- **M12.4** Scorecard generator from eval runs; the weekly review is a generated PR against the YAML.
+- **M12.4** Scorecard generator from eval runs; the weekly review is a generated PR against the YAML. ✅ *(shipped: `cargo xtask scorecard`, `panday_router::bench`, `.github/workflows/weekly-review.yml`.)*
+
+  **The evals became libraries first.** route-bench's corpus and scoring moved out of
+  `tests/classification.rs` into `panday_router::bench`, and reduce-bench's corpus into
+  `panday_harness::eval::recorded_corpus` — because an eval that lives only inside a `#[test]`
+  can be *checked* but never *reported*, and this milestone's deliverable is a report. The
+  suites are now one caller each; the scorecard is another, and they cannot disagree about the
+  numbers because there is one definition.
+
+  It reads the evals directly rather than parsing `cargo test` output, which would break the
+  first time someone renamed a test.
+
+  **It does not edit the policy YAML, and that is the design.** Removing an unreachable rule
+  changes where traffic goes, and a generator that rewrote routing on its own would be the one
+  component in this repo making a routing decision nobody reviewed. The scorecard names what
+  the linter found; the PR is where a human makes the edit. That reading of "a generated PR
+  against the YAML" is stated here rather than buried in the workflow.
+
+  **The PR carries the scorecard as a committed file**, so the numbers have a history: a report
+  that only exists in a job log cannot be compared with last week's, and "is the router earning
+  its keep" is a question about a trend. The job opens the PR even when a gate fails — a failing
+  scorecard is the most important one to read — and the exit code still carries the gate for
+  anything that wants to block on it.
+
+  Current numbers: heuristic classifier **92%** (22/24), **zero** confidently wrong, two
+  misses caught by the confidence gate; all three policy files lint clean. The section listing
+  what is *not* measured yet (agent-bench, json-bench, capability profiles) is part of the
+  artifact on purpose — a scorecard that only shows what passed reads as coverage it does not
+  have.
 - **M12.5** ONNX classifier slot behind `Classifier` trait; shadow-mode comparison report (heuristic vs learned) over 1k replayed sessions. ✅ *(shipped as the harness: `panday_router::shadow`, `crates/panday-router/tests/shadow.rs`. **Scoped deliberately** — the ONNX runtime lands with M19.3.)*
 
   The `Classifier` trait was already the slot; a learned model implements it and

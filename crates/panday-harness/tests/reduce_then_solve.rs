@@ -7,74 +7,14 @@
 //! and compaction included. A fact can survive the first and be lost in the
 //! second, and only this arm would notice.
 
-use panday_harness::eval::{run, run_corpus, Scenario};
-use panday_reducer::{
-    GenericReducer, MemoryArtifactStore, Reducer, SpillingReducer, StructuralReducer,
-};
-use std::sync::Arc;
+use panday_harness::eval::{production_reducer, recorded_corpus, run, run_corpus, Scenario};
+use panday_reducer::Reducer;
 
-fn corpus_file(name: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/eval_corpus")
-        .join(format!("{name}.txt"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
-}
-
-/// The recorded corpus, with the fact each situation turns on.
+/// The corpus and the shipping reducer now live in `panday_harness::eval` (M12.4), so
+/// `cargo xtask scorecard` reports the same numbers this suite gates on — one definition, two
+/// callers.
 fn corpus() -> Vec<Scenario> {
-    vec![
-        Scenario::new(
-            "cargo test failure",
-            "bash",
-            corpus_file("cargo_test_failure"),
-            // The failing test's name and the assertion — docs/15's own example
-            // of what a reducer must not eat.
-            &["module::envelope_round_trips", "assertion `left == right`"],
-        ),
-        Scenario::new(
-            "cargo build error",
-            "bash",
-            corpus_file("cargo_build_error"),
-            // The code AND the location. Keeping `error[E0308]` while dropping
-            // `--> file:line:col` is the regression this pair exists to catch.
-            &[
-                "error[E0308]",
-                "crates/panday-gateway/src/gateway.rs:142:23",
-            ],
-        ),
-        Scenario::new(
-            "pytest failure",
-            "bash",
-            corpus_file("pytest_failure"),
-            &["test_token_expiry", "tests/test_auth.py:88"],
-        ),
-        Scenario::new(
-            "git status",
-            "bash",
-            corpus_file("git_status"),
-            // A count, not a path list: the reducer is allowed to summarize 120
-            // modified files, and a solver needs to know how many there were.
-            &["crates/panday-sdk/src/file_1.rs"],
-        )
-        .clean(),
-        Scenario::new(
-            "large file read",
-            "read_file",
-            corpus_file("file_read_large"),
-            // A read is spilled to an artifact; the head must still be visible,
-            // because that is where a signature lives.
-            &["generated_1"],
-        )
-        .clean(),
-    ]
-}
-
-/// The shipping reducer: structural compressors, generic fallback, spilling.
-fn production_reducer() -> Box<dyn Reducer> {
-    Box::new(SpillingReducer::new(
-        StructuralReducer::new(GenericReducer::default()),
-        Arc::new(MemoryArtifactStore::default()),
-    ))
+    recorded_corpus(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/eval_corpus"))
 }
 
 #[tokio::test]

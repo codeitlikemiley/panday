@@ -9,4 +9,5 @@ publish.workspace = true
 [dependencies]
 panday-types = { workspace = true, features = ["schema"] }
 schemars.workspace = true
+panday-router.workspace = true
 serde_json.workspace = true
