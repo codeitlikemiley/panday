@@ -156,7 +156,7 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   `plans` moved to the lint's `GLOBAL_TABLES` when the table was actually written: it had been
   guessed at as tenant-scoped, and a plan is a catalogue row that means the same thing for every
   account — the account's relationship to it lives in `subscriptions`, which is scoped.
-- **M17.2** Ledger write path from gateway+sandbox with idempotency; balance view; property test vs event-log replay.
+- **M17.2** Ledger write path from gateway+sandbox with idempotency; balance view; property test vs event-log replay. *(Three of four parts shipped elsewhere: the gateway path and idempotency at M11.4, the sandbox path at M14.7, and the property test against event-log replay at M3.5 — 200 generated sessions, zero discrepancy. What remains here is the **materialised balance view**: today `balance_micros` is a `SUM` over an indexed `(account_id, at)` range, which docs/17 explicitly does not want at request time.)*
 - **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
 - **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.

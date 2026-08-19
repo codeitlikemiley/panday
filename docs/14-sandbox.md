@@ -217,4 +217,24 @@ type error.
   which adds a few minutes to a cold CI compile.
 - **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95.
 - **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo.
-- **M14.7** sandbox-seconds metering events → ledger (17).
+- **M14.7** sandbox-seconds metering events → ledger (17). ✅ *(shipped: `panday_harness::SandboxUsageSink` + the call site in `execute()`, `panday_platform::ledger::SandboxLedger`; suite in `crates/panday-platform/tests/sandbox_ledger.rs`.)*
+
+  **Priced per tier, because that is the only honest unit.** A T0 call is a Rust function in our own
+  process and is billed at **zero** — charging for it would be charging for CPU already paid for in
+  the request. T1 is a wasmtime instantiation, T2 a jailed process, T3 a slice of a machine we rent.
+  One price for "a sandbox second" would either overcharge for T0 or give T3 away.
+
+  **Billed per millisecond, not rounded up to a second.** A loop of forty 50ms tool calls would
+  otherwise be charged forty seconds — not a rounding error but a different price. The arithmetic is
+  a pure function on `TierPrices` so it is testable without a database; the first draft put it behind
+  a method that needed a connection pool, and the test had to build one to check a multiplication.
+
+  **A free execution is still recorded.** A ledger that omitted zero-cost work could not answer "what
+  did this session do", which is the question a dispute starts from.
+
+  **The call id is the idempotency unit.** docs/13's resume may re-run a replay-safe call; the work is
+  the same work, so the bill is the same bill.
+
+  The sink is a trait with a discarding default, for the same reason `UsageSink` is: `panday local`
+  has no account, and a loop that needed a billing backend to run a tool would make the offline tier
+  impossible.

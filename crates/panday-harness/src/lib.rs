@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use panday_types::event::{Envelope, Event, PermDecision};
 use panday_types::model::{StopReason, Usage};
-use panday_types::{CallId, Json, SessionId};
+use panday_types::{AccountId, CallId, Json, SessionId};
 use serde::{Deserialize, Serialize};
 
 pub mod actor;
@@ -67,6 +67,42 @@ pub mod __private {
     pub use serde_json;
 }
 pub use wasm_plugin::{WasmPluginHook, WasmPluginTool};
+
+/// Where sandbox time is billed (M14.7, docs/17: written "in the request path by ... sandbox
+/// (usage.sandbox)").
+///
+/// A trait, not a concrete ledger, for the same reason `UsageSink` is one: the harness runs in
+/// `panday local` with no account and no database, and a loop that required a billing backend to
+/// execute a tool would make the offline tier impossible.
+///
+/// Async because a ledger write is IO — and in the request path deliberately, so a deployment can
+/// choose fail-closed or fail-open per surface rather than inheriting whatever the plumbing forced.
+#[async_trait]
+pub trait SandboxUsageSink: Send + Sync {
+    /// One tool execution. `call_id` is the idempotency unit: a resumed turn that re-runs a
+    /// replay-safe call must not be billed twice for the same work.
+    async fn record(&self, usage: SandboxUsage);
+}
+
+/// What one sandboxed execution cost in time.
+#[derive(Debug, Clone)]
+pub struct SandboxUsage {
+    pub account: AccountId,
+    pub session: SessionId,
+    pub call_id: CallId,
+    pub tool: String,
+    pub tier: panday_sandbox::SandboxTier,
+    pub duration: std::time::Duration,
+}
+
+/// Discards sandbox usage. The default: `panday local` and every test have no ledger to write to,
+/// and inventing an account for them would be worse than not billing.
+pub struct DiscardSandboxUsage;
+
+#[async_trait]
+impl SandboxUsageSink for DiscardSandboxUsage {
+    async fn record(&self, _usage: SandboxUsage) {}
+}
 
 /// Where events live. PG in cloud, SQLite/file in `panday local`; in-memory
 /// in tests. Contract: `append` is fsync-durable before it returns

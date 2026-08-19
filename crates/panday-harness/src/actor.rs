@@ -209,6 +209,10 @@ pub struct SessionActor {
     semantic: Option<panday_reducer::SemanticTier<Box<dyn panday_reducer::Summarizer>>>,
     /// Removes known secret values from raw tool output (docs/20 T4, M20.2).
     scrub: Option<Arc<crate::secrets::ScrubSecrets>>,
+    /// Where sandbox-seconds are billed (M14.7). Discarded by default: `panday local` has no
+    /// account, and a loop that needed a billing backend to run a tool would make the offline tier
+    /// impossible.
+    sandbox_usage: Arc<dyn crate::SandboxUsageSink>,
 }
 
 impl SessionActor {
@@ -249,6 +253,7 @@ impl SessionActor {
             pricing: None,
             semantic: None,
             scrub: None,
+            sandbox_usage: Arc::new(crate::DiscardSandboxUsage),
             subagents: None,
             depth: 0,
             hooks: HookEngine::new(),
@@ -269,6 +274,12 @@ impl SessionActor {
     /// reports volume only and the tier refuses to run.
     pub fn with_pricing(mut self, pricing: panday_reducer::Pricing) -> Self {
         self.pricing = Some(pricing);
+        self
+    }
+
+    /// Bill sandbox time (M14.7, docs/17: the second metered good).
+    pub fn with_sandbox_usage(mut self, sink: Arc<dyn crate::SandboxUsageSink>) -> Self {
+        self.sandbox_usage = sink;
         self
     }
 
@@ -1104,9 +1115,22 @@ impl SessionActor {
             .get(&call.name)
             .map(|t| t.requirements().sandbox_tier)
             .unwrap_or(panday_sandbox::SandboxTier::T0InProcess);
-        panday_sdk::metrics::metrics().observe_sandbox_exec(tier.as_str(), began.elapsed());
+        let elapsed = began.elapsed();
+        panday_sdk::metrics::metrics().observe_sandbox_exec(tier.as_str(), elapsed);
+        // The ledger's other metered good (docs/17). Billed per execution, keyed by `call_id`, so a
+        // resumed turn that re-runs a replay-safe call is not billed twice for the same work.
+        self.sandbox_usage
+            .record(crate::SandboxUsage {
+                account: self.account,
+                session: self.session,
+                call_id: call.id,
+                tool: call.name.clone(),
+                tier,
+                duration: elapsed,
+            })
+            .await;
 
-        self.record_outcome(call, outcome, began.elapsed().as_millis() as u64)
+        self.record_outcome(call, outcome, elapsed.as_millis() as u64)
             .await
     }
 

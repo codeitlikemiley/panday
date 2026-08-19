@@ -202,3 +202,140 @@ impl BudgetGate for LedgerBudget {
         }
     }
 }
+
+/// Sandbox time, billed (M14.7, docs/17: "the second metered good").
+///
+/// Priced per tier-second, because that is the only honest unit: a T0 in-process call costs us
+/// nothing marginal, a T2 jail costs a process, and a T3 microVM costs a machine slice. One price
+/// for "a sandbox second" would either overcharge for T0 or give T3 away.
+pub struct SandboxLedger {
+    pool: PgPool,
+    /// Micro-credits per second, by tier.
+    per_second: TierPrices,
+    on_failure: OnWriteFailure,
+}
+
+/// Per-tier rates. Placeholders against measured COGS, like docs/17's plan tiers — and written in
+/// code rather than a config file so a change is reviewed.
+#[derive(Debug, Clone, Copy)]
+pub struct TierPrices {
+    pub t0_in_process: u64,
+    pub t1_wasm: u64,
+    pub t2_os_jail: u64,
+    pub t3_micro_vm: u64,
+}
+
+impl Default for TierPrices {
+    fn default() -> Self {
+        Self {
+            // Zero, and deliberately so: a T0 tool is a Rust function in our own process. Billing
+            // for it would be billing for CPU we already paid for in the request.
+            t0_in_process: 0,
+            // A wasmtime instantiation: cheap, but not free, and metered so a plugin that spins is
+            // visible in the ledger rather than only in a metric.
+            t1_wasm: 10,
+            // A process with a jail around it, on the user's own machine in the local case and on
+            // ours in the cloud one.
+            t2_os_jail: 100,
+            // A microVM: the only tier where a second of somebody's code costs a slice of a
+            // machine we rent (docs/14 T3).
+            t3_micro_vm: 500,
+        }
+    }
+}
+
+impl TierPrices {
+    /// What one execution costs, in micro-credits.
+    ///
+    /// Milliseconds are billed as milliseconds rather than rounded up to a second: a loop of forty
+    /// 50ms tool calls would otherwise be charged forty seconds, which is not a rounding error but a
+    /// different price. Pure arithmetic, so it is testable without a database — the first draft put
+    /// this inside a method that needed a pool, and the test had to build one to check multiplication.
+    pub fn amount_micros(
+        &self,
+        tier: panday_sandbox::SandboxTier,
+        duration: std::time::Duration,
+    ) -> i64 {
+        let rate = self.for_tier(tier);
+        let millis = duration.as_millis() as u64;
+        (rate.saturating_mul(millis) / 1_000) as i64
+    }
+
+    pub fn for_tier(&self, tier: panday_sandbox::SandboxTier) -> u64 {
+        use panday_sandbox::SandboxTier::*;
+        match tier {
+            T0InProcess => self.t0_in_process,
+            T1Wasm => self.t1_wasm,
+            T2OsJail => self.t2_os_jail,
+            T3MicroVm => self.t3_micro_vm,
+        }
+    }
+}
+
+impl SandboxLedger {
+    pub fn new(pool: PgPool, on_failure: OnWriteFailure) -> Self {
+        Self {
+            pool,
+            per_second: TierPrices::default(),
+            on_failure,
+        }
+    }
+
+    pub fn with_prices(mut self, per_second: TierPrices) -> Self {
+        self.per_second = per_second;
+        self
+    }
+
+    /// The entry one execution produces.
+    pub fn entry_for(&self, usage: &panday_harness::SandboxUsage) -> LedgerEntry {
+        let rate = self.per_second.for_tier(usage.tier);
+        let millis = usage.duration.as_millis() as u64;
+        let billed = self.per_second.amount_micros(usage.tier, usage.duration);
+        LedgerEntry {
+            id: Uuid::now_v7(),
+            account_id: usage.account.0,
+            kind: "usage.sandbox".into(),
+            amount_micros: -billed,
+            quantity: serde_json::json!({
+                "sandbox_ms": millis,
+                "tier": usage.tier.as_str(),
+                "tool": usage.tool,
+                "rate_micros_per_second": rate,
+            }),
+            source: serde_json::json!({
+                "session_id": usage.session.0,
+                "call_id": usage.call_id.0,
+            }),
+            // The call is the unit of work, so a resumed turn re-running a replay-safe call is
+            // billed once (docs/13 §persist-before-proceed meets docs/17 §idempotency).
+            idempotency_key: format!("usage.sandbox:{}", usage.call_id.0),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl panday_harness::SandboxUsageSink for SandboxLedger {
+    async fn record(&self, usage: panday_harness::SandboxUsage) {
+        let entry = self.entry_for(&usage);
+        // A zero-cost tier still gets an entry: the execution happened, and a ledger that omitted
+        // free work could not answer "what did this session do" — which is the question a dispute
+        // starts from.
+        match pg::append(&self.pool, &entry).await {
+            Ok(()) => {}
+            Err(pg::PgError::Duplicate(key)) => {
+                tracing::debug!(idempotency_key = %key, "sandbox usage already recorded");
+            }
+            Err(e) => match self.on_failure {
+                OnWriteFailure::FailOpenWithAlarm => tracing::error!(
+                    error = %e,
+                    account_id = %usage.account.0,
+                    call_id = %usage.call_id.0,
+                    "SANDBOX LEDGER WRITE FAILED — not billed; backfill from the event log"
+                ),
+                OnWriteFailure::FailClosed => {
+                    tracing::error!(error = %e, "sandbox ledger write failed")
+                }
+            },
+        }
+    }
+}
