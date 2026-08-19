@@ -206,7 +206,36 @@ method, not a guess.
   schemars, async_trait). Without that, every tool author would have to add four
   unrelated crates to their manifest and keep the versions in step with ours; with it,
   a crate defining tools depends on `panday-harness` and `panday-sdk` and nothing else.
-- **M10.5** Embedded Agent runs a 3-tool loop offline against `panday local`.
+- **M10.5** Embedded Agent runs a 3-tool loop offline against `panday local`. ✅ *(shipped: `panday_harness::Agent`; suite in `crates/panday-harness/tests/embedded_agent.rs`.)*
+
+  **It lives in `panday-harness`, not `panday-sdk`.** This section documents it as the SDK's
+  Layer 4 and also says it "embeds `panday-harness` ... the same state machine that powers
+  the cloud, which is the honesty guarantee". Both cannot be literally true of one crate:
+  `panday-harness` depends on `panday-sdk` for `ModelClient`, so the reverse is a cycle. It
+  sits next to the state machine it wraps, and an embedder depends on both — the same
+  arrangement `#[panday_sdk::tool]` already has.
+
+  **It is a builder over `SessionActor` and nothing else.** No second loop, no second gate,
+  no second reducer: anything an embedded agent did differently would be drift, which is the
+  thing this design exists to prevent. It even keeps the shipping reducer stack, so the same
+  input gives the same answer hosted or embedded.
+
+  **The default policy is `Dev`, not `Unleashed`.** An embedded agent with no gate is a
+  library that can email a customer because a model asked; the caller who wants that types
+  it. And an `Irreversible` tool asks in *every* profile (docs/13 M13.5) — the three-tool
+  loop test uses a mutating-but-replayable third tool for exactly that reason, which is a
+  detail the first draft got wrong and the suite caught.
+
+  **A paused run is not a finished run.** `Run::finished()` distinguishes them and the stop
+  reason for a park is `ToolUse` rather than `EndTurn`: a caller that conflated the two would
+  report a task complete that never ran.
+
+  "Offline" is a loopback OpenAI-compatible server — the same thing `panday local` talks to
+  (docs/18: the local adapter "doesn't care which"). CI's is a fake, because CI has no GGUF;
+  what is real is the loop, the three tools, the gate, the reducer and the log. The tools in
+  the suite are defined with `#[panday_sdk::tool]` so the seam between M10.4 and M10.5 is
+  covered rather than assumed, and the run's events render with `panday replay`'s own
+  renderer — which is the observable form of "the same state machine".
 - **M10.6** Generated TS SDK from OpenAPI + AEP schemas; publish pipeline.
 
 Acceptance across all: no public API returns a provider-specific type; a

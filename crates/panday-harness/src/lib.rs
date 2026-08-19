@@ -12,6 +12,7 @@ use panday_types::{CallId, Json, SessionId};
 use serde::{Deserialize, Serialize};
 
 pub mod actor;
+pub mod agent;
 pub mod context;
 pub mod eval;
 pub mod expand;
@@ -34,6 +35,7 @@ pub use actor::{
     CancelHandle, CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, SubagentFactory,
     SubagentResult, TurnOutcome, MAX_SUBAGENT_DEPTH, SPAWN_SUBAGENT,
 };
+pub use agent::{Agent, AgentBuilder, Run};
 pub use eval::{Report, Scenario};
 pub use expand::ExpandArtifact;
 pub use filters::{Filter, FilterPack};
