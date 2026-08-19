@@ -156,7 +156,32 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   `plans` moved to the lint's `GLOBAL_TABLES` when the table was actually written: it had been
   guessed at as tenant-scoped, and a plan is a catalogue row that means the same thing for every
   account — the account's relationship to it lives in `subscriptions`, which is scoped.
-- **M17.2** Ledger write path from gateway+sandbox with idempotency; balance view; property test vs event-log replay. *(Three of four parts shipped elsewhere: the gateway path and idempotency at M11.4, the sandbox path at M14.7, and the property test against event-log replay at M3.5 — 200 generated sessions, zero discrepancy. What remains here is the **materialised balance view**: today `balance_micros` is a `SUM` over an indexed `(account_id, at)` range, which docs/17 explicitly does not want at request time.)*
+- **M17.2** Ledger write path from gateway+sandbox with idempotency; balance view; property test vs event-log replay. ✅ *(the gateway path and idempotency at M11.4, the sandbox path at M14.7, the property test at M3.5 — 200 generated sessions, zero discrepancy — and the balance view here: `migrations/0003_balances.sql`, `pg::{balance_micros, balance_from_entries, balance_drift, repair_balance}`.)*
+
+  **A summary table, not a Postgres `MATERIALIZED VIEW`.** A real materialized view is refreshed by a
+  command, which is either periodic — so the balance is stale exactly when someone is spending fast —
+  or per-write, which locks the whole view. A row updated in the same transaction as its ledger entry
+  is what "refreshed transactionally per write" has to mean in practice, and reading it is one index
+  hit instead of the `SUM` docs/17 explicitly does not want at request time.
+
+  The transaction also makes idempotency free: on a duplicate the insert fails, everything rolls back,
+  and the balance never moved. A write path that updated the balance outside the transaction would
+  double-count exactly the retries idempotency exists to absorb.
+
+  **A destructive migration, caught by the integration lane.** The backfill was written `ON CONFLICT
+  DO UPDATE`, which is not idempotent but *destructive*: it overwrites every balance with a snapshot
+  taken at that instant, and migrations run on every boot — so a rolling deploy would stomp live
+  balances mid-traffic. The suite found it because several tests each migrate while another is
+  appending, and balances came back short by whatever had been written in between. It is `DO NOTHING`
+  now. The lesson generalises: the advisory lock (M2.3) serialises migrations against *each other*,
+  and nothing serialises them against application traffic — a migration has to be safe to run while
+  the system is working.
+
+  **A drift check needs a repair.** `balance_drift` finds accounts whose cached total disagrees with
+  their entries (one statement, not a loop per account — a drift check that takes a minute per account
+  is one nobody schedules), and `repair_balance` recomputes one account. A monitor that only reports
+  leaves an operator hand-writing `UPDATE`s against a money table at 3am, which is how a drift becomes
+  a bigger drift. M21.4's monitor is what will call these on a schedule.
 - **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
 - **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.

@@ -148,13 +148,22 @@ pub async fn create_account(pool: &PgPool, name: &str) -> Result<Uuid, PgError> 
     Ok(id)
 }
 
-/// Append one entry.
+/// Append one entry, and move the balance in the same transaction (M17.2).
 ///
-/// A duplicate `idempotency_key` is reported as `Duplicate` rather than as an error, because the
+/// Both statements or neither: a balance that can diverge from its entries is worse than a `SUM`,
+/// because it is wrong quietly. The duplicate case gets that for free — the insert fails, the
+/// transaction rolls back, and the balance never moved.
+///
+/// A duplicate `idempotency_key` is reported as `Duplicate` rather than as a hard error, because the
 /// caller's correct response is "already done, carry on" — a retried request must not double-bill
 /// and must not fail either (docs/17: "retries can't double-bill").
 pub async fn append(pool: &PgPool, entry: &LedgerEntry) -> Result<(), PgError> {
-    let result = sqlx::query(
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| PgError::Query(e.to_string()))?;
+
+    let inserted = sqlx::query(
         "INSERT INTO ledger_entries
              (id, account_id, kind, amount_micros, quantity, source, idempotency_key)
          VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -166,24 +175,58 @@ pub async fn append(pool: &PgPool, entry: &LedgerEntry) -> Result<(), PgError> {
     .bind(&entry.quantity)
     .bind(&entry.source)
     .bind(&entry.idempotency_key)
-    .execute(pool)
+    .execute(&mut *tx)
     .await;
 
-    match result {
-        Ok(_) => Ok(()),
+    match inserted {
+        Ok(_) => {}
         Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {
-            Err(PgError::Duplicate(entry.idempotency_key.clone()))
+            return Err(PgError::Duplicate(entry.idempotency_key.clone()))
         }
-        Err(e) => Err(PgError::Query(e.to_string())),
+        Err(e) => return Err(PgError::Query(e.to_string())),
     }
+
+    // The balance moves by the entry's amount rather than being recomputed: a `SUM` here would make
+    // every write cost a scan, which is the thing the view exists to avoid.
+    sqlx::query(
+        "INSERT INTO balances (account_id, balance_micros, entry_count)
+         VALUES ($1, $2, 1)
+         ON CONFLICT (account_id) DO UPDATE
+             SET balance_micros = balances.balance_micros + EXCLUDED.balance_micros,
+                 entry_count    = balances.entry_count + 1,
+                 updated_at     = now()",
+    )
+    .bind(entry.account_id)
+    .bind(entry.amount_micros)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| PgError::Query(e.to_string()))?;
+
+    tx.commit().await.map_err(|e| PgError::Query(e.to_string()))
 }
 
-/// The balance, in credit-micros. **Scoped by account**, like everything else here.
+/// The balance, in credit-micros: **one indexed lookup**, no `SUM` (docs/17).
+///
+/// An account with no entries has no row, and that reads as zero — which is right, and is why the
+/// query cannot be a plain `fetch_one`.
 pub async fn balance_micros(pool: &PgPool, account_id: Uuid) -> Result<i64, PgError> {
-    // `SUM(bigint)` is NUMERIC in Postgres, not BIGINT — a real database taught this suite that,
-    // and reading it as `i64` failed with a type mismatch. The cast is safe rather than
-    // convenient: i64 micro-credits is ~9.2e12 dollars, so a balance that overflows it is a
-    // reconciliation problem long before it is a decoding problem.
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT balance_micros FROM balances WHERE account_id = $1")
+            .bind(account_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| PgError::Query(e.to_string()))?;
+    Ok(row.map_or(0, |(balance,)| balance))
+}
+
+/// The balance recomputed from the entries. **Not the request path** — this is what the drift check
+/// compares the view against (M21.4's monitor will run it on a schedule).
+///
+/// `SUM(bigint)` is NUMERIC in Postgres, not BIGINT: a real database taught this suite that, and
+/// reading it as `i64` failed with a type mismatch. The cast is safe rather than convenient — i64
+/// micro-credits is ~9.2e12 dollars, so a balance that overflows it is a reconciliation problem long
+/// before it is a decoding problem.
+pub async fn balance_from_entries(pool: &PgPool, account_id: Uuid) -> Result<i64, PgError> {
     let row = sqlx::query(
         "SELECT COALESCE(SUM(amount_micros), 0)::bigint AS balance
          FROM ledger_entries WHERE account_id = $1",
@@ -194,6 +237,49 @@ pub async fn balance_micros(pool: &PgPool, account_id: Uuid) -> Result<i64, PgEr
     .map_err(|e| PgError::Query(e.to_string()))?;
     row.try_get::<i64, _>("balance")
         .map_err(|e| PgError::Query(e.to_string()))
+}
+
+/// Recompute one account's cached balance from its entries.
+///
+/// The other half of a drift check: a monitor that only reports leaves an operator hand-writing
+/// `UPDATE`s against a money table at 3am, which is how a drift becomes a bigger drift. Scoped to one
+/// account so a repair is a decision about a known problem rather than a database-wide rewrite.
+pub async fn repair_balance(pool: &PgPool, account_id: Uuid) -> Result<i64, PgError> {
+    let computed = balance_from_entries(pool, account_id).await?;
+    sqlx::query(
+        "INSERT INTO balances (account_id, balance_micros, entry_count)
+         SELECT $1, $2, COUNT(*) FROM ledger_entries WHERE account_id = $1
+         ON CONFLICT (account_id) DO UPDATE
+             SET balance_micros = EXCLUDED.balance_micros,
+                 entry_count    = EXCLUDED.entry_count,
+                 updated_at     = now()",
+    )
+    .bind(account_id)
+    .bind(computed)
+    .execute(pool)
+    .await
+    .map_err(|e| PgError::Query(e.to_string()))?;
+    Ok(computed)
+}
+
+/// Accounts whose cached balance disagrees with their entries.
+///
+/// Empty is the invariant; anything else is a bug in the write path, and finding it by query is how
+/// M21.4's drift monitor will report it. One statement rather than a loop, because a drift check that
+/// takes a minute per account is a drift check nobody schedules.
+pub async fn balance_drift(pool: &PgPool) -> Result<Vec<(Uuid, i64, i64)>, PgError> {
+    let rows: Vec<(Uuid, i64, i64)> = sqlx::query_as(
+        "SELECT b.account_id, b.balance_micros,
+                COALESCE(SUM(e.amount_micros), 0)::bigint AS computed
+         FROM balances b
+         LEFT JOIN ledger_entries e ON e.account_id = b.account_id
+         GROUP BY b.account_id, b.balance_micros
+         HAVING b.balance_micros <> COALESCE(SUM(e.amount_micros), 0)::bigint",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| PgError::Query(e.to_string()))?;
+    Ok(rows)
 }
 
 /// An account's entries, newest first.

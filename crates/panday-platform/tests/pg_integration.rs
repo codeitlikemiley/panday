@@ -399,3 +399,151 @@ async fn a_credit_grant_points_at_the_ledger_entry_it_produced() {
     .await;
     assert!(bad.is_err(), "a non-positive grant must be refused");
 }
+
+// ── M17.2: the balance view ──────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn the_balance_view_equals_the_entries_it_summarises() {
+    // The invariant. A cached total that can drift from its source is worse than a `SUM`, because it
+    // is wrong quietly — so the suite checks both numbers and the whole-database drift query.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "acme").await.unwrap();
+
+    let mut expected = 0i64;
+    for i in 1..=25 {
+        let amount = if i % 3 == 0 { 1_000 * i } else { -700 * i };
+        expected += amount;
+        pg::append(
+            &pool,
+            &pg::LedgerEntry {
+                amount_micros: amount,
+                idempotency_key: format!("view-{}-{}", Uuid::now_v7(), i),
+                ..entry(account, "usage.model", amount, "unused")
+            },
+        )
+        .await
+        .expect("append");
+    }
+
+    assert_eq!(pg::balance_micros(&pool, account).await.unwrap(), expected);
+    assert_eq!(
+        pg::balance_from_entries(&pool, account).await.unwrap(),
+        expected,
+        "the view and the entries must agree"
+    );
+    // Scoped to this account, not the whole database: the lane's database is shared and long-lived,
+    // another test deliberately tampers with its own balance, and a global assertion here would make
+    // this test fail for someone else's reasons.
+    let drift = pg::balance_drift(&pool).await.unwrap();
+    assert!(
+        !drift.iter().any(|(id, _, _)| *id == account),
+        "this account drifted: {drift:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn a_duplicate_write_moves_neither_the_entries_nor_the_balance() {
+    // The transaction is what makes this free: the insert fails, everything rolls back, and the
+    // balance never moved. A write path that updated the balance outside the transaction would
+    // double-count exactly the retries idempotency exists to absorb.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "acme").await.unwrap();
+    let key = format!("dup-{}", Uuid::now_v7());
+
+    pg::append(
+        &pool,
+        &pg::LedgerEntry {
+            amount_micros: -5_000,
+            idempotency_key: key.clone(),
+            ..entry(account, "usage.model", -5_000, &key)
+        },
+    )
+    .await
+    .unwrap();
+
+    for _ in 0..3 {
+        assert!(matches!(
+            pg::append(
+                &pool,
+                &pg::LedgerEntry {
+                    amount_micros: -5_000,
+                    idempotency_key: key.clone(),
+                    ..entry(account, "usage.model", -5_000, &key)
+                },
+            )
+            .await,
+            Err(pg::PgError::Duplicate(_))
+        ));
+    }
+
+    assert_eq!(pg::balance_micros(&pool, account).await.unwrap(), -5_000);
+    assert_eq!(
+        pg::balance_from_entries(&pool, account).await.unwrap(),
+        -5_000
+    );
+    assert!(!pg::balance_drift(&pool)
+        .await
+        .unwrap()
+        .iter()
+        .any(|(id, _, _)| *id == account));
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn an_account_with_no_entries_reads_as_zero_rather_than_erroring() {
+    // There is no balance row until the first entry, and "no row" has to read as zero — an
+    // entitlement check that failed on a new account would refuse every first request.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "fresh").await.unwrap();
+    assert_eq!(pg::balance_micros(&pool, account).await.unwrap(), 0);
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn the_drift_query_finds_a_balance_that_was_tampered_with() {
+    // Without this, "no drift" and "the drift query is broken" look identical — and this check spends
+    // its life in the first state, so the second would go unnoticed.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "tampered").await.unwrap();
+    let key = format!("tamper-{}", Uuid::now_v7());
+    pg::append(
+        &pool,
+        &pg::LedgerEntry {
+            amount_micros: -1_000,
+            idempotency_key: key.clone(),
+            ..entry(account, "usage.model", -1_000, &key)
+        },
+    )
+    .await
+    .unwrap();
+
+    // Move the cached balance behind the ledger's back, the way a broken write path would.
+    sqlx::query("UPDATE balances SET balance_micros = balance_micros - 999 WHERE account_id = $1")
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let drift = pg::balance_drift(&pool).await.unwrap();
+    let found = drift.iter().find(|(id, _, _)| *id == account);
+    assert!(found.is_some(), "the drift query missed a tampered balance");
+    let (_, cached, computed) = found.unwrap();
+    assert_eq!(*cached, -1_999);
+    assert_eq!(*computed, -1_000);
+
+    // And repair it, which is the other half of a drift check: a monitor that only reports leaves an
+    // operator hand-writing UPDATEs against a money table at 3am.
+    let repaired = pg::repair_balance(&pool, account).await.unwrap();
+    assert_eq!(repaired, -1_000);
+    assert_eq!(pg::balance_micros(&pool, account).await.unwrap(), -1_000);
+    assert!(
+        !pg::balance_drift(&pool)
+            .await
+            .unwrap()
+            .iter()
+            .any(|(id, _, _)| *id == account),
+        "the repair did not clear the drift"
+    );
+}
