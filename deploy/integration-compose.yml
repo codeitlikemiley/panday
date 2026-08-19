@@ -1,0 +1,59 @@
+# The integration lane's backing services (docs/02 §CI shape step 3).
+#
+#   docker compose -f deploy/integration-compose.yml up -d
+#   PANDAY_TEST_DATABASE_URL=postgres://panday:panday@127.0.0.1:5433/panday_test \
+#     cargo nextest run --workspace --run-ignored all
+#
+# Two deliberate choices:
+#
+# - **Non-default ports** (5433, 9100/9101). A developer's own Postgres on 5432 is a
+#   coin-flip between "the tests pass against the wrong database" and "the tests wipe
+#   something". A port nobody uses by habit removes the coin flip.
+# - **`tmpfs` for the data directory.** The integration lane's database is disposable by
+#   definition, and fsync to a real disk is most of what makes these tests slow. A container
+#   that loses everything on restart is the correct behaviour here.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: panday
+      POSTGRES_PASSWORD: panday
+      POSTGRES_DB: panday_test
+      # The tests are the only client and they run in a trusted network namespace.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - synchronous_commit=off
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panday -d panday_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Artifact storage (docs/15 §spilling, docs/17 §storage). S3-compatible, so the same code
+  # path serves MinIO here and S3 in production.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9101"
+    environment:
+      MINIO_ROOT_USER: panday
+      MINIO_ROOT_PASSWORD: pandaypanday
+    ports:
+      - "9100:9000"
+      - "9101:9101"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

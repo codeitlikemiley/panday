@@ -61,3 +61,41 @@ jobs:
       - uses: taiki-e/install-action@v2
         with: { tool: mdbook }
       - run: mdbook build docs
+
+  # Lane 3 — the integration lane (docs/02 §CI shape step 3). Postgres and MinIO as service
+  # containers rather than a compose file: Actions starts them before the job and health-checks
+  # them, which is the one thing compose would add here.
+  #
+  # `--run-ignored all` with a binary filter, not a blanket `--ignored`: the other ignored tests
+  # are a wall-clock benchmark (M11.6) and a live llama-server leg (M18.1), and neither can pass
+  # on a shared runner. A lane that ran them would be a lane that is always red.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: panday
+          POSTGRES_PASSWORD: panday
+          POSTGRES_DB: panday_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U panday -d panday_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: panday
+          MINIO_ROOT_PASSWORD: pandaypanday
+        ports: ["9100:9000"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-nextest }
+      - env:
+          PANDAY_TEST_DATABASE_URL: postgres://panday:panday@127.0.0.1:5433/panday_test
+        run: cargo nextest run --run-ignored all -E 'binary(pg_integration)'

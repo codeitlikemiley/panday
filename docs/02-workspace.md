@@ -111,7 +111,40 @@ compile-fail suite that runs only when someone remembers stops matching the macr
 
 - **M2.1** Workspace compiles with all crates stubbed (✅ shipped: `cargo test --workspace` green, clippy clean); CI workflow file shipped — first green *run* happens on your remote.
 - **M2.2** nextest + cargo-deny wired; golden-file harness for `panday-types` fixtures. ✅ *(shipped: `.config/nextest.toml`, `deny.toml`, `crates/panday-types/tests/golden.rs`; CI runs nextest + a cargo-deny lane.)*
-- **M2.3** Integration lane with PG+MinIO compose; first sqlx query compiles against a real schema.
+- **M2.3** Integration lane with PG+MinIO compose; first sqlx query compiles against a real schema. ✅ *(shipped: `deploy/integration-compose.yml`, `crates/panday-platform/migrations/0001_init.sql`, `panday_platform::pg`, `crates/panday-platform/tests/pg_integration.rs`, and the `integration` job in `ci.yml`.)*
+
+  **Two bugs that only a real database could find**, which is the whole argument for this lane:
+
+  - `CREATE TABLE IF NOT EXISTS` is **not atomic** against a concurrent create. Six tests each
+    migrating on entry produced "duplicate key value violates unique constraint
+    `pg_type_typname_nsp_index`" — and it is the same race a rolling deploy has when several pods
+    boot at once, so the fix is a `pg_advisory_lock` around the migration rather than
+    serialised tests.
+  - `SUM(bigint)` is **NUMERIC**, not BIGINT. Reading the balance as `i64` failed with a type
+    mismatch; the query casts now, and the cast is safe rather than convenient — i64
+    micro-credits is ~9.2e12 dollars, so a balance that overflows it is a reconciliation problem
+    long before it is a decoding problem.
+
+  A third came from the tests themselves: the lane's database outlives a single `cargo test`, so
+  a fixed `idempotency_key` is a test that passes exactly once. Every test now owns its account
+  and its keys, which also means they run concurrently — and that concurrency *is* the
+  tenant-scoping property under test, because a query that leaked across accounts would make
+  them interfere and say so.
+
+  **Migrations are files, not `sqlx::migrate!`.** The macro embeds them at compile time, so a
+  schema change rebuilds everything that links the crate, and it hides the SQL from M20.3's
+  tenant-scoping lint, which reads `.sql` files. The loop is ten lines and keeps both properties
+  — and the lint duly passed on the first real SQL in the repo, which is what it was armed for.
+
+  The compose file uses **non-default ports** (5433, 9100) and `tmpfs` for the data directory: a
+  developer's own Postgres on 5432 is a coin flip between "the tests passed against the wrong
+  database" and "the tests wiped something", and the lane's database is disposable by
+  definition. CI uses service containers instead, because Actions health-checks them for free.
+
+  Every test in the lane is `#[ignore]`d so the unit lane stays "no network, no docker"; the CI
+  job selects them with `--run-ignored all -E 'binary(pg_integration)'` rather than a blanket
+  `--ignored`, because the other ignored tests are a wall-clock benchmark and a live
+  llama-server leg that cannot pass on a shared runner.
 - **M2.4** Release builds for linux x86_64/aarch64 + macOS arm64; binaries under 25MB. ✅ *(shipped: `.github/workflows/release.yml`, `scripts/check-binary-sizes.sh`.)*
 
   Linux x86_64 and aarch64 build on every push; macOS is tag-only, per the CI

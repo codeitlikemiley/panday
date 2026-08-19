@@ -80,7 +80,16 @@ regex = "1"
 sqlx = { version = "0.9", default-features = false, features = [
     "sqlite",
     "sqlite-bundled",
+    "postgres",
+    "uuid",
+    # `time`, not `chrono`: docs/02 picks one date library and sqlx offers both. Enabling
+    # chrono here would have widened M16.3's narrow exemption into "anything may pull it",
+    # which `cargo deny` caught on the first build.
+    "time",
+    "json",
     "runtime-tokio",
+    # rustls only, matching the reqwest policy — docs/02: "no openssl linkage".
+    "tls-rustls-ring",
 ] }
 # `.plugin` archives (docs/16 §the package). Pure Rust, no C: `flate2`'s default backend is
 # `miniz_oxide`, so this adds no system dependency and nothing to cross-compile. Extraction is
