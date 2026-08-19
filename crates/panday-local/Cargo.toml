@@ -10,3 +10,15 @@ publish.workspace = true
 panday-types.workspace = true
 panday-harness.workspace = true
 panday-sdk.workspace = true
+panday-gateway.workspace = true
+panday-router.workspace = true
+panday-reducer.workspace = true
+panday-sandbox.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+axum.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

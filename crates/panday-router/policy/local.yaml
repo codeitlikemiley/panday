@@ -1,0 +1,19 @@
+# The offline policy (docs/18 §Composition: "router with the file collapsed to
+# `local-only` pools").
+#
+# Every pool is the same pool, and every rule routes to it. That is not laziness: it is
+# the property `panday local` sells — there is no rule anyone can add, and no task class
+# anyone can claim, that reaches a network provider, because no other pool exists in the
+# file to reach.
+version: 1
+
+pools:
+  local-only: [local/qwen3.5-4b]
+
+rules:
+  - match: {}
+    use: local-only
+
+constraints:
+  privacy_strict: { restrict_to: [local-only] }
+  budget_soft: { demote_to: local-only }

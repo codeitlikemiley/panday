@@ -2008,9 +2008,18 @@ dependencies = [
 name = "panday-local"
 version = "0.0.1"
 dependencies = [
+ "axum",
+ "futures-util",
+ "panday-gateway",
  "panday-harness",
+ "panday-reducer",
+ "panday-router",
+ "panday-sandbox",
  "panday-sdk",
  "panday-types",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

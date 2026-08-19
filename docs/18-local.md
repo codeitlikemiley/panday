@@ -67,7 +67,42 @@ offline via ed25519 pubkey baked into the binary.
 
 ## Milestones
 
-- **M18.1** `panday local` boots harness+gateway-lite+CLI against an already-running llama-server; end-to-end turn with tools, no network.
+- **M18.1** `panday local` boots harness+gateway-lite+CLI against an already-running llama-server; end-to-end turn with tools, no network. ✅ *(shipped: `panday_local::Local`, the `panday-local` binary, `crates/panday-router/policy/local.yaml`; suite in `crates/panday-local/tests/offline_turn.rs`, with the live llama-server leg `#[ignore]`d.)*
+
+  **Zero egress is enforced, not intended.** `Local::boot` refuses a non-loopback base
+  URL. Everything else about the offline tier points the same way — one adapter, one pool,
+  a policy file with nowhere else to go — but all of that is *configuration*, and
+  configuration is what gets changed by someone in a hurry. The loopback check is the one
+  part that cannot be reconfigured into egress by editing YAML. It matches on the host
+  rather than resolving it, because resolving would itself be a network call and a name
+  that resolves to loopback today can resolve elsewhere tomorrow (`localhost.evil.example`
+  is in the test).
+
+  **gateway-lite is the same gateway with one adapter**, not a smaller reimplementation.
+  docs/18 calls this tier "the forcing function that keeps every interface honest", and a
+  second gateway would be the first thing to drift — so metering, routing, the cache and
+  the breakers are the cloud's code paths, exercised locally.
+
+  **One file, one session.** The store is `JsonlStore` (single-file append-only; SQLite
+  parity is M18.3), and a second boot on the same log *adopts the session already in it*.
+  The first draft minted a fresh session id, which started at seq 1 in a file that already
+  had one — and the store rejected it as a single-writer violation, correctly. Reopening
+  the file is the whole recovery story (ADR-002): fold, finish what was in flight if it is
+  replay-safe, and carry on with gapless seqs.
+
+  **What CI proves and what it does not.** The model server in the suite is a fake
+  OpenAI-compatible endpoint on loopback, because CI has no GGUF and no GPU. The
+  composition, the wire dialect, the T2 jail, the tools, the log and the rendering are all
+  real — docs/18's own claim is that the local adapter "doesn't care which" server it is.
+  The literal wording of this milestone ("against an already-running llama-server") is an
+  `#[ignore]`d test that anyone with one running can execute:
+  `cargo test -p panday-local -- --ignored`.
+
+  Output goes through the same `replay::Renderer` the CLI and the hosted client use, so an
+  offline session, a hosted session and a replay are one format — which is what makes
+  "the client cannot tell" something you can check rather than assert. Usage is metered at
+  real token counts and zero money: a free tier that reports nothing is a free tier nobody
+  can reason about.
 - **M18.2** Model supervisor: spawn/health/restart llama-server; `models pull/verify` with signed catalog.
 - **M18.3** SQLite event store passes the same harness suite as PG (one test matrix, two stores).
 - **M18.4** Capability profiles wired: same prompt on cloud vs local produces adapted system prompt + toolset (snapshot-tested).

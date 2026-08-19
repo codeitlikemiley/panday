@@ -333,6 +333,19 @@ impl SessionActor {
         self
     }
 
+    /// This session's id.
+    pub fn session(&self) -> SessionId {
+        self.session
+    }
+
+    /// Calls currently awaiting a decision, in the order they were gated.
+    ///
+    /// A caller answering them needs the ids; deriving them from the log would work too,
+    /// but two ways to learn the same thing is two ways to drift.
+    pub fn parked_calls(&self) -> Vec<CallId> {
+        self.parked.iter().map(|c| c.id).collect()
+    }
+
     /// The `PermissionRequest` event for a parked call, rebuilt the same way the
     /// logged one was.
     ///
