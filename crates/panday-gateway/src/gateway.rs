@@ -20,8 +20,9 @@ use crate::ProviderAdapter;
 use futures_util::StreamExt;
 use panday_router::classify::{classify_or_default, HeuristicClassifier};
 use panday_router::{Classifier, RouteQuery, Router};
-use panday_sdk::{ItemStream, ModelClient, PandayError};
+use panday_sdk::{metrics, ItemStream, ModelClient, PandayError};
 use panday_types::model::{ChatRequest, ModelRef, StreamItem, Usage};
+use panday_types::pricing::{CostModel, NoPrices};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -36,6 +37,11 @@ pub struct UsageRecord {
     pub request: panday_types::id::RequestId,
     pub model: ModelRef,
     pub provider: String,
+    /// The routing pool this call was served from. Carried here because both
+    /// the cost dashboard (docs/21) and the ledger slice COGS by pool, and
+    /// neither can recover it from the model id alone — `cheap` and
+    /// `local-only` share `local/qwen3.5-4b`.
+    pub pool: String,
     pub usage: Usage,
 }
 
@@ -87,6 +93,8 @@ pub struct Gateway {
     /// would fall to the default pool, which silently defeats routing for the
     /// very callers the wedge exists to attract.
     classifier: Arc<dyn Classifier>,
+    /// Turns a `Usage` into money, or admits it cannot (M21.2).
+    costs: Arc<dyn CostModel>,
 }
 
 impl Gateway {
@@ -96,6 +104,7 @@ impl Gateway {
             router,
             usage: Arc::new(DiscardUsage),
             classifier: Arc::new(HeuristicClassifier),
+            costs: Arc::new(NoPrices),
         }
     }
 
@@ -193,6 +202,20 @@ pub struct Resolved {
     pub pool: String,
 }
 
+impl Resolved {
+    /// The pool for a label or a ledger row. A pinned request has no pool —
+    /// the router bypasses rule selection for it (docs/12) — and an empty
+    /// label value on a dashboard reads as a bug rather than as "the caller
+    /// chose the model themselves".
+    pub fn pool_label(&self) -> &str {
+        if self.pool.is_empty() {
+            "pinned"
+        } else {
+            &self.pool
+        }
+    }
+}
+
 /// One leg that failed while establishing a stream, for the audit trail.
 #[derive(Debug, Clone)]
 pub struct FailedLeg {
@@ -260,22 +283,54 @@ impl Gateway {
             // The adapter must see the model the router chose, not `auto`.
             attempt.model = leg.model.clone();
 
+            // Which rule sent this traffic where — docs/21's "route decisions
+            // by rule". Counted per *attempt*, so a failover shows up as two
+            // decisions on one request, which is what a failover-health board
+            // needs to see.
+            metrics::metrics().route_decisions.inc(&[
+                &leg.matched_rule,
+                leg.pool_label(),
+                req.metadata
+                    .task
+                    .map(|t| t.as_str())
+                    .unwrap_or("unclassified"),
+            ]);
+
+            let started = std::time::Instant::now();
             match leg.adapter.chat(attempt).await {
                 Ok(stream) => {
+                    // Establishment latency, not stream duration: docs/11's p99
+                    // budget is about the gateway's own overhead, and a long
+                    // generation would drown it.
+                    metrics::metrics().model_latency_seconds.observe(
+                        &[&leg.provider, &leg.model.0],
+                        started.elapsed().as_secs_f64(),
+                    );
+                    let pool = leg.pool_label().to_string();
                     return Ok(Box::pin(capture_usage(
                         stream,
                         self.usage.clone(),
+                        self.costs.clone(),
                         UsageRecord {
                             account,
                             request,
                             model: leg.model,
                             provider: leg.provider,
+                            pool,
                             usage: Usage::default(),
                         },
                     )));
                 }
                 Err(e) => {
                     let retryable = e.is_retryable();
+                    metrics::metrics().model_errors.inc(&[
+                        &leg.provider,
+                        &leg.model.0,
+                        error_kind(&e),
+                    ]);
+                    metrics::metrics()
+                        .model_calls
+                        .inc(&[&leg.provider, &leg.model.0, "error"]);
                     tracing::warn!(
                         provider = %leg.provider,
                         model = %leg.model.0,
@@ -332,17 +387,57 @@ impl Gateway {
 fn capture_usage(
     stream: ItemStream,
     sink: Arc<dyn UsageSink>,
+    costs: Arc<dyn CostModel>,
     template: UsageRecord,
 ) -> impl futures_core::Stream<Item = Result<StreamItem, PandayError>> + Send {
+    let started = std::time::Instant::now();
     stream.map(move |item| {
         if let Ok(StreamItem::Usage { usage }) = &item {
-            sink.record(UsageRecord {
+            let record = UsageRecord {
                 usage: *usage,
                 ..template.clone()
-            });
+            };
+            // Metering and metrics come off the same event for the same reason
+            // the sink is fed here rather than at end-of-stream: an abandoned
+            // stream still spent tokens, and a dashboard that disagreed with the
+            // ledger about which calls happened would be worse than no
+            // dashboard.
+            metrics::metrics().observe_call(
+                &record.provider,
+                &record.model.0,
+                &record.pool,
+                usage,
+                costs
+                    .cost_micros(&record.model, *usage)
+                    .map(|m| m as f64 / 1_000_000.0),
+                started.elapsed(),
+            );
+            sink.record(record);
         }
         item
     })
+}
+
+/// A stable, bounded label for an error. `PandayError`'s `Display` carries
+/// provider text and ids, which as a metric label would be unbounded
+/// cardinality — the exact failure `MAX_SERIES_PER_FAMILY` exists to catch.
+fn error_kind(e: &PandayError) -> &'static str {
+    match e {
+        PandayError::RateLimited { .. } => "rate_limited",
+        PandayError::ModelUnavailable { .. } => "model_unavailable",
+        PandayError::Protocol(_) => "protocol",
+        PandayError::BudgetExceeded { .. } => "budget_exceeded",
+        PandayError::EntitlementDenied { .. } => "entitlement_denied",
+        PandayError::PermissionDenied(_) => "permission_denied",
+        // Split on retryability: a retryable provider error is failover working
+        // as designed, a non-retryable one is a call that will never succeed,
+        // and one label for both hides which is happening.
+        PandayError::Provider {
+            retryable: true, ..
+        } => "provider_retryable",
+        PandayError::Provider { .. } => "provider",
+        PandayError::Other(_) => "other",
+    }
 }
 
 /// Rough token estimate for routing only.
@@ -369,6 +464,7 @@ pub struct GatewayBuilder {
     router: Arc<dyn Router>,
     usage: Arc<dyn UsageSink>,
     classifier: Arc<dyn Classifier>,
+    costs: Arc<dyn CostModel>,
 }
 
 impl GatewayBuilder {
@@ -398,12 +494,22 @@ impl GatewayBuilder {
         self
     }
 
+    /// Where dollar figures come from (M21.2). Unset means unpriced: the COGS
+    /// metric stays empty and `panday_unpriced_calls_total` climbs, rather than
+    /// a guessed price appearing on a money dashboard. The ledger (M11.4) is
+    /// the eventual implementor.
+    pub fn costs(mut self, costs: Arc<dyn CostModel>) -> Self {
+        self.costs = costs;
+        self
+    }
+
     pub fn build(self) -> Gateway {
         Gateway {
             adapters: self.adapters,
             router: self.router,
             usage: self.usage,
             classifier: self.classifier,
+            costs: self.costs,
         }
     }
 }

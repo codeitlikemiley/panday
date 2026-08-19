@@ -40,6 +40,22 @@ pub enum TaskClass {
     Background,
 }
 
+impl TaskClass {
+    /// The wire name — the same string serde emits, so a log line, a metric
+    /// label and a policy rule all say `summarize` and not `Summarize`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Code => "code",
+            Self::Summarize => "summarize",
+            Self::Extract => "extract",
+            Self::Route => "route",
+            Self::Embed => "embed",
+            Self::Background => "background",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -206,6 +222,22 @@ pub enum StopReason {
     BudgetExceeded,
     MaxSteps,
     Error,
+}
+
+impl StopReason {
+    /// The wire name, for logs and metric labels.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::EndTurn => "end_turn",
+            Self::ToolUse => "tool_use",
+            Self::MaxTokens => "max_tokens",
+            Self::StopSequence => "stop_sequence",
+            Self::Cancelled => "cancelled",
+            Self::BudgetExceeded => "budget_exceeded",
+            Self::MaxSteps => "max_steps",
+            Self::Error => "error",
+        }
+    }
 }
 
 /// Items yielded by a streaming chat call (docs/10).

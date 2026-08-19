@@ -107,7 +107,25 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions", post(create_session))
         .route("/v1/sessions/{id}/events", get(replay_events))
         .route("/v1/sessions/{id}/ws", get(ws_upgrade))
+        .route("/metrics", get(metrics_endpoint))
         .with_state(state)
+}
+
+/// `GET /metrics` — Prometheus text exposition (docs/21 §Metrics, M21.2).
+///
+/// Unauthenticated and unconditional: a metrics endpoint that needs a key is a
+/// metrics endpoint nobody scrapes. It exposes counts and decisions only — never
+/// content, never an id — so the deployment can bind it wherever it likes
+/// (docs/22 puts it behind the mesh).
+async fn metrics_endpoint() -> Response {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            panday_sdk::metrics::CONTENT_TYPE,
+        )],
+        panday_sdk::metrics::render(),
+    )
+        .into_response()
 }
 
 async fn create_session(State(state): State<AppState>) -> Response {

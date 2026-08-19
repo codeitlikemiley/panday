@@ -1,0 +1,217 @@
+{
+  "title": "Panday — cost and cache",
+  "uid": "panday-cost-cache",
+  "tags": ["panday", "m21.2"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Cache-read ratio (median)",
+      "description": "ADR-008's lever: cache reads are ~10% of fresh input, so this number is the difference between 1x and 6x on the same conversation. Phase 1 measured 93.7% over 30 turns against a 70% bar.",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 0.7 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(panday_cache_read_ratio_bucket[30m])))",
+          "legendFormat": "median"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Cache-read ratio by pool",
+      "description": "A drop in one pool only is usually a prompt-assembly change (something injected into the stable prefix); a drop everywhere is usually the provider.",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le, pool) (rate(panday_cache_read_ratio_bucket[30m])))",
+          "legendFormat": "{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "COGS $/hour by pool",
+      "description": "Dollars, never percent (ADR-007). Read next to the unpriced-calls panel: this number is only as complete as the price table.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pool) (rate(panday_cost_usd_total[5m])) * 3600",
+          "legendFormat": "{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Unpriced calls/min",
+      "description": "Calls whose model has no configured price. Anything above zero means the COGS panel understates cost — the gateway reports the gap rather than guessing a price (docs/21 §M21.2).",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(panday_unpriced_calls_total[5m])) * 60",
+          "legendFormat": "unpriced"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Dropped metric samples",
+      "description": "Above zero means a label went unbounded (an id reached a metric) or a call site has wrong label arity. The dashboard above is degraded while this is non-zero.",
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(panday_metrics_series_dropped_total[1h]))",
+          "legendFormat": "dropped"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Provider errors by kind",
+      "description": "Failover health. `provider_retryable` climbing while `model_unavailable` stays flat is the chain doing its job; both climbing together is an outage.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (provider, code) (rate(panday_model_errors_total[5m]))",
+          "legendFormat": "{{provider}} {{code}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Model call latency p99 (establishment)",
+      "description": "Time to establish a stream, not to finish one — docs/11's overhead budget is <3ms non-streaming, and a long generation would drown it.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, provider) (rate(panday_model_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Route decisions by rule",
+      "description": "Is the router earning its keep. A policy where everything matches the catch-all rule is a policy that is not routing.",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (rule, pool) (rate(panday_route_decisions_total[5m]))",
+          "legendFormat": "{{rule}} → {{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Turn stop reasons",
+      "description": "docs/21: budget stops climbing is a UX problem brewing. `max_steps` rising means the loop is thrashing, not that users got more ambitious.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 20 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(panday_turn_stop_reasons_total[15m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Sandbox-seconds by tier",
+      "description": "The second metered good (docs/17). T2 and T3 seconds cost real money; T0 seconds do not.",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 20 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tier) (rate(panday_sandbox_seconds_total[5m]))",
+          "legendFormat": "{{tier}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Tokens by disposition",
+      "description": "Cache counts are subsets of input (see the CONVENTION note on `Usage`) — `input` already includes `cache_read`, so do not add them.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 27 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (rate(panday_tokens_total[5m]))",
+          "legendFormat": "{{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Reducer tokens removed by strategy",
+      "description": "Volume, not the saving. The dollar figure (`panday_reducer_saved_usd_total`) needs the price table in the loop (M11.4); until then this panel says how much text was cut, which is not the same claim (ADR-007).",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 27 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (strategy) (rate(panday_reducer_tokens_removed_total[15m]))",
+          "legendFormat": "{{strategy}}"
+        }
+      ]
+    }
+  ]
+}

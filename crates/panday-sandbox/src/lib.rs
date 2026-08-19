@@ -21,6 +21,19 @@ pub enum SandboxTier {
     T3MicroVm,
 }
 
+impl SandboxTier {
+    /// The wire name — same string serde emits, so a metric label, a log line
+    /// and a policy file all agree (`t2_os_jail`, never `T2OsJail`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::T0InProcess => "t0_in_process",
+            Self::T1Wasm => "t1_wasm",
+            Self::T2OsJail => "t2_os_jail",
+            Self::T3MicroVm => "t3_micro_vm",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FsPolicy {
     pub workspace_rw: PathBuf,

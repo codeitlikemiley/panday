@@ -412,6 +412,7 @@ impl SessionActor {
             }
 
             self.current_turn = Some(TurnId::new());
+            panday_sdk::metrics::metrics().turns.inc(&[]);
             self.commit(Event::TurnStarted {
                 model: self.model_ref.clone(),
                 parent: None,
@@ -811,6 +812,14 @@ impl SessionActor {
             is_error = outcome.is_error,
             "tool observation reduced"
         );
+        panday_sdk::metrics::metrics().observe_reduction(
+            &reduced.strategy,
+            reduced.tokens_raw.saturating_sub(reduced.tokens_kept) as u64,
+            // No price in the loop yet (see `ReduceCtx.price_per_token_micros`
+            // above, still 0): the dollar figure arrives with the price table
+            // at M11.4 rather than being invented here.
+            None,
+        );
         self.hooks.post_tool(&call.name, &reduced);
 
         self.commit(Event::ToolResult {
@@ -970,6 +979,17 @@ impl SessionActor {
             },
         };
 
+        // Sandbox-seconds by tier: the second metered good (docs/17, M14.7) and
+        // a docs/21 dashboard row. The tier comes from the tool's own
+        // requirements rather than a guess at the call site — a T0 tool and a T2
+        // tool cost different money for the same wall clock.
+        let tier = self
+            .tools
+            .get(&call.name)
+            .map(|t| t.requirements().sandbox_tier)
+            .unwrap_or(panday_sandbox::SandboxTier::T0InProcess);
+        panday_sdk::metrics::metrics().observe_sandbox_exec(tier.as_str(), began.elapsed());
+
         self.record_outcome(call, outcome, began.elapsed().as_millis() as u64)
             .await
     }
@@ -980,6 +1000,11 @@ impl SessionActor {
         usage: Usage,
     ) -> Result<TurnOutcome, HarnessError> {
         tracing::info!(stop_reason = ?reason, "turn finished");
+        // docs/21: "budget stops climbing = UX problem brewing" — the whole
+        // reason this distribution is on the board.
+        panday_sdk::metrics::metrics()
+            .turn_stop_reasons
+            .inc(&[reason.as_str()]);
         self.hooks.on_stop(reason);
         self.commit(Event::TurnFinished {
             reason,

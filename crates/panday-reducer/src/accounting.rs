@@ -11,96 +11,11 @@
 //! micro-dollars against the session's *actual* cache state, and a reduction
 //! that saves nothing reports nothing however impressive its ratio.
 
-use panday_types::model::Usage;
-
-/// Per-million-token prices, in micro-dollars, for one model.
-///
-/// Micro-dollars (1e-6 USD) rather than floats: money that is summed thousands
-/// of times per session should not accumulate binary rounding error, and the
-/// ledger (docs/17) is integer-based for the same reason.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pricing {
-    /// Fresh input, per million tokens.
-    pub input_per_mtok_micros: u64,
-    /// Output, per million tokens.
-    pub output_per_mtok_micros: u64,
-    /// Cache reads as a percentage of fresh input — ~10% at both major
-    /// providers (ADR-007/008).
-    pub cache_read_pct: u32,
-    /// Cache writes at the short TTL, as a percentage of fresh input.
-    /// Anthropic charges ~125%; automatic-caching providers charge 100%
-    /// (i.e. no premium).
-    pub cache_write_pct: u32,
-    /// Cache writes at the extended TTL — Anthropic ~200%.
-    pub cache_write_1h_pct: u32,
-}
-
-impl Pricing {
-    /// An Anthropic-style model with explicit caching and a write premium.
-    pub fn anthropic_sonnet_class() -> Self {
-        Self {
-            input_per_mtok_micros: 3_000_000,
-            output_per_mtok_micros: 15_000_000,
-            cache_read_pct: 10,
-            cache_write_pct: 125,
-            cache_write_1h_pct: 200,
-        }
-    }
-
-    /// An automatic-prefix-caching model: reads are discounted, writes are not
-    /// surcharged (ADR-007).
-    pub fn openai_compat_class() -> Self {
-        Self {
-            input_per_mtok_micros: 500_000,
-            output_per_mtok_micros: 1_500_000,
-            cache_read_pct: 10,
-            cache_write_pct: 100,
-            cache_write_1h_pct: 100,
-        }
-    }
-
-    /// A local model: no marginal token cost.
-    ///
-    /// Important that this is zero rather than "cheap": a reduction that saves
-    /// tokens on a local model saves **no money**, and reporting a dollar figure
-    /// for it would be the exact error ADR-007 warns about.
-    pub fn local() -> Self {
-        Self {
-            input_per_mtok_micros: 0,
-            output_per_mtok_micros: 0,
-            cache_read_pct: 10,
-            cache_write_pct: 100,
-            cache_write_1h_pct: 100,
-        }
-    }
-
-    /// Price a `Usage`, honouring the convention that cache counts are subsets
-    /// of `input_tokens` (see `panday_types::model::Usage`).
-    pub fn cost_micros(&self, usage: Usage) -> u64 {
-        let cached = usage
-            .cache_read_tokens
-            .saturating_add(usage.cache_write_tokens)
-            .saturating_add(usage.cache_write_1h_tokens);
-        let fresh = usage.input_tokens.saturating_sub(cached);
-
-        let per = |tokens: u64, pct: u32| -> u64 {
-            // Integer maths throughout: mtok price × tokens × pct / (1e6 × 100).
-            self.input_per_mtok_micros
-                .saturating_mul(tokens)
-                .saturating_mul(pct as u64)
-                / 100_000_000
-        };
-
-        per(fresh, 100)
-            + per(usage.cache_read_tokens, self.cache_read_pct)
-            + per(usage.cache_write_tokens, self.cache_write_pct)
-            + per(usage.cache_write_1h_tokens, self.cache_write_1h_pct)
-            + self
-                .output_per_mtok_micros
-                .saturating_mul(usage.output_tokens)
-                / 1_000_000
-    }
-}
+// `Pricing` lives in `panday-types` (M21.2): the reducer estimates savings with
+// it, the gateway meters COGS with it, and the ledger (M11.4) will bill with it.
+// A price table owned by any one of those three would make the other two depend
+// on it sideways.
+pub use panday_types::pricing::Pricing;
 
 /// How the reduced text will be paid for, which decides what removing it saves.
 #[derive(Debug, Clone, Copy)]

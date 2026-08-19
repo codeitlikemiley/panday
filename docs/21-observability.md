@@ -35,6 +35,17 @@ everything else.
 
 Prometheus endpoint per service; Grafana dashboards checked into `deploy/`.
 
+**Two rows of that table are not Prometheus-shaped, resolved at M21.2.**
+"cache-read ratio *per session*" and "$ COGS *per session*" cannot be labels:
+sessions are unbounded, and one series per session is how a monitoring system
+falls over. The split is per-session numbers live in the ledger and the event
+log — which is where a question about one session belongs, and what `panday
+replay` answers — while Prometheus carries the *distribution* over sessions,
+which is what a dashboard and an alert can use. Every label in the metric set is
+bounded: provider, model, pool, rule, tier, stop reason, outcome, strategy. The
+cap is also enforced at runtime, because a bug that puts an id in a label should
+degrade the metric rather than the process.
+
 ## Logs
 
 `tracing` JSON to stdout, shipped by the platform (Loki/Vector at first).
@@ -93,7 +104,39 @@ else about the tool changes.
   against that bug because it used `flavor = "current_thread"`; the suites now
   run multi-thread and attach the subscriber with `WithSubscriber`, which
   follows a future across threads, rather than the thread-local `with_default`.
-- **M21.2** Prometheus metrics for the table above; first Grafana board (cost + cache ratio).
+- **M21.2** Prometheus metrics for the table above; first Grafana board (cost + cache ratio). ✅ *(shipped: `panday_sdk::metrics`, `GET /metrics` on gateway and harnessd, `deploy/grafana-panday.json` + `deploy/prometheus.yml`.)*
+
+  Hand-rolled exposition rather than a metrics facade plus a backend: the format
+  is a dozen lines of text, and the two crates it would take are outside the
+  docs/02 table. What they would *not* have saved is the only hard part — the
+  choice of what to measure.
+
+  **Money is only reported when it is known.** The gateway takes a
+  `pricing::CostModel` (default: prices nothing) and a call whose model has no
+  configured price increments `panday_unpriced_calls_total` instead of adding
+  `$0` to COGS — an invented price on a cost dashboard is worse than a visible
+  gap, and the two claims ("free" and "unknown") are not the same. Same rule for
+  the reducer: dollars saved needs a price in the loop (M11.4), so today only
+  `panday_reducer_tokens_removed_total` is populated, and it is labelled as
+  volume rather than passed off as the saving (ADR-007).
+
+  `Pricing` moved from `panday-reducer` to `panday-types` in this milestone. The
+  reducer estimates savings with it, the gateway meters COGS with it, and the
+  ledger will bill with it; owned by any one of the three, the other two would
+  depend on it sideways.
+
+  Error labels are a fixed enum (`rate_limited`, `provider_retryable`, …), never
+  the error's `Display` — that carries provider text and ids, which as a label is
+  the unbounded cardinality the series cap exists to catch. And the histogram
+  bucket bounds were briefly shared through a thread-local, so whichever family
+  was constructed last decided the buckets for all of them and a cache-read
+  *ratio* was bucketed on latency bounds; each family now owns its bounds, and a
+  test asserts two families keep different ones.
+
+  The board is tested against the code: every metric a panel queries must be a
+  name `Metrics::names()` reports. A renamed metric otherwise leaves a panel
+  reading "No data", which is indistinguishable from a healthy system with no
+  traffic.
 - **M21.3** `panday replay` v1 (render + time-travel). ✅ *(shipped:
   `panday_harness::replay` + `panday replay <log> [--at|--costs|--verbose|--summary|--diff]`;
   `JsonlStore` for the on-disk log.)*

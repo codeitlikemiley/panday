@@ -1,5 +1,7 @@
-# Local trace collector for M21.1 (docs/21 §traces: "self-host Grafana
-# Tempo/Jaeger at first").
+# Local observability stack: traces (M21.1) and metrics (M21.2).
+#
+# docs/21 §traces: "self-host Grafana Tempo/Jaeger at first"; §metrics:
+# "Prometheus endpoint per service; Grafana dashboards checked into `deploy/`".
 #
 #   docker compose -f deploy/tempo-compose.yml up -d
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 cargo run -p panday-gateway
@@ -16,6 +18,14 @@ services:
       - "4318:4318"   # OTLP http-proto — the transport the exporter uses
       - "3200:3200"   # Tempo query API
 
+  prometheus:
+    image: prom/prometheus:latest
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
   grafana:
     image: grafana/grafana:latest
     environment:
@@ -24,4 +34,9 @@ services:
       GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
     ports:
       - "3000:3000"
-    depends_on: [tempo]
+    volumes:
+      # The board is checked in (docs/21: "Grafana dashboards checked into
+      # `deploy/`") so a panel edit is a reviewable diff, not a click nobody saw.
+      - ./grafana-panday.json:/var/lib/grafana/dashboards/grafana-panday.json:ro
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    depends_on: [tempo, prometheus]

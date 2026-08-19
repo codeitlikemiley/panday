@@ -1,0 +1,16 @@
+# Provisioned so the checked-in dashboard resolves its queries on first boot —
+# a board that needs a human to pick a datasource is a board that shows "No data"
+# to whoever opens it first.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200

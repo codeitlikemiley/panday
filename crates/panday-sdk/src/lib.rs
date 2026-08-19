@@ -13,6 +13,7 @@
 //! Sessions (M10.3) and the embedded agent (M10.5) build on these.
 
 pub mod gateway;
+pub mod metrics;
 pub mod middleware;
 pub mod providers;
 pub mod telemetry;

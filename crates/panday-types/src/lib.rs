@@ -8,6 +8,7 @@
 pub mod event;
 pub mod id;
 pub mod model;
+pub mod pricing;
 
 pub use event::{Envelope, Event, PROTOCOL_VERSION};
 pub use id::{AccountId, ArtifactRef, CallId, RequestId, SessionId, TurnId};
