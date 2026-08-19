@@ -112,7 +112,7 @@ rmcp = { version = "3", default-features = false, features = [
 # amendment: axum's server side already uses tungstenite underneath, so this keeps
 # one implementation of RFC 6455 in the graph rather than a hand-rolled second one.
 # rustls only, matching the reqwest policy — no openssl linkage.
-tokio-tungstenite = { version = "0.28", default-features = false, features = [
+tokio-tungstenite = { version = "0.29", default-features = false, features = [
     "connect",
     "rustls-tls-webpki-roots",
 ] }
