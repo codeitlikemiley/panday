@@ -215,8 +215,72 @@ type error.
   skips itself is a sandbox nobody is testing — the same argument docs/14 already
   makes about bubblewrap in CI. Cost of the dependency: wasmtime is a large build,
   which adds a few minutes to a cold CI compile.
-- **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95.
-- **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo.
+- **M14.5** T3 Firecracker client (UDS REST) + golden rootfs build + jailer; cold exec under 300ms p95. ✅ *(shipped: `panday_sandbox::t3` — `api` (the client), `jailer` (argv + cgroup caps), the boot and snapshot sequences, `scripts/build-rootfs.sh` / `just rootfs`. **The p95 number is not measured** — see below.)*
+
+  **The client is hand-rolled HTTP/1.1 over a Unix socket, as docs/14 chose.** Six endpoints, no
+  chunked encoding, no keep-alive negotiation, JSON shapes pinned by Firecracker's own spec. One
+  connection per request, which removes the entire class of bug where a half-read response
+  desynchronises the next call — the bug a hand-rolled client would otherwise have. It half-closes
+  after writing, which Firecracker does not need (it frames by `Content-Length`) and anything that
+  frames by EOF does: leaving it out deadlocks against the second kind, which is exactly how the
+  stub in the suite caught it.
+
+  **Tested against a socket that answers like Firecracker.** That establishes what can be
+  established without KVM: that we form the documented requests, in the order the VMM requires
+  (configuration before `InstanceStart`, which it rejects afterwards), and read its answers —
+  including `fault_message`, because "400" alone turns a typo in a drive path into an afternoon.
+
+  **The jailer's arguments are the host-side security story**, so they are built by a function with
+  tests rather than assembled in a string. uid or gid 0 is refused outright: a Firecracker escape
+  has to land somewhere powerless, and running the VMM as root makes the chroot the only barrier —
+  chroots are not a security boundary. A VM id that is a path traversal is refused for the same
+  reason, since the id becomes a path component under the chroot base. Every cap docs/14 names is
+  applied: without `pids` a fork bomb in the guest takes the host's process table, without `io` one
+  sandbox's thrash is everyone's latency.
+
+  **SMT off, dirty-page tracking on.** Two sandboxes sharing a core share a timing side channel,
+  which is the entire reason a stranger's code is in a VM rather than a jail; dirty-page tracking is
+  what makes M14.6's cross-host restore possible at all.
+
+  **A snapshot pauses and stays paused.** Snapshotting a running VM and then resuming it produces
+  two futures of one machine — same entropy, same connections, same clock — and the caller has to
+  choose which continues.
+
+  **Without `/dev/kvm` the tier refuses by name and does not degrade.** A sandbox tier that quietly
+  became a weaker one would be the worst failure available here, since T3 exists precisely because
+  T2 is not enough for a stranger's code.
+
+  **What is not here, and why:** the measured cold-boot p95, and a guest that has run code. Both
+  need KVM, and this tree is developed on macOS. The remaining pieces are the guest agent (a static
+  `panday-guest` that is pid 1 in the VM) and the pool manager, which is M14.6 — the rootfs script
+  already has the slot for the agent and says so rather than producing an image that boots to
+  nothing.
+- **M14.6** T3 snapshot/restore pools; warm exec under 50ms p95; session-resume-with-state demo. ✅ *(shipped: `panday_sandbox::t3::pool` — `WarmPool`, the `VmBackend` seam, and `FirecrackerBackend` behind it. **The 50ms number and the resume demo are not measured** — both need KVM.)*
+
+  **Two rules the design follows, and neither is about speed.**
+
+  - *A VM never serves two sessions.* On return it is destroyed and the pool refills from the golden
+    snapshot. Reuse would be faster and would mean one stranger's code inherits another's memory,
+    page cache and open descriptors — the thing T3 exists to prevent. `checkin` therefore takes the
+    VM **by value**: there is no API for handing one back, because an API that made reuse possible
+    would make it eventually happen.
+  - *An empty pool is a slow request, never a failed one.* Under a burst it falls back to a cold
+    boot rather than blocking on a refill. A queue would turn a traffic spike into a timeout for
+    everybody instead of latency for the unlucky.
+
+  **Restored paused, resumed on checkout.** A warm VM that started executing while it waited would
+  drift from the snapshot every other VM in the pool was restored from — same entropy, same clock,
+  now diverged in a way nothing observes.
+
+  **A refill failure is counted, not propagated.** A pool that cannot refill still serves from cold
+  boots; turning a transient backend hiccup into a failed *user request* would be worse than being
+  slow, and `PoolStats::refill_failures` is what an operator alarms on before anyone notices the
+  latency.
+
+  **Tested against a fake backend**, which establishes what a pool actually gets wrong: handing the
+  same VM to two callers (asserted under concurrency), leaking one on shutdown, wedging when the
+  backend fails. What it cannot establish is how fast a real restore is — that is the 50ms clause,
+  and it needs a KVM host.
 - **M14.7** sandbox-seconds metering events → ledger (17). ✅ *(shipped: `panday_harness::SandboxUsageSink` + the call site in `execute()`, `panday_platform::ledger::SandboxLedger`; suite in `crates/panday-platform/tests/sandbox_ledger.rs`.)*
 
   **Priced per tier, because that is the only honest unit.** A T0 call is a Rust function in our own

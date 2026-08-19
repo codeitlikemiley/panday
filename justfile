@@ -72,6 +72,10 @@ bench model="local/qwen3.5-4b" url="http://127.0.0.1:8088":
     # absent — a green tick meaning "we did not measure" is how an eval suite rots.
     cargo run -p xtask -- json-bench --model {{model}} --base-url {{url}} --write
 
+# Build a golden T3 rootfs (docs/14 M14.5). Linux + docker; not run in CI, which cannot boot one.
+rootfs toolchain="rust":
+    scripts/build-rootfs.sh {{toolchain}}
+
 # Backup + restore drill (docs/20 M20.4). Runs against the dev stack; FORCE=1 to reuse the target.
 drill:
     scripts/backup-drill.sh

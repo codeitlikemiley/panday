@@ -139,6 +139,10 @@ pub mod t1_wasm;
 pub mod t2_linux;
 #[cfg(target_os = "macos")]
 pub mod t2_macos;
+/// T3 compiles everywhere and *runs* only where there is KVM: the API client, the jailer's
+/// arguments and the boot sequence are protocol and argv, and both are just as wrong on a Mac as on
+/// a hypervisor host. Type-checking them on every platform is free; pretending to run them is not.
+pub mod t3;
 #[cfg(target_os = "linux")]
 pub use t2_linux::T2LinuxSandbox;
 #[cfg(target_os = "macos")]
