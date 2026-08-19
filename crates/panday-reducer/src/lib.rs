@@ -21,11 +21,13 @@ pub struct ReduceCtx {
     pub aggressive: bool,
 }
 
+pub mod accounting;
 pub mod artifact;
 pub mod reads;
 pub mod spill;
 pub mod structural;
 
+pub use accounting::{value_of, CacheState, Pricing, Savings, SessionSavings};
 pub use artifact::{expand, ArtifactError, ArtifactStore, LineRange, MemoryArtifactStore};
 pub use reads::{hunk_diff, ReadLedger, ReadOutcome};
 pub use spill::{Reduction, SpillingReducer};

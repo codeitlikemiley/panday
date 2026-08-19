@@ -194,6 +194,30 @@ argument.
   ±2 lines of context and summarise the rest; a diff of two very large files
   reports that it is too large rather than grinding through a quadratic LCS
   table and stalling the turn.
-- **M15.4** Dollar accounting with cache-state input; per-session savings report event; dashboard tile.
+- **M15.4** Dollar accounting with cache-state input; per-session savings report event; dashboard tile. ✅ *(shipped: `panday_reducer::accounting` — `Pricing`, `CacheState`, `value_of`, `SessionSavings`.)*
+
+  Savings are computed in **micro-dollars with integer arithmetic**, not floats:
+  a figure summed thousands of times a session should not accumulate binary
+  rounding error, and the ledger (docs/17) is integer-based for the same reason.
+
+  The tests are mostly about *not* being impressed by ratios, because that is the
+  failure this milestone exists to prevent:
+
+  - **A 90% reduction on a local model reports \$0.** There is no marginal token
+    cost, so the ratio is real and the saving is nothing — docs/15's own example,
+    made executable.
+  - **Eliding error output cheaply reports a loss.** `net_micros` is signed, so
+    "a reducer that eats the failing test's name is negative-value at any
+    ratio" is something the accounting can actually *say*.
+  - Retention-tested structural compressors carry ~zero information risk;
+    generic elision does not get that credit, and over error output it is
+    penalised ~20×.
+  - The same reduction is worth more over more turns, and ~10× more when the
+    rolling window is *not* cached — which is precisely the discount that made
+    rtk's raw ratios worth ~nothing.
+
+  `dashboard_line()` puts dollars first and the ratio in parentheses, because a
+  ratio in the lead position is how a \$0.002 saving gets celebrated as a 90%
+  win.
 - **M15.5** Reduce-then-solve replay eval harness; nightly job + regression gate.
 - **M15.6** Semantic tier behind budget gate (provider cheap model); swap-in point defined for our tuned summarizer.
