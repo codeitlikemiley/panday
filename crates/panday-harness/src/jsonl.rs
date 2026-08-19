@@ -21,6 +21,13 @@ use std::sync::Mutex;
 
 pub struct JsonlStore {
     path: PathBuf,
+    /// The head this file is at, and whose session it holds.
+    ///
+    /// Checked on append rather than only on read: the conformance suite (M18.3) caught
+    /// this store accepting a gap and reporting it only when someone later read the file
+    /// back. A store that writes a log it will refuse to read is worse than one that
+    /// refuses the write — by then the event that should have been there is gone.
+    head: Mutex<Option<(SessionId, u64)>>,
     // Serializes writers, which is what keeps `seq` gapless. Two processes
     // appending to one file would break that, and no file lock can make
     // concurrent agents agree on the next seq — so the invariant is "one
@@ -38,8 +45,15 @@ impl JsonlStore {
             .append(true)
             .open(&path)
             .map_err(|e| StoreError::Io(format!("{}: {e}", path.display())))?;
+        // Adopt whatever the file already holds, so a reopened log continues rather than
+        // restarting — and so the gapless check below has something to compare against.
+        let head = read_log(&path)
+            .ok()
+            .and_then(|events| events.last().map(|e| (e.session_id, e.seq)));
+
         Ok(Self {
             path,
+            head: Mutex::new(head),
             file: Mutex::new(file),
         })
     }
@@ -81,6 +95,21 @@ pub fn read_log(path: impl AsRef<Path>) -> Result<Vec<Envelope>, StoreError> {
 #[async_trait::async_trait]
 impl EventStore for JsonlStore {
     async fn append(&self, e: Envelope) -> Result<(), StoreError> {
+        {
+            let mut head = self.head.lock().unwrap();
+            match *head {
+                // One file, one session (see the type's note): a second session's events
+                // interleaved into this file would make every `seq` ambiguous.
+                Some((session, _)) if session != e.session_id => {
+                    return Err(StoreError::SeqConflict(e.seq))
+                }
+                Some((_, last)) if e.seq != last + 1 => return Err(StoreError::SeqConflict(e.seq)),
+                None if e.seq != 1 => return Err(StoreError::SeqConflict(e.seq)),
+                _ => {}
+            }
+            *head = Some((e.session_id, e.seq));
+        }
+
         let line = serde_json::to_string(&e)
             .map_err(|err| StoreError::Io(format!("serialize event: {err}")))?;
         let mut f = self.file.lock().unwrap();

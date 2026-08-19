@@ -104,7 +104,46 @@ offline via ed25519 pubkey baked into the binary.
   real token counts and zero money: a free tier that reports nothing is a free tier nobody
   can reason about.
 - **M18.2** Model supervisor: spawn/health/restart llama-server; `models pull/verify` with signed catalog.
-- **M18.3** SQLite event store passes the same harness suite as PG (one test matrix, two stores).
+- **M18.3** SQLite event store passes the same harness suite as PG (one test matrix, two stores). ✅ *(shipped: `panday_local::sqlite::SqliteStore` + `panday_harness::store_conformance`; matrix in `crates/panday-local/tests/store_matrix.rs`.)*
+
+  **The matrix is one function, not one suite per store.** `store_conformance::run` holds
+  every invariant the harness depends on, and each store is a call site: `MemoryStore`,
+  `SqliteStore`, `JsonlStore` today, Postgres by adding one entry when M3.5 brings it.
+  Writing them once matters because the invariants are not local — "gapless `seq`" is what
+  makes `after_seq` a complete sync mechanism (docs/03), and a store that got it subtly
+  wrong would fail far away, as a client that silently stops receiving events.
+
+  **It immediately found a bug in a store that was already shipped.** `JsonlStore` (M21.3)
+  checked gaplessness on *read* and not on *append*, so it would happily write a log it
+  would later refuse to read — by which point the event that should have been there is
+  gone. It now checks on append, and refuses a second session in one file (one file, one
+  session) rather than interleaving seqs.
+
+  **The schema is the invariant.** `PRIMARY KEY (session_id, seq)` makes a repeated `seq`
+  an error rather than a silent overwrite, which is ADR-002's single-writer rule enforced
+  by the database instead of by hope. The gapless check runs in the same transaction as the
+  insert — outside it, two tasks could both read `max=1`, both write 2, and the loser would
+  get a unique-violation instead of the clear error. Pool size is one, for the same reason.
+
+  Events are stored as **JSON text, not columns**: docs/03 requires unknown kinds to
+  round-trip verbatim, which a column layout cannot do, and a migration per event kind
+  would make "additive fields are always ok" false in practice. A test stores a
+  `cache_warmed` event from a newer version and reads back both its tag and its payload.
+
+  `synchronous = FULL` with WAL, because "the event is in the log" has to mean it is on the
+  disk rather than in the page cache (docs/13 §persist-before-proceed) — the crash this
+  store exists to survive is a laptop lid closing.
+
+  `export_jsonl` bridges to `panday replay`, which takes a log file: a session in a
+  database is not one, and the person debugging is usually not the person whose laptop it
+  happened on.
+
+  **The M20.3 lint fired on the first SQL written after it was armed**, exactly as
+  intended — and the finding was a true negative: an offline database has no accounts to
+  scope by (docs/18: "no account needed at all"). So the lint gained a per-file
+  `tenant-scoping: single-tenant — <reason>` exemption that must name a reason, sits in the
+  first 40 lines, and is counted by a test so a second claim has to be noticed. One file
+  claims it today.
 - **M18.4** Capability profiles wired: same prompt on cloud vs local produces adapted system prompt + toolset (snapshot-tested).
 - **M18.5** mistral.rs as alternate runner behind a flag.
 - **M18.6** Sync: offline sessions appear in cloud account after reconnect; ledger reconciles.

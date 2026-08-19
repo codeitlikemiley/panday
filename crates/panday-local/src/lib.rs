@@ -22,6 +22,8 @@
 //! honest", and a second gateway would be the first thing to drift. The metering,
 //! routing, cache and breaker paths are the cloud's, exercised locally.
 
+pub mod sqlite;
+
 use panday_harness::native::{register_native, Workspace};
 use panday_harness::tools::ToolRegistry;
 use panday_harness::{

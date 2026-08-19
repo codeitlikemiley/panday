@@ -24,6 +24,7 @@ pub mod native;
 pub mod permissions;
 pub mod replay;
 pub mod secrets;
+pub mod store_conformance;
 pub mod summarize;
 pub mod testing;
 pub mod tools;

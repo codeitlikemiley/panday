@@ -6,7 +6,8 @@
 //! than taking a list of files as given.
 
 use panday_platform::tenancy::{
-    table_declares_account_id, unscoped_statements, GLOBAL_TABLES, TENANT_TABLES,
+    claims_single_tenant, table_declares_account_id, unscoped_statements, GLOBAL_TABLES,
+    SINGLE_TENANT_MARKER, TENANT_TABLES,
 };
 use std::path::{Path, PathBuf};
 
@@ -172,6 +173,11 @@ fn sql_under(root: &Path) -> Vec<(PathBuf, String)> {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
+        // A file that declares itself single-tenant, with a reason, is exempt. See
+        // `SINGLE_TENANT_MARKER` — the offline store has no accounts to scope by.
+        if claims_single_tenant(&text).is_some() {
+            continue;
+        }
         // The *contents* of string literals, not the lines holding them: the rule keys
         // on a statement's leading keyword, and `let sql = "DELETE FROM …"` does not
         // start with one. Extracting the literal is what makes a Rust file lintable by
@@ -261,6 +267,54 @@ fn every_tenant_table_declaration_carries_the_column() {
         }
     }
     assert!(missing.is_empty(), "{}", missing.join("\n"));
+}
+
+#[test]
+fn a_single_tenant_file_is_exempt_only_with_a_reason() {
+    // The exemption exists because `panday local`'s SQLite database has no accounts in it
+    // (docs/18: the free tier needs no account at all), and a constant column added to
+    // satisfy a lint would be theatre. It must still cost something to claim.
+    let with_reason = format!(
+        "//! {SINGLE_TENANT_MARKER}: one laptop, one user; the filesystem is the boundary\n         SELECT * FROM events;"
+    );
+    assert_eq!(
+        claims_single_tenant(&with_reason).as_deref(),
+        Some("one laptop, one user; the filesystem is the boundary")
+    );
+
+    let bare = format!("//! {SINGLE_TENANT_MARKER}\nSELECT * FROM events;");
+    assert!(
+        claims_single_tenant(&bare).is_none(),
+        "a marker with no reason is not an exemption"
+    );
+
+    // And it only counts near the top of the file, so it reads as a property of the module
+    // rather than something buried next to the query it excuses.
+    let buried = format!("{}\n//! {SINGLE_TENANT_MARKER}: too late", "\n".repeat(60));
+    assert!(claims_single_tenant(&buried).is_none());
+}
+
+#[test]
+fn the_offline_store_is_the_only_file_claiming_the_exemption() {
+    // A count, so a second claim has to be noticed. This is the check that keeps an
+    // exemption from becoming a habit.
+    let root = workspace_root();
+    let mut files = Vec::new();
+    files_with(&["rs"], &root.join("crates"), &mut files);
+    let claiming: Vec<String> = files
+        .iter()
+        .filter(|p| !is_test_code(p))
+        .filter_map(|p| {
+            let text = std::fs::read_to_string(p).ok()?;
+            claims_single_tenant(&text).map(|reason| format!("{}: {reason}", p.display()))
+        })
+        .collect();
+    assert_eq!(
+        claiming.len(),
+        1,
+        "exactly one file should be single-tenant today: {claiming:?}"
+    );
+    assert!(claiming[0].contains("panday-local"), "{claiming:?}");
 }
 
 #[test]

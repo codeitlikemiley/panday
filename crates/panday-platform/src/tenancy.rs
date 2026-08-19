@@ -51,6 +51,33 @@ pub const GLOBAL_TABLES: &[&str] = &[
     "migrations",
 ];
 
+/// The marker a single-tenant store puts at the top of its file.
+///
+/// A store with no accounts in it — `panday local`'s SQLite database is the case that
+/// forced this (docs/18: the free tier needs no account at all) — cannot scope by
+/// `account_id`, and adding a constant column to satisfy a lint would be theatre.
+///
+/// The exemption is per file, must name a reason after the marker, and is greppable. That
+/// combination is deliberate: an exemption nobody can find is an exemption nobody reviews,
+/// and one that needs no reason is one that spreads.
+pub const SINGLE_TENANT_MARKER: &str = "tenant-scoping: single-tenant";
+
+/// Whether a file claims the exemption, and gives a reason for it.
+///
+/// A marker with nothing after it is *not* an exemption: the reason is the whole point,
+/// and a bare marker would let "I was in a hurry" pass as an argument.
+pub fn claims_single_tenant(source: &str) -> Option<String> {
+    for line in source.lines().take(40) {
+        if let Some(at) = line.find(SINGLE_TENANT_MARKER) {
+            let reason = line[at + SINGLE_TENANT_MARKER.len()..]
+                .trim_start_matches([':', '—', '-', ' '])
+                .trim();
+            return (!reason.is_empty()).then(|| reason.to_string());
+        }
+    }
+    None
+}
+
 /// A statement the lint objected to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unscoped {

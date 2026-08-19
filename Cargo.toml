@@ -73,6 +73,14 @@ regex = "1"
 # Proc-macro toolchain for `#[tool]` (docs/10 M10.4). `syn`/`quote`/`proc-macro2` are
 # the only way to write a proc macro in Rust; they are build-time only and appear in
 # no shipped binary.
+# The offline event store (docs/02's DB row, docs/18 §Composition). SQLite only here —
+# `sqlite-bundled` so a laptop needs no system library, and no TLS features because a
+# file has no transport. Postgres joins the same crate at M3.5.
+sqlx = { version = "0.9", default-features = false, features = [
+    "sqlite",
+    "sqlite-bundled",
+    "runtime-tokio",
+] }
 # MCP host (docs/02 dependency table, docs/16 §MCP host). **stdio only** — the
 # `transport-child-process` feature and nothing that opens a socket: the streamable
 # HTTP transport and the OAuth flows stay unbuilt until they are asked for, so this

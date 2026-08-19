@@ -176,6 +176,14 @@ the audit trail *is* the product's data model (ADR-002).
   rather than by omission. Matching is on word boundaries, so `accounts` does not fire
   on `service_accounts_audit` — a lint that cries wolf gets deleted.
 
+  **One exemption exists**, added at M18.3 when the lint fired on the first SQL written
+  after it was armed. The finding was correct and the rule was not: `panday local`'s SQLite
+  database has no accounts in it (docs/18: "no account needed at all"), so a per-file
+  `tenant-scoping: single-tenant — <reason>` marker exempts it. It must name a reason, must
+  sit in the first 40 lines so it reads as a property of the module rather than an excuse
+  next to a query, and a test counts the files claiming it — an exemption nobody can find
+  is one nobody reviews, and one that needs no reason is one that spreads.
+
   Test code is skipped, and has to be: a lint's own fixtures are examples of the thing
   it forbids. Which leaves the failure mode that "no SQL in the repo" and "the scanner
   is broken" look identical, so a planted-violation test builds a temp tree with one
