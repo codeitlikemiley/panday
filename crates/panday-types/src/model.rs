@@ -27,7 +27,11 @@ impl ModelRef {
 
 /// Coarse task classification driving the router (docs/12). Callers that
 /// know, say; otherwise a classifier guesses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// `Ord` so a class can key a `BTreeMap`: the shadow-mode confusion matrix
+/// (docs/12 M12.5) is keyed by (incumbent, candidate), and a `HashMap` would make
+/// its report order depend on the hash seed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskClass {

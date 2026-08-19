@@ -124,4 +124,34 @@ is, so it stops promising what it can't do (18).
   An earlier draft of the corpus scored 100%, which is why the hard cases exist:
   a corpus the classifier aces measures nothing.
 - **M12.4** Scorecard generator from eval runs; the weekly review is a generated PR against the YAML.
-- **M12.5** ONNX classifier slot behind `Classifier` trait; shadow-mode comparison report (heuristic vs learned) over 1k replayed sessions.
+- **M12.5** ONNX classifier slot behind `Classifier` trait; shadow-mode comparison report (heuristic vs learned) over 1k replayed sessions. ✅ *(shipped as the harness: `panday_router::shadow`, `crates/panday-router/tests/shadow.rs`. **Scoped deliberately** — the ONNX runtime lands with M19.3.)*
+
+  The `Classifier` trait was already the slot; a learned model implements it and
+  nothing above changes. Adding a native inference dependency now would be weight
+  without a payload — there is no trained model to load until M19.3 — so what shipped
+  is the part that makes *using* the slot safe.
+
+  **Shadow mode, not an A/B split.** A split sends real requests to the candidate, so
+  its mistakes reach users and its wins are measured on different traffic than its
+  losses. Shadow mode runs both on the *same* request and keeps the incumbent's
+  answer: every disagreement is like-for-like and a bad candidate costs only CPU. The
+  safety property is enforced by construction — `classify` returns the incumbent's
+  answer — rather than by a flag, because "shadow mode, but live" is a configuration
+  nobody should be able to express by accident.
+
+  **The report is content-free.** Counts, classes and confidences, never prompt text
+  (docs/21 T5): a "disagreement sample" holding the prompt would be the most quotable
+  content leak in the platform. Samples carry a stable 16-hex digest of the classified
+  text instead, which is joinable to the log by someone with access and comparable
+  across runs — a random id would make this week's report incomparable with last
+  week's.
+
+  **Confident disagreements are counted separately.** A candidate that disagrees while
+  being *more* confident is claiming to know better, which is what docs/12's
+  confidence gate exists to catch.
+
+  `ready_for_review` deliberately says nothing about accuracy: shadow mode measures
+  *change*, and change is not improvement until someone scores it against labels
+  (M12.3's misclassification harness). A test makes that explicit by shadowing a
+  useless classifier with a copy of itself — perfect agreement, both wrong, and the
+  report cannot tell.
