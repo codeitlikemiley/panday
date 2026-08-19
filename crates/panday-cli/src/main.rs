@@ -43,6 +43,18 @@ async fn run() -> ExitCode {
             println!("panday {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
+        // Replay reads a log and writes text — no gateway, no network, no
+        // credentials. Wiring it before the runtime work below keeps that true.
+        cmd @ Command::Replay { .. } => match panday_cli::run_replay(&cmd) {
+            Ok(text) => {
+                println!("{}", text.trim_end());
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("panday: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
         Command::Chat { model, prompt } => (model, prompt),
     };
 

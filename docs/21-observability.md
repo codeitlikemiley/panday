@@ -43,12 +43,20 @@ only (refuses to start with it set in `env=production`).
 
 ## The replay tool (the killer feature)
 
-`panday replay <session_id>` — renders any session's event log as the CLI
+`panday replay <log>` — renders any session's event log as the CLI
 would have shown it, with `--at seq` time travel, `--diff` between two
 replays (e.g., before/after a reducer change), and `--costs` per-turn ledger
 overlay. Built once in phase 2 against the fold; pays for itself the first
 week. This tool is why state-must-fold-from-log is an invariant and not a
 preference (ADR-002).
+
+**Amended at M21.3: `<log>`, not `<session_id>`.** A session id needs a store
+to resolve it against, and there is none yet — Postgres is M3.5, SQLite is
+M18.1. Rather than ship a replay tool whose only argument is unreachable, v1
+takes an append-only JSONL log (`panday_harness::JsonlStore`, one envelope per
+line in `seq` order — already the shape of the golden fixtures). The `<session_id>`
+form is a lookup in front of the same renderer and lands with the store; nothing
+else about the tool changes.
 
 ## Milestones
 
@@ -86,6 +94,25 @@ preference (ADR-002).
   run multi-thread and attach the subscriber with `WithSubscriber`, which
   follows a future across threads, rather than the thread-local `with_default`.
 - **M21.2** Prometheus metrics for the table above; first Grafana board (cost + cache ratio).
-- **M21.3** `panday replay` v1 (render + time-travel).
+- **M21.3** `panday replay` v1 (render + time-travel). ✅ *(shipped:
+  `panday_harness::replay` + `panday replay <log> [--at|--costs|--verbose|--summary|--diff]`;
+  `JsonlStore` for the on-disk log.)*
+
+  `--at seq` truncates rather than reconstructs: a truncated replay is a byte
+  prefix of the whole one, because the log at seq N *is* a state the session
+  passed through. Tested as that property, since an off-by-one there shows a
+  session a user never had.
+
+  Two things the fold forced into the open. `--costs` sums usage from
+  `AssistantMessage` only — `TurnFinished.usage` is a redundant turn summary
+  (docs/03), and adding both double-bills every turn in the report. And an event
+  from a newer version renders as `(unknown event ... )` instead of failing the
+  parse: a replay tool that died on a newer server's log would be useless at
+  exactly the moment someone reached for it.
+
+  `read_log` refuses a gapped or corrupt log instead of folding it — a fold over
+  a hole produces a state no session ever held, and a debugger that invents
+  history is worse than no debugger. Every rendered line is anchored to its
+  `[seq]` (continuations indented under it) so a finding can be cited.
 - **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing.
 - **M21.5** Content-scrub audit: grep-proof that no content fields leak into spans/logs at default levels.

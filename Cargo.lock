@@ -886,6 +886,7 @@ version = "0.0.1"
 dependencies = [
  "futures-util",
  "panday-gateway",
+ "panday-harness",
  "panday-router",
  "panday-sdk",
  "panday-types",

@@ -16,6 +16,7 @@ path = "src/main.rs"
 panday-types.workspace = true
 panday-sdk.workspace = true
 panday-gateway.workspace = true
+panday-harness.workspace = true
 panday-router.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

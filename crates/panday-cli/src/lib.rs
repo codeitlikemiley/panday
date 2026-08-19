@@ -17,6 +17,7 @@
 use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat};
 pub use panday_gateway::CollectUsage;
 use panday_gateway::{Gateway, ProviderAdapter};
+use panday_harness::ReplayOptions;
 use panday_router::PolicyRouter;
 use panday_sdk::{ModelClient, PandayError};
 use panday_types::id::{AccountId, RequestId};
@@ -107,7 +108,22 @@ fn non_empty(key: &str) -> Option<String> {
 /// Parsed command line.
 #[derive(Debug, PartialEq)]
 pub enum Command {
-    Chat { model: ModelRef, prompt: String },
+    Chat {
+        model: ModelRef,
+        prompt: String,
+    },
+    /// docs/21 §The replay tool. Specified as `panday replay <session_id>`,
+    /// which needs a store to look the session up in; Postgres is M3.5 and
+    /// SQLite M18.1, so v1 takes the log file directly (`JsonlStore`). The
+    /// spec is amended to match rather than the divergence buried here.
+    Replay {
+        log: String,
+        at_seq: Option<u64>,
+        costs: bool,
+        verbose: bool,
+        diff_against: Option<String>,
+        summary: bool,
+    },
     Help,
     Version,
 }
@@ -133,6 +149,7 @@ where
         "help" | "--help" | "-h" => return Ok(Command::Help),
         "version" | "--version" | "-V" => return Ok(Command::Version),
         "chat" => {}
+        "replay" => return parse_replay(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -161,14 +178,109 @@ where
     })
 }
 
+fn parse_replay<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let mut log: Option<String> = None;
+    let mut at_seq = None;
+    let mut costs = false;
+    let mut verbose = false;
+    let mut diff_against = None;
+    let mut summary = false;
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--at" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| "--at needs a seq, e.g. --at 42".to_string())?;
+                at_seq = Some(
+                    v.parse::<u64>()
+                        .map_err(|_| format!("--at wants a seq number, got `{v}`"))?,
+                );
+            }
+            "--diff" => {
+                diff_against = Some(
+                    it.next()
+                        .ok_or_else(|| "--diff needs a second log to compare against".to_string())?
+                        .clone(),
+                );
+            }
+            "--costs" => costs = true,
+            "--verbose" | "-v" => verbose = true,
+            "--summary" => summary = true,
+            "--help" | "-h" => return Ok(Command::Help),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag `{other}` (try `panday help`)"))
+            }
+            other if log.is_none() => log = Some(other.to_string()),
+            other => return Err(format!("replay takes one log, also got `{other}`")),
+        }
+    }
+
+    Ok(Command::Replay {
+        log: log.ok_or_else(|| {
+            "replay needs a log file, e.g. `panday replay ./session.jsonl`".to_string()
+        })?,
+        at_seq,
+        costs,
+        verbose,
+        diff_against,
+        summary,
+    })
+}
+
+/// Render a replay, or a diff between two of them.
+///
+/// docs/21's stated use for `--diff` is "before/after a reducer change", so the
+/// comparison is between two *renderings*: that is the artifact a person reads,
+/// and it is what changes when a reducer changes.
+pub fn run_replay(cmd: &Command) -> Result<String, String> {
+    let Command::Replay {
+        log,
+        at_seq,
+        costs,
+        verbose,
+        diff_against,
+        summary,
+    } = cmd
+    else {
+        return Err("not a replay".into());
+    };
+
+    let opts = ReplayOptions {
+        at_seq: *at_seq,
+        costs: *costs,
+        verbose: *verbose,
+    };
+    let events = panday_harness::read_log(log).map_err(|e| e.to_string())?;
+
+    if let Some(other) = diff_against {
+        let theirs = panday_harness::read_log(other).map_err(|e| e.to_string())?;
+        return Ok(panday_harness::replay::diff(
+            &panday_harness::render(&events, opts),
+            &panday_harness::render(&theirs, opts),
+        ));
+    }
+    if *summary {
+        return Ok(panday_harness::replay::summarize(&events));
+    }
+    Ok(panday_harness::render(&events, opts))
+}
+
 pub fn help() -> String {
     format!(
         "panday — a Rust AI platform\n\n\
          USAGE:\n  \
-         panday chat [--model <provider/model>] <prompt>\n\n\
+         panday chat [--model <provider/model>] <prompt>\n  \
+         panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
+         REPLAY FLAGS:\n  \
+         --at <seq>     render the session as it stood at that seq (time travel)\n  \
+         --costs        per-turn usage and dollar overlay\n  \
+         --verbose      full tool arguments and observations, unelided\n  \
+         --summary      one line: turns, tools, tokens, how it ended\n  \
+         --diff <log>   diff this replay against another log's (e.g. before/after a reducer change)\n\n\
          ENVIRONMENT:\n  \
          ANTHROPIC_API_KEY        enables the `anthropic` provider\n  \
          PANDAY_COMPAT_BASE_URL   enables the `together` provider (any OpenAI-compatible base)\n  \
@@ -279,6 +391,83 @@ pub async fn run_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_replay_with_flags() {
+        let cmd =
+            parse_args(["replay", "./s.jsonl", "--at", "42", "--costs", "--verbose"]).unwrap();
+        assert_eq!(
+            cmd,
+            Command::Replay {
+                log: "./s.jsonl".into(),
+                at_seq: Some(42),
+                costs: true,
+                verbose: true,
+                diff_against: None,
+                summary: false,
+            }
+        );
+    }
+
+    #[test]
+    fn replay_needs_a_log_and_says_so() {
+        let err = parse_args(["replay"]).unwrap_err();
+        assert!(err.contains("log file"), "{err}");
+    }
+
+    #[test]
+    fn a_non_numeric_at_is_rejected_rather_than_ignored() {
+        // Silently treating `--at head` as "no cut" would render the whole
+        // session and look like it worked.
+        let err = parse_args(["replay", "s.jsonl", "--at", "head"]).unwrap_err();
+        assert!(err.contains("seq number"), "{err}");
+    }
+
+    #[test]
+    fn diff_takes_a_second_log() {
+        let cmd = parse_args(["replay", "a.jsonl", "--diff", "b.jsonl"]).unwrap();
+        match cmd {
+            Command::Replay { diff_against, .. } => {
+                assert_eq!(diff_against.as_deref(), Some("b.jsonl"))
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn help_documents_replay() {
+        // A subcommand missing from `--help` is a subcommand nobody finds.
+        let h = help();
+        assert!(h.contains("panday replay"), "{h}");
+        assert!(h.contains("--at"), "{h}");
+        assert!(h.contains("--costs"), "{h}");
+    }
+
+    #[test]
+    fn replay_renders_a_log_from_disk() {
+        let path =
+            std::env::temp_dir().join(format!("panday-cli-replay-{}.jsonl", std::process::id()));
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"v":1,"session_id":"01930000-0000-7000-8000-000000000001","seq":1,"at":"2026-01-15T12:00:00Z","event":"user_message","source":"cli","content":[{"type":"text","text":"hello there"}]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        let cmd = parse_args(["replay", path.to_str().unwrap()]).unwrap();
+        let text = run_replay(&cmd).unwrap();
+        assert!(text.contains("hello there"), "{text}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_missing_log_is_an_error_not_an_empty_replay() {
+        let cmd = parse_args(["replay", "/nonexistent/nope.jsonl"]).unwrap();
+        let err = run_replay(&cmd).unwrap_err();
+        assert!(err.contains("nope.jsonl"), "{err}");
+    }
 
     #[test]
     fn parses_a_chat_with_a_multi_word_prompt() {

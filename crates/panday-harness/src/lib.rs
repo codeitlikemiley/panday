@@ -15,9 +15,11 @@ pub mod actor;
 pub mod context;
 pub mod expand;
 pub mod hooks;
+pub mod jsonl;
 pub mod load_skill;
 pub mod native;
 pub mod permissions;
+pub mod replay;
 pub mod testing;
 pub mod tools;
 
@@ -27,8 +29,10 @@ pub use actor::{
 };
 pub use expand::ExpandArtifact;
 pub use hooks::{CollectFailures, Hook, HookEngine, HookReporter, PreTool};
+pub use jsonl::{read_log, JsonlStore};
 pub use load_skill::{LoadSkill, SkillBodies};
 pub use permissions::{Gate, PermissionEngine, Profile};
+pub use replay::{render, turn_costs, ReplayOptions, TurnCost};
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
 
 /// Where events live. PG in cloud, SQLite/file in `panday local`; in-memory
