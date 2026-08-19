@@ -31,6 +31,8 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net"
 panday-router.workspace = true
 
 [dev-dependencies]
+# The smoke suite (M22.2) talks HTTP to a running deployment, which is the only way to test one.
+reqwest.workspace = true
 async-trait.workspace = true
 time.workspace = true
 futures-util.workspace = true

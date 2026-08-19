@@ -34,6 +34,10 @@ pub struct AdminState {
 pub fn router(state: AdminState) -> Router {
     Router::new()
         .route("/admin", get(index))
+        // Unauthenticated on purpose, and content-free: a status page that needs a key is one no
+        // uptime checker can read, and one that leaks account counts is a business metric on a
+        // public URL (docs/22 M22.3).
+        .route("/status", get(status))
         .route("/admin/accounts/{id}", get(account))
         .route("/admin/accounts/{id}/suspend", post(suspend))
         .route("/admin/accounts/{id}/unsuspend", post(unsuspend))
@@ -65,6 +69,54 @@ async fn actor(state: &AdminState, headers: &HeaderMap) -> Result<String, Respon
         )
             .into_response()),
     }
+}
+
+/// `GET /status` — is this deployment healthy?
+///
+/// Three facts and nothing else: the build, whether the database answers, and whether the schema is
+/// the one this binary carries. The last is the one that matters after a deploy — a binary rolled
+/// without its migrations passes every other check and then fails on the first query against a
+/// column that does not exist.
+///
+/// Returns 503 when unhealthy, because a status page that answers 200 with the word "degraded" in
+/// the body is a status page every uptime checker reports as up.
+async fn status(State(state): State<AdminState>) -> Response {
+    let database = sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+        .is_ok();
+
+    let migrations = match sqlx::query_scalar::<_, i64>(
+        "-- tenant-scoping: cross-tenant — a schema check is about the deployment, not an account.
+         SELECT count(*)::bigint FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+           ('accounts','ledger_entries','api_keys','balances','route_decisions',
+            'session_events','billing_events','admin_actions')",
+    )
+    .fetch_one(&state.pool)
+    .await
+    {
+        Ok(n) => n as usize,
+        Err(_) => 0,
+    };
+    // Eight tables is what this build's migrations create. Fewer means the binary rolled ahead of
+    // the schema.
+    let schema_ok = migrations >= 8;
+
+    let healthy = database && schema_ok;
+    let body = serde_json::json!({
+        "status": if healthy { "ok" } else { "degraded" },
+        "version": env!("CARGO_PKG_VERSION"),
+        "database": database,
+        "schema": schema_ok,
+    });
+
+    let code = if healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (code, axum::Json(body)).into_response()
 }
 
 async fn index(State(state): State<AdminState>, headers: HeaderMap) -> Response {

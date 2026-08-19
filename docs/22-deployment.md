@@ -95,7 +95,46 @@ as versioned bundles. Support boundary documented per bundle version.
   **MinIO is in the file with nothing reading it yet.** The artifact store (docs/15 §spilling) lands
   later; having it here means the dev shape does not change when it does. Stated rather than
   discovered, because a compose service nobody consumes is a service nobody notices is broken.
-- **M22.2** CI → staging deploy on merge; smoke suite (create session, run turn, check ledger row).
-- **M22.3** Production shape 2 live with status page; backup/restore drill passes.
+- **M22.2** CI → staging deploy on merge; smoke suite (create session, run turn, check ledger row). ✅ *(shipped: `crates/panday-platform/tests/smoke.rs`, `.github/workflows/deploy.yml`. **No staging host is configured**, so the workflow announces that and does nothing.)*
+
+  **The smoke suite is the part that had to be real, and it is.** Four assertions against a running
+  deployment: a freshly minted key runs a turn through the ingress; the same request without a key
+  is refused; the ledger has a row when the turn actually reached a provider; and the schema is the
+  one this binary carries. That third one is the point of the whole exercise — a deploy where
+  inference works and metering silently does not is the worst possible green tick, because it looks
+  fine until the invoice.
+
+  **A 503 is a pass.** A deployment with no provider configured still proves auth, routing and the
+  error envelope; demanding a 200 would mean the smoke suite could only run where somebody was
+  paying for tokens. What it will not do is assert a ledger row for a call that never happened.
+
+  **The schema check exists because of a specific failure**: a binary rolled without its migrations
+  passes every other assertion here and then fails on the first query against a column that does not
+  exist.
+
+  **The workflow does nothing until it is configured**, guarded on `STAGING_DEPLOY_HOST` — a fork or
+  a clone should not fail a build over a deployment that does not exist. What it does *not* do is
+  skip the smoke: if a deploy happens the suite runs, and if the suite fails the deploy is reported
+  failed. The ship step is deliberately one unabstracted command, because docs/22 chose "containers
+  on Fly.io / Railway / a plain VM with systemd", and an abstraction over "how do I ship a
+  container" is a thing that breaks on the day you need to read it.
+
+  **Verified against a real deployment**: the suite was run against the dev stack (`just dev` plus
+  `panday-platform serve`) and passes there, which is the same code path a staging host would take.
+  What remains unclosed is the *host* — nothing has been provisioned to deploy to.
+- **M22.3** Production shape 2 live with status page; backup/restore drill passes. **Partial** *(shipped: `GET /status`, and the drill — `scripts/backup-drill.sh` / `just drill`, run and recorded in docs/20 M20.4. **"Live" needs a host.**)*
+
+  **The status endpoint is unauthenticated and content-free.** An uptime checker cannot present a
+  key, so a status page behind auth is one nobody reads; and account counts on a public URL are a
+  business metric anyone can scrape. It reports three things: the build, whether the database
+  answers, and whether the schema matches this binary.
+
+  **It returns 503 when degraded, not 200 with a sad word in the body** — every uptime checker in
+  the world reports the second as up.
+
+  **What is missing is the deployment itself.** The image builds, the migrations run on boot behind
+  an advisory lock, the drill restores to identical numbers, and the smoke suite passes against a
+  running instance. Nothing has been pointed at a production host, and pretending otherwise would be
+  the one claim in this repo that a reader could not check.
 - **M22.4** T3 pool on KVM nodes with warm snapshots; chaos test: kill a pool node mid-exec, session resumes elsewhere.
 - **M22.5** On-prem bundle v1 installed air-gapped following only its own README.

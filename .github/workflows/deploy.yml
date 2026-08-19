@@ -1,0 +1,79 @@
+name: deploy
+# docs/22 M22.2: "CI → staging deploy on merge; smoke suite (create session, run turn, check ledger
+# row)".
+#
+# **It does nothing until it is configured.** Every step is guarded on a secret being present, so a
+# fork, a clone, or this repository before anyone has provisioned a host does not fail a build over
+# a deployment that does not exist. What it is *not* is a job that silently skips its smoke suite: if
+# a deploy happens, the smoke runs, and if the smoke fails the deploy is reported as failed.
+#
+# The deploy step itself is one command against whatever host the operator chose, because docs/22
+# picks "containers on Fly.io / Railway / a plain VM with systemd — *not* Kubernetes". Swapping that
+# line is the whole of moving providers.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time, and a newer commit wins: two rolling deploys of different builds against
+  # one database is how a migration meets a binary that has never seen it.
+  group: staging
+  cancel-in-progress: true
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: is there a staging environment
+        id: configured
+        run: |
+          if [ -n "${{ secrets.STAGING_DEPLOY_HOST }}" ]; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=No staging environment::STAGING_DEPLOY_HOST is unset, so there is \
+          nothing to deploy to. Set it, STAGING_SSH_KEY, STAGING_SMOKE_URL and \
+          STAGING_DATABASE_URL to turn this job on."
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.configured.outputs.yes == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.configured.outputs.yes == 'true'
+
+      - name: build the image
+        if: steps.configured.outputs.yes == 'true'
+        run: docker build -f deploy/Dockerfile -t panday-platform:${{ github.sha }} .
+
+      # The deployment shape is the operator's. This is the one line that changes between Fly, a
+      # VM with systemd, and anything else — deliberately not abstracted, because an abstraction
+      # over "how do I ship a container" is a thing that breaks on the day you need to read it.
+      - name: ship it
+        if: steps.configured.outputs.yes == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.STAGING_DEPLOY_HOST }}
+          DEPLOY_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 600 /dev/stdin "$HOME/deploy_key" <<< "$DEPLOY_KEY"
+          docker save "panday-platform:${{ github.sha }}" \
+            | ssh -o StrictHostKeyChecking=accept-new -i "$HOME/deploy_key" "$DEPLOY_HOST" \
+                'docker load && systemctl --user restart panday-platform'
+
+      # Migrate-then-roll (docs/22 §release engineering). The binary does this on boot behind an
+      # advisory lock, so this is a check that it happened rather than the migration itself.
+      - name: smoke the deployment
+        if: steps.configured.outputs.yes == 'true'
+        env:
+          PANDAY_SMOKE_URL: ${{ secrets.STAGING_SMOKE_URL }}
+          PANDAY_SMOKE_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          cargo test -p panday-platform --test smoke -- --include-ignored --nocapture
+
+      # A deploy that smoked green is worth saying so about; one that did not has already failed.
+      - name: record it
+        if: steps.configured.outputs.yes == 'true'
+        run: echo "::notice title=Staging::${{ github.sha }} deployed and smoked green"
