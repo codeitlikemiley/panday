@@ -158,4 +158,29 @@ else about the tool changes.
   history is worse than no debugger. Every rendered line is anchored to its
   `[seq]` (continuations indented under it) so a finding can be cited.
 - **M21.4** Ledger-drift monitor against provider usage reports; alarm plumbing.
-- **M21.5** Content-scrub audit: grep-proof that no content fields leak into spans/logs at default levels.
+- **M21.5** Content-scrub audit: grep-proof that no content fields leak into spans/logs at default levels. ✅ *(shipped: `crates/panday-sdk/tests/scrub_audit.rs`.)*
+
+  Two halves, because either alone is easy to satisfy and wrong. The **static**
+  half reads every `tracing::` macro in the workspace and checks its field names
+  against `FORBIDDEN_CONTENT_FIELDS` — that catches a leak the moment it is
+  written, in a crate whose tests nobody thought to extend, and on a code path no
+  test exercises, which is exactly where a debug log added during an incident
+  lives. It is stricter than the milestone asks: level-agnostic, so a leak at
+  `trace!` fails too, since a level is a runtime setting and someone will raise it
+  while debugging production. The **runtime** half covers the metrics scrape,
+  which is scraped by more systems than a trace collector is and is the surface
+  usually exposed without auth.
+
+  The audit is self-checking in three ways, because a static analysis that
+  silently matches nothing is worse than no analysis: a unit test plants a leak
+  and requires the scanner to find it, a second asserts the fields we *do* record
+  (`tokens_raw`, `strategy`, `retryable`) are not false positives, and the
+  workspace scan fails if it did not reach `gateway.rs`, `actor.rs` and
+  `telemetry.rs`. Verified end to end by planting `prompt = "..."` in the harness
+  and watching the audit fail with the file and line.
+
+  A deliberate exception is written `// scrub-audit: allow — <reason>` on the line
+  above. There are none; the mechanism exists so that adding one is a reviewed act
+  rather than a quiet weakening of the test. Metric *label keys* get the same
+  treatment — a fixed allowlist, so a new key forces a new cardinality decision
+  instead of inheriting the old argument.
