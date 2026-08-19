@@ -34,7 +34,23 @@ jobs:
         with: { tool: cargo-nextest }
       # T2 Linux (docs/14 M14.2) jails through bubblewrap; its escape suite
       # skips itself without it, which would silently stop gating isolation.
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      # Bounded and retried: an apt mirror stall once hung this step for 3.5 hours on a run
+      # whose only other jobs had already passed. A package install that cannot finish in a
+      # minute is a mirror problem, and the useful behaviour is to fail (or retry) rather than
+      # to hold a runner all afternoon.
+      - name: install bubblewrap
+        timeout-minutes: 4
+        run: |
+          set -eux
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o Acquire::Retries=2 && \
+               sudo apt-get install -y --no-install-recommends bubblewrap; then
+              exit 0
+            fi
+            echo "attempt $attempt failed; retrying"
+            sleep 5
+          done
+          exit 1
       # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor, so
       # bwrap installs fine and then every jail dies with
       # `loopback: Failed RTM_NEWADDR`. The sandbox needs them.
