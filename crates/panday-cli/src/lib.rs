@@ -16,6 +16,7 @@
 
 pub mod acp;
 pub mod acp_server;
+pub mod plugin_install;
 
 use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat};
 pub use panday_gateway::CollectUsage;
@@ -145,6 +146,14 @@ pub enum Command {
         workspace: std::path::PathBuf,
         profile: String,
     },
+    /// `panday plugin install <name>@<version>` (M16.6).
+    PluginInstall {
+        spec: String,
+        registry_url: String,
+        trust: Option<String>,
+        dir: Option<std::path::PathBuf>,
+        yes: bool,
+    },
     Help,
     Version,
 }
@@ -173,6 +182,7 @@ where
         "replay" => return parse_replay(it),
         "session" => return parse_session(it),
         "acp" => return parse_acp(it),
+        "plugin" => return parse_plugin(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -248,6 +258,66 @@ fn parse_replay<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command
         verbose,
         diff_against,
         summary,
+    })
+}
+
+fn parse_plugin<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    match it.next().map(String::as_str) {
+        Some("install") => {}
+        Some(other) => {
+            return Err(format!(
+                "unknown plugin subcommand `{other}`; only `install` exists so far"
+            ))
+        }
+        None => return Err("`panday plugin install <name>@<version>`".into()),
+    }
+
+    let mut spec = None;
+    let mut registry_url = std::env::var("PANDAY_REGISTRY_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8084".to_string());
+    let mut trust = None;
+    let mut dir = None;
+    let mut yes = false;
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--registry" => {
+                registry_url = it
+                    .next()
+                    .ok_or_else(|| "--registry needs a URL".to_string())?
+                    .clone()
+            }
+            "--trust" => {
+                trust = Some(
+                    it.next()
+                        .ok_or_else(|| "--trust needs a hex public key".to_string())?
+                        .clone(),
+                )
+            }
+            "--dir" => {
+                dir = Some(
+                    it.next()
+                        .ok_or_else(|| "--dir needs a path".to_string())?
+                        .into(),
+                )
+            }
+            "--yes" | "-y" => yes = true,
+            "--help" | "-h" => return Ok(Command::Help),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag `{other}` (try `panday help`)"))
+            }
+            other if spec.is_none() => spec = Some(other.to_string()),
+            other => return Err(format!("install takes one plugin, also got `{other}`")),
+        }
+    }
+
+    Ok(Command::PluginInstall {
+        spec: spec
+            .ok_or_else(|| "which plugin? `panday plugin install linty@0.1.0`".to_string())?,
+        registry_url,
+        trust,
+        dir,
+        yes,
     })
 }
 
@@ -450,7 +520,8 @@ pub fn help() -> String {
          panday chat [--model <provider/model>] <prompt>\n  \
          panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n  \
          panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n  \
-         panday acp [--workspace <dir>] [--profile <name>]   (an editor spawns this)\n\n\
+         panday acp [--workspace <dir>] [--profile <name>]   (an editor spawns this)\n  \
+         panday plugin install <name>@<version> [--registry <url>] [--trust <key>] [--yes]\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
@@ -664,6 +735,33 @@ fn toolchain_env() -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_install_needs_a_pinned_version() {
+        // `install linty` would mean "whatever is newest", which is a different plugin
+        // tomorrow — and consent given today would cover code nobody has seen.
+        let cmd = parse_args(["plugin", "install", "linty@0.1.0", "--yes"]).unwrap();
+        match cmd {
+            Command::PluginInstall { spec, yes, .. } => {
+                assert_eq!(spec, "linty@0.1.0");
+                assert!(yes);
+            }
+            other => panic!("{other:?}"),
+        }
+        let err = parse_args(["plugin", "install"]).unwrap_err();
+        assert!(err.contains("which plugin"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_plugin_subcommand_says_what_exists() {
+        let err = parse_args(["plugin", "publish", "x"]).unwrap_err();
+        assert!(err.contains("only `install` exists"), "{err}");
+    }
+
+    #[test]
+    fn help_documents_plugin_install() {
+        assert!(help().contains("panday plugin install"), "{}", help());
+    }
 
     #[test]
     fn parses_acp_with_a_workspace_and_profile() {

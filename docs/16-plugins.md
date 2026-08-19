@@ -239,4 +239,42 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   `panday acp` defaults to the `dev` profile rather than `unleashed`: an editor session
   has a human in it, and the point of the gate is that they see the question. The jail's
   environment is five toolchain variables, never the parent environment (docs/20 T4).
-- **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4.
+- **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4. ✅ *(shipped: `panday_plugins::archive`, `panday_platform::registry` (+ its `http` router), `panday plugin install`; suites in `crates/panday-plugins/tests/archive.rs`, `crates/panday-platform/tests/registry.rs`, `crates/panday-cli/tests/plugin_install.rs`.)*
+
+  **The order is the security property**: fetch → verify → consent → extract.
+
+  - Verify *before* reading the manifest, because the manifest is what the consent prompt
+    quotes: an unverified one means consenting to text an attacker chose.
+  - Consent *before* extracting. docs/16 says "install-time consent"; a prompt shown after the
+    files are on disk is a notification. Without `--yes` the command prints every grant and
+    writes nothing.
+  - Extract into a fresh directory, refusing to overwrite — an install that could replace a
+    file is an install that can be *used* to replace a file.
+
+  **Extraction is written out rather than delegated.** `tar`'s `unpack` is one line and would
+  create a symlink entry pointing at `~/.ssh`. So each rule is explicit and tested: no absolute
+  paths, no `..` (refused lexically, not resolved — "resolves inside" depends on what the
+  archive created first, and it controls that order), regular files and directories only, caps
+  on entry count, entry size and total size, and the size checked against the *stream* rather
+  than the header, since a header can claim one size and deliver another. The hostile fixtures
+  are built by hand because `tar`'s builder refuses to write them — a real attacker is not using
+  our packer.
+
+  **Three registry properties, each a test.** A publisher cannot self-assign a tier: `publish`
+  takes no tier argument at all, so there is no code path from a wish to a `verified`, and
+  promotion is a store method with *no HTTP route* because that route needs authentication
+  (M17.3) and an unauthenticated one would undo the trust model with a curl. A published version
+  is immutable: re-publishing `name@version` is refused, since "same version, different code" is
+  the supply-chain attack signing exists to prevent. And the archive's manifest must agree with
+  the name it is published under, or every later consent prompt describes a different plugin
+  than the one installed.
+
+  **Trust on first use, said out loud.** `--trust <key>` means "this publisher or nobody".
+  Without it the key is accepted *and printed*, with a line saying it was taken on trust and how
+  to pin it next time — the first install cannot be verified against anything, and silence would
+  let a user believe it was. The key is written next to the plugin so the next version can be
+  pinned and a reviewer can see who signed what is on disk. A `verified` tier changes what the
+  prompt says and nothing about what is enforced: the sandbox tiers and the manifest are what
+  constrain a plugin.
+
+  `tar` + `flate2` added (pure Rust, `rust_backend`, no C and nothing to cross-compile).

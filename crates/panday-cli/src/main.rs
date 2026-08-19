@@ -78,6 +78,39 @@ async fn run() -> ExitCode {
                 }
             };
         }
+        // Fetch, verify, consent, extract — in that order (docs/16 §install-time consent).
+        Command::PluginInstall {
+            spec,
+            registry_url,
+            trust,
+            dir,
+            yes,
+        } => {
+            let mut out = Stdout;
+            let root = dir.unwrap_or_else(panday_cli::plugin_install::default_root);
+            let mut request = match panday_cli::plugin_install::InstallRequest::parse(
+                &spec,
+                registry_url,
+                root,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            request.trust = trust;
+            request.yes = yes;
+            return match panday_cli::plugin_install::install(request, &mut out).await {
+                // Not installing because consent was withheld is not a failure — the command
+                // did what it was asked, which was to show what it would grant.
+                Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
         Command::Chat { model, prompt } => (model, prompt),
     };
 

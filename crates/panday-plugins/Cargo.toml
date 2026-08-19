@@ -9,6 +9,8 @@ publish.workspace = true
 [dependencies]
 panday-types.workspace = true
 rmcp.workspace = true
+tar.workspace = true
+flate2.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "io-util"] }
 serde.workspace = true
@@ -22,6 +24,10 @@ thiserror.workspace = true
 # than built with rmcp's server half, so the test proves interop rather than
 # self-agreement.
 [dev-dependencies]
+# The suite builds hostile archives by hand — a symlink entry cannot be made with the
+# convenience API.
+tar.workspace = true
+flate2.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-util"] }
 
 # Outside `tests/` so cargo does not also auto-discover it as an integration test —

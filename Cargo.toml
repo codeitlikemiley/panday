@@ -42,6 +42,7 @@ panday-plugins = { path = "crates/panday-plugins" }
 panday-gateway = { path = "crates/panday-gateway" }
 panday-harnessd = { path = "crates/panday-harnessd" }
 panday-macros = { path = "crates/panday-macros" }
+panday-platform = { path = "crates/panday-platform" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -81,6 +82,12 @@ sqlx = { version = "0.9", default-features = false, features = [
     "sqlite-bundled",
     "runtime-tokio",
 ] }
+# `.plugin` archives (docs/16 §the package). Pure Rust, no C: `flate2`'s default backend is
+# `miniz_oxide`, so this adds no system dependency and nothing to cross-compile. Extraction is
+# ours rather than `tar`'s convenience API — an untrusted archive gets path and link checks
+# before anything touches the filesystem.
+tar = "0.4"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # MCP host (docs/02 dependency table, docs/16 §MCP host). **stdio only** — the
 # `transport-child-process` feature and nothing that opens a socket: the streamable
 # HTTP transport and the OAuth flows stay unbuilt until they are asked for, so this

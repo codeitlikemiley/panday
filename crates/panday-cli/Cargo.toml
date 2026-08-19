@@ -17,6 +17,8 @@ panday-types.workspace = true
 panday-sdk.workspace = true
 panday-gateway.workspace = true
 panday-harness.workspace = true
+reqwest.workspace = true
+panday-plugins.workspace = true
 tracing.workspace = true
 panday-sandbox.workspace = true
 panday-reducer.workspace = true
@@ -29,6 +31,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [dev-dependencies]
 time.workspace = true
+panday-platform.workspace = true
 # The dogfood suite (M10.3) drives the real service over a real socket.
 panday-harnessd.workspace = true
 axum.workspace = true
