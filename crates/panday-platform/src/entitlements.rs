@@ -155,20 +155,6 @@ pub fn check(plan: &Plan, request: &Request, observed: &Observed) -> Verdict {
                 ),
             };
         }
-        // Near the ceiling: docs/12's `budget_soft`. Degrade rather than refuse — 90% is a
-        // threshold, and the point of naming it is that it is a decision rather than a feeling.
-        if balance < 0 && spent * 10 >= limit * 9 {
-            let asked = request.pool.clone().unwrap_or_default();
-            if asked != DEMOTE_TO {
-                return Verdict::Degrade {
-                    to_pool: DEMOTE_TO.to_string(),
-                    why: format!(
-                        "{spent} of {limit} credit-micros used; routing to `{DEMOTE_TO}` \
-                         until the balance recovers"
-                    ),
-                };
-            }
-        }
     }
 
     // 2. A pre-flight estimate that would cross the ceiling on its own.
@@ -191,7 +177,36 @@ pub fn check(plan: &Plan, request: &Request, observed: &Observed) -> Verdict {
         }
     }
 
-    // 3. Rate.
+    // 3. Near the ceiling: docs/12's `budget_soft`. Degrade rather than refuse — 90% is a
+    // threshold, and naming it makes it a decision rather than a feeling.
+    //
+    // *After* the estimate check, not before: a request that cannot be afforded must not be
+    // degraded into being afforded. Demoting changes which pool serves the call, not what the
+    // account is allowed to spend — and the first draft returned `Degrade` here for a request the
+    // ceiling had already ruled out, which a test caught.
+    if let (Some(limit), Some(balance)) = (
+        plan.get(|e| match e {
+            Entitlement::SpendCeilingMicros { limit } => Some(*limit),
+            _ => None,
+        }),
+        observed.balance_micros,
+    ) {
+        let spent = balance.unsigned_abs();
+        if balance < 0 && spent * 10 >= limit * 9 {
+            let asked = request.pool.clone().unwrap_or_default();
+            if asked != DEMOTE_TO {
+                return Verdict::Degrade {
+                    to_pool: DEMOTE_TO.to_string(),
+                    why: format!(
+                        "{spent} of {limit} credit-micros used; routing to `{DEMOTE_TO}` \
+                         until the balance recovers"
+                    ),
+                };
+            }
+        }
+    }
+
+    // 4. Rate.
     if let (Some(limit), Some(seen)) = (
         plan.get(|e| match e {
             Entitlement::RequestsPerMin { limit } => Some(*limit),
@@ -262,7 +277,7 @@ pub fn check(plan: &Plan, request: &Request, observed: &Observed) -> Verdict {
         }
     }
 
-    // 4. Capability.
+    // 5. Capability.
     if let (Some(pools), Some(asked)) = (
         plan.get(|e| match e {
             Entitlement::ModelPools { pools } => Some(pools.clone()),

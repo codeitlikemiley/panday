@@ -4,6 +4,7 @@
 //! (docs/17-platform.md, ADR-009). Stripe is a projection; this is truth.
 
 pub mod entitlements;
+pub mod ledger;
 pub mod pg;
 pub mod registry;
 pub mod tenancy;

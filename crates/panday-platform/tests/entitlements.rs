@@ -319,3 +319,41 @@ fn every_limit_the_free_plan_declares_is_actually_enforced() {
         );
     }
 }
+
+#[test]
+fn an_unaffordable_request_is_denied_even_when_the_soft_rule_would_degrade() {
+    // The ordering bug a real database found: at 90% of the ceiling the soft rule wants to demote,
+    // and demoting changes which pool serves the call — not what the account may spend. A request
+    // whose own estimate crosses the ceiling has to be refused, or "degrade" becomes a way to
+    // afford something the ceiling ruled out.
+    let at_ninety_percent = Observed {
+        balance_micros: Some(-45_000_000),
+        ..nothing_used()
+    };
+    // Small enough to fit: degrade, because the balance is low but this request is affordable.
+    match check(
+        &Plan::pro(),
+        &Request {
+            pool: Some("workhorse".into()),
+            estimated_micros: Some(1_000),
+            ..Default::default()
+        },
+        &at_ninety_percent,
+    ) {
+        Verdict::Degrade { .. } => {}
+        other => panic!("expected a degrade, got {other:?}"),
+    }
+    // Too big: denied, and the reason names the ceiling rather than the pool.
+    match check(
+        &Plan::pro(),
+        &Request {
+            pool: Some("workhorse".into()),
+            estimated_micros: Some(60_000_000),
+            ..Default::default()
+        },
+        &at_ninety_percent,
+    ) {
+        Verdict::Deny { why } => assert!(why.contains("would pass the"), "{why}"),
+        other => panic!("expected a denial, got {other:?}"),
+    }
+}

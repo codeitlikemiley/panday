@@ -129,7 +129,37 @@ horizontally behind any LB.
 
   An exhausted chain reports every leg it tried with the upstream reason, so an
   operator can tell one bad provider from a global outage.
-- **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures.
+- **M11.4** Ledger write path + budget stops; property test: Σ ledger == Σ provider-reported usage on replayed fixtures. ✅ *(shipped: `panday_gateway::BudgetGate`, `panday_platform::ledger::{LedgerSink, LedgerBudget}`; suite in `crates/panday-platform/tests/ledger_write_path.rs`, integration lane.)*
+
+  **`UsageSink` became async**, and that is the interesting part. docs/17 says usage is "written in
+  the request path by gateway (usage.model)", and a synchronous callback can only buffer — which
+  would make every deployment fail-open whether it meant to or not. docs/17 wants that to be a
+  per-surface *choice* ("fail-closed for API keys, fail-open-with-alarm for our own interactive
+  surfaces"), so it is a field on the sink, and the fail-open path logs at `error!` because an
+  outage that produces no alarm is an outage nobody backfills.
+
+  **The budget gate runs before the cache.** An account over its ceiling must be refused rather
+  than served for free, or "you are over your limit" and "here is a cached answer" become the same
+  request depending on who asked first.
+
+  **Two claims the ledger keeps apart.** An *unpriced* model produces no entry at all (docs/21's
+  rule applied to money: "free" and "unpriced" are different, and a zero-cost entry would
+  understate COGS with nothing downstream able to tell), while a model priced *at* zero — a local
+  one — produces an entry of zero, because the call still happened and docs/18 meters it. Margin is
+  applied once, in the sink, with the provider's cost kept beside it in `quantity`: COGS and the
+  price charged are different numbers and a ledger storing one cannot answer either question.
+
+  **The property test is the acceptance**: Σ ledger == Σ priced provider usage, to the
+  micro-credit, over seven call shapes chosen for where the errors live — cache-heavy,
+  output-heavy, free, and unpriced. It also reconciles the other way, summing
+  `provider_cost_micros` out of the entries, which is what a dispute would actually be settled
+  with.
+
+  **An ordering bug the tests found.** At 90% of the ceiling the soft rule wants to demote to a
+  cheaper pool; a request whose own estimate crosses the ceiling was getting that answer instead of
+  a refusal. Demoting changes *which pool serves the call*, not what the account may spend, so the
+  hard check now runs against balance-plus-estimate before the soft one — otherwise "degrade" is a
+  way to afford something the ceiling had ruled out.
 - **M11.5** OpenAI-compat ingress; aider-against-panday smoke test. ✅ *(shipped: `panday_gateway::ingress` — `POST /v1/chat/completions`, streaming and buffered; served by the `panday-gateway` binary.)*
 
   The A/B property is why the surface must be *exactly* the standard dialect: a

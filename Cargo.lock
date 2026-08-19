@@ -2277,8 +2277,11 @@ dependencies = [
 name = "panday-platform"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "axum",
+ "panday-gateway",
  "panday-plugins",
+ "panday-sdk",
  "panday-types",
  "serde",
  "serde_json",
@@ -2287,6 +2290,7 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

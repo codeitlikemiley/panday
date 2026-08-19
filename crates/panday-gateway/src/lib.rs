@@ -12,7 +12,9 @@ pub mod ingress;
 
 pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};
 pub use circuit::{BreakerConfig, Breakers, State as CircuitState};
-pub use gateway::{CollectUsage, DiscardUsage, Gateway, UsageRecord, UsageSink};
+pub use gateway::{
+    BudgetGate, CollectUsage, DiscardUsage, Gateway, NoBudget, UsageRecord, UsageSink,
+};
 pub use ingress::{IngressRequest, IngressState};
 
 use async_trait::async_trait;

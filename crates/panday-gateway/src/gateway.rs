@@ -48,16 +48,24 @@ pub struct UsageRecord {
     pub usage: Usage,
 }
 
-/// Where usage goes. The ledger implements this at M11.4.
+/// Where usage goes. The ledger implements this (M11.4).
+///
+/// **Async, and in the request path.** docs/17: usage is "written in the request path by gateway
+/// (usage.model)" — a background flusher would make every deployment fail-open whether it meant to
+/// or not, and docs/17 wants that to be a policy choice per surface ("fail-closed for API keys,
+/// fail-open-with-alarm for our own interactive surfaces"). A sink that writes to Postgres cannot
+/// do that from a synchronous callback, so the seam is async and the stream awaits it.
+#[async_trait::async_trait]
 pub trait UsageSink: Send + Sync {
-    fn record(&self, record: UsageRecord);
+    async fn record(&self, record: UsageRecord);
 }
 
 /// Discards usage. Useful in tests; never correct in production, which is why
 /// it is named for what it does.
 pub struct DiscardUsage;
+#[async_trait::async_trait]
 impl UsageSink for DiscardUsage {
-    fn record(&self, _record: UsageRecord) {}
+    async fn record(&self, _record: UsageRecord) {}
 }
 
 /// Collects usage in memory — what `panday chat` uses to print a per-call
@@ -76,8 +84,9 @@ impl CollectUsage {
     }
 }
 
+#[async_trait::async_trait]
 impl UsageSink for CollectUsage {
-    fn record(&self, record: UsageRecord) {
+    async fn record(&self, record: UsageRecord) {
         self.records.lock().unwrap().push(record);
     }
 }
@@ -98,6 +107,8 @@ pub struct Gateway {
     classifier: Arc<dyn Classifier>,
     /// Turns a `Usage` into money, or admits it cannot (M21.2).
     costs: Arc<dyn CostModel>,
+    /// Refuses a call before it is made (M11.4).
+    budget: Arc<dyn BudgetGate>,
     /// Exact-response cache (M11.6). `NoCache` unless a TTL is configured.
     cache: Arc<dyn ExactCache>,
     cache_ttl: Duration,
@@ -112,6 +123,7 @@ impl Gateway {
             usage: Arc::new(DiscardUsage),
             classifier: Arc::new(HeuristicClassifier),
             costs: Arc::new(NoPrices),
+            budget: Arc::new(NoBudget),
             cache: Arc::new(NoCache),
             cache_ttl: Duration::ZERO,
             breakers: Arc::new(Breakers::default()),
@@ -214,6 +226,38 @@ impl Gateway {
     }
 }
 
+/// Pre-flight budget and entitlement check (docs/11 §quotas, docs/17).
+///
+/// A trait because the gateway must not know about Postgres, plans or credits — it knows that a
+/// call can be refused before it is made, and `panday-platform` knows why. The error is
+/// `PandayError`, so a budget stop reaches the harness as a typed event it can turn into a pause
+/// rather than a 500 (docs/11: "Budget stop mid-session emits a typed `budget_exceeded`").
+#[async_trait::async_trait]
+pub trait BudgetGate: Send + Sync {
+    /// `estimated_micros` is the pre-flight estimate when the caller has one.
+    async fn check(
+        &self,
+        account: panday_types::id::AccountId,
+        estimated_micros: Option<u64>,
+    ) -> Result<(), PandayError>;
+}
+
+/// Allows everything. The default, because a gateway with no platform behind it — `panday chat`,
+/// `panday local`, every test — has no account to check against, and inventing a refusal would
+/// break the offline tier.
+pub struct NoBudget;
+
+#[async_trait::async_trait]
+impl BudgetGate for NoBudget {
+    async fn check(
+        &self,
+        _account: panday_types::id::AccountId,
+        _estimated_micros: Option<u64>,
+    ) -> Result<(), PandayError> {
+        Ok(())
+    }
+}
+
 /// A routing decision resolved to something callable.
 pub struct Resolved {
     pub model: ModelRef,
@@ -289,6 +333,11 @@ impl Gateway {
         req: ChatRequest,
         span: tracing::Span,
     ) -> Result<ItemStream, PandayError> {
+        // The budget gate runs before anything else, including the cache: an account over its
+        // ceiling must be refused rather than served for free, or "you are over your limit" and
+        // "here is a cached answer" become the same request depending on who asked first.
+        self.budget.check(req.metadata.account, None).await?;
+
         // Cache first: a hit costs no routing decision, no provider call and no
         // tokens. Eligibility is checked before the key is hashed, because
         // hashing an agent request with tools would spend the CPU to learn we
@@ -491,50 +540,68 @@ fn capture_usage(
 ) -> impl futures_core::Stream<Item = Result<StreamItem, PandayError>> + Send {
     let started = std::time::Instant::now();
     // Collected only when this request is cacheable, so an agent stream does not
-    // buffer a copy of itself for nothing.
-    let mut collected: Option<Vec<StreamItem>> = store.as_ref().map(|_| Vec::new());
-    stream.map(move |item| {
-        if let (Some(buffer), Ok(ok)) = (collected.as_mut(), &item) {
-            buffer.push(ok.clone());
-            // Store on `Done`, not on stream end: an abandoned stream is a
-            // partial answer, and caching it would serve a truncated response to
-            // everyone who asked the same question afterwards.
-            if matches!(ok, StreamItem::Done { .. }) {
-                if let Some((key, cache, ttl)) = &store {
-                    cache.put(
-                        key.clone(),
-                        CachedResponse {
-                            items: std::mem::take(buffer),
-                        },
-                        *ttl,
-                    );
+    // buffer a copy of itself for nothing. Behind an `Arc<Mutex<_>>` because the closure below
+    // returns a future: a `&mut` capture cannot escape an `FnMut`, and the buffer has to outlive
+    // each poll.
+    let collected: Arc<std::sync::Mutex<Option<Vec<StreamItem>>>> =
+        Arc::new(std::sync::Mutex::new(store.as_ref().map(|_| Vec::new())));
+    // `then`, not `map`: the sink is async because it may write to Postgres in the request path
+    // (docs/17), and a synchronous callback could only have buffered — which would make every
+    // deployment fail-open whether it meant to or not.
+    stream.then(move |item| {
+        let sink = sink.clone();
+        let costs = costs.clone();
+        let store = store.clone();
+        let template = template.clone();
+        let collected = collected.clone();
+        async move {
+            // The guard is taken and dropped in one synchronous block: a `MutexGuard` held across the
+            // `await` below would make this future non-`Send`, which the stream must be.
+            {
+                let mut slot = collected.lock().unwrap();
+                if let (Some(buffer), Ok(ok)) = (slot.as_mut(), &item) {
+                    buffer.push(ok.clone());
+                    // Store on `Done`, not on stream end: an abandoned stream is a
+                    // partial answer, and caching it would serve a truncated response to
+                    // everyone who asked the same question afterwards.
+                    if matches!(ok, StreamItem::Done { .. }) {
+                        if let Some((key, cache, ttl)) = &store {
+                            cache.put(
+                                key.clone(),
+                                CachedResponse {
+                                    items: std::mem::take(buffer),
+                                },
+                                *ttl,
+                            );
+                        }
+                        *slot = None;
+                    }
                 }
-                collected = None;
             }
+            if let Ok(StreamItem::Usage { usage }) = &item {
+                let record = UsageRecord {
+                    usage: *usage,
+                    ..template.clone()
+                };
+                // Metering and metrics come off the same event for the same reason
+                // the sink is fed here rather than at end-of-stream: an abandoned
+                // stream still spent tokens, and a dashboard that disagreed with the
+                // ledger about which calls happened would be worse than no
+                // dashboard.
+                metrics::metrics().observe_call(
+                    &record.provider,
+                    &record.model.0,
+                    &record.pool,
+                    usage,
+                    costs
+                        .cost_micros(&record.model, *usage)
+                        .map(|m| m as f64 / 1_000_000.0),
+                    started.elapsed(),
+                );
+                sink.record(record).await;
+            }
+            item
         }
-        if let Ok(StreamItem::Usage { usage }) = &item {
-            let record = UsageRecord {
-                usage: *usage,
-                ..template.clone()
-            };
-            // Metering and metrics come off the same event for the same reason
-            // the sink is fed here rather than at end-of-stream: an abandoned
-            // stream still spent tokens, and a dashboard that disagreed with the
-            // ledger about which calls happened would be worse than no
-            // dashboard.
-            metrics::metrics().observe_call(
-                &record.provider,
-                &record.model.0,
-                &record.pool,
-                usage,
-                costs
-                    .cost_micros(&record.model, *usage)
-                    .map(|m| m as f64 / 1_000_000.0),
-                started.elapsed(),
-            );
-            sink.record(record);
-        }
-        item
     })
 }
 
@@ -585,6 +652,7 @@ pub struct GatewayBuilder {
     usage: Arc<dyn UsageSink>,
     classifier: Arc<dyn Classifier>,
     costs: Arc<dyn CostModel>,
+    budget: Arc<dyn BudgetGate>,
     cache: Arc<dyn ExactCache>,
     cache_ttl: Duration,
     breakers: Arc<Breakers>,
@@ -626,6 +694,12 @@ impl GatewayBuilder {
         self
     }
 
+    /// Refuse calls that would cross a budget or an entitlement (M11.4).
+    pub fn budget(mut self, gate: Arc<dyn BudgetGate>) -> Self {
+        self.budget = gate;
+        self
+    }
+
     /// Turn the exact cache on with a TTL (M11.6, docs/11 §Caching gives it a
     /// "TTL per route"). A zero TTL leaves it off — caching is an opt-in
     /// behaviour change, and a gateway told nothing about TTLs has not been
@@ -650,6 +724,7 @@ impl GatewayBuilder {
             usage: self.usage,
             classifier: self.classifier,
             costs: self.costs,
+            budget: self.budget,
             cache: self.cache,
             cache_ttl: self.cache_ttl,
             breakers: self.breakers,

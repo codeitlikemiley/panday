@@ -9,6 +9,10 @@ publish.workspace = true
 [dependencies]
 panday-types.workspace = true
 panday-plugins.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+panday-sdk.workspace = true
+panday-gateway.workspace = true
 sha2.workspace = true
 axum.workspace = true
 sqlx.workspace = true
