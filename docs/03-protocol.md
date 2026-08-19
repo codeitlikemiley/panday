@@ -195,4 +195,30 @@ display encoding, not a second id.
 
   This is the table only; stdio transport, the `session/new` handshake and the
   answer round trip are M16.5.
-- **M3.5** Ledger-rebuild-from-log: property test that replaying any session yields the ledger totals the live path recorded.
+- **M3.5** Ledger-rebuild-from-log: property test that replaying any session yields the ledger totals the live path recorded. ✅ *(shipped: `panday_platform::rebuild`; suite in `crates/panday-platform/tests/rebuild_from_log.rs`, integration lane.)*
+
+  This is what makes docs/17's claim that the ledger is **provable** true rather than aspirational:
+  "a dispute is settled by replaying the session and recomputing". Two hundred generated sessions
+  run through the *real* path — fake provider, real gateway, real `LedgerSink` writing to Postgres —
+  and then the log alone is replayed and the totals compared. Discrepancy: zero, to the
+  micro-credit.
+
+  **A property test without a property-testing crate.** `proptest` is not in docs/02's table, and
+  the shrinking it buys is worth less here than the shapes: what breaks a ledger rebuild is cache
+  splits, a model change mid-session, unpriced models and zero-cost calls — enumerable rather than
+  discoverable. So the generator is a small deterministic LCG over those shapes, seeded, so a
+  failure is reproducible from its seed. The test also asserts the generator *produced* the
+  interesting cases (>40 sessions changing model, >20 with an unpriced model), because 200 copies of
+  the easy case would pass while proving nothing.
+
+  **Two rules make the fold correct, and both are bugs if reversed.** Usage comes from
+  `AssistantMessage` only — `TurnFinished.usage` is a redundant summary, so counting both doubles
+  every turn, and the log the test builds includes it precisely so a rebuild that counted it would
+  fail. And each turn is priced at the model *that turn* used, from `TurnStarted`: pricing a session
+  at its first model disagrees with the live path on exactly the sessions that failed over, which
+  are the ones a dispute is most likely to be about.
+
+  **An unpriced turn is reported, not skipped.** A rebuild that silently ignored one would "agree"
+  with a live path that had also ignored it, and neither would be right — so `Rebuilt` carries
+  `unpriced_turns` and the token counts, making the gap visible. The discrepancy is signed for the
+  same reason: over-billing and under-billing are different incidents with different responses.

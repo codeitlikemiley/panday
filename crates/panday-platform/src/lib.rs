@@ -6,6 +6,7 @@
 pub mod entitlements;
 pub mod ledger;
 pub mod pg;
+pub mod rebuild;
 pub mod registry;
 pub mod tenancy;
 
