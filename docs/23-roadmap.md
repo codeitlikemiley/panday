@@ -106,6 +106,24 @@ test-mode → live (M17.4–17.5), OpenAI-compat ingress as the API product
 ledger to the cent; killing a provider mid-day degrades sessions to fallback
 pools without a support ticket.
 
+**Status: everything that does not need a third party is shipped.** Accounts, keys and rate
+limiting (M17.3), the ledger with property-tested reconciliation (M17.2, M3.5), the OpenAI-compat
+ingress as the product (M11.5), the webhook inbox and meter export (M17.4–17.5), abuse guardrails
+and the admin surface (M17.7, M20.4), the dev shape and the service binary that is the composition
+root (M22.1).
+
+Three clauses of the exit criterion cannot be closed from here, and each names what it needs:
+
+- **"a stranger pays"** needs a Stripe account. The projection is built and tested against a
+  trait — what is missing is the signature check and the HTTP client, and a live key to exercise
+  them.
+- **"invoices reconcile to the cent"** is testable in both directions today: `check_invoice`
+  compares what we reported against the ledger, and `panday-platform drift` compares recorded COGS
+  against a provider's usage report (M21.4). Neither has been run against a real invoice, because
+  there is no real invoice.
+- **deploy shape 2 with a status page (M22.2–22.3)** needs somewhere to deploy. The image, the
+  migrations-on-boot and the compose file exist; nothing has been pointed at a host.
+
 ## Phase 4 — Scale surfaces (~weeks 33–44)
 
 T3 Firecracker pool + snapshots (M14.5–14.6, M22.4), WASM plugin tools/hooks
@@ -115,6 +133,15 @@ tokens + air-gap kit (M17.6, M18.7), SOC2-shaped controls (M20 all).
 
 **Exit:** untrusted user code runs in your cloud with the escape suite green
 in CI; one enterprise pilot installs the air-gap kit from its README alone.
+
+**Status: T0/T1/T2 are shipped with their escape suites; T3 is not, and cannot be from here.**
+Firecracker needs KVM, and this tree is developed on macOS — M14.5, M14.6 and M22.4 are blocked on
+hardware rather than on design. Everything else in the phase is done: WASM plugin tools and hooks
+(M16.4), the registry and `plugin install` (M16.6), scorecards and generated policy PRs (M12.4),
+the eval spine (M19.1), entitlement tokens (M17.6), the air-gap kit (M18.7), and the M20 controls
+including the injection canaries (M20.1) and drill #1 (M20.4). The kit installs and runs from a
+clean prefix here; what M22.5 asks for is an *air-gapped machine*, and the machine is the missing
+part.
 
 ## Phase 5 — Own models (~weeks 45–56, overlaps 4)
 
@@ -127,6 +154,15 @@ then a go/no-go on the GRPO spend ($1–5k) (M19.7).
 **Exit (the vision's bar):** a model you trained handles ≥30% of routed
 traffic at equal-or-better evals and lower cost than the pool it displaced —
 measured by the router's counterfactual logs, not enthusiasm.
+
+**Status: the infrastructure ahead of every model is shipped; the models are not.** The eval spine
+with its scorecard artifact and json-bench's 200 fixtures (M19.1), the shadow-mode harness that
+compares a candidate classifier without letting it route (M12.5), the consent-first mining pipeline
+(M19.4), and the signed model catalog that a tuned GGUF would enter through (M18.2). What is left is
+the training itself: M19.2, M19.3, M19.5, M19.6 and M19.7 each need GPUs, a corpus, or a T3 sandbox
+to run agent-bench in — and the honest position is that none of them can be faked from a laptop
+with no models on it. Doing so would produce numbers rather than evidence, which is the exact
+failure docs/19 opens by warning about.
 
 ## Phase 6 — Consumer & marketplace (when 3–5 say so)
 

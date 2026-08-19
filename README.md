@@ -64,12 +64,19 @@ grant them per tool (`docs/16` §MCP host).
 
 ## Status
 
-Phases 0 and 1 are complete and phase 2 is most of the way there;
-`docs/23-roadmap.md` carries the honest sequencing, and every shipped milestone is
-marked ✅ in its own spec together with what was learned building it — including
-the bugs. What is not built says so: anything needing Postgres, Stripe, GPUs, KVM
-or a running llama-server sits behind a trait with an `#[ignore]`d test rather
-than a fake.
+**Every milestone that does not need hardware or a third party is shipped.**
+Phases 0–2 are complete; phase 3 is built except for the parts that need a Stripe
+account and somewhere to deploy; phase 4 is complete except T3, which needs KVM;
+phase 5's infrastructure is in place and its models are not.
+
+`docs/23-roadmap.md` carries the honest sequencing and a per-phase status. Every
+shipped milestone is marked ✅ in its own spec together with what was learned
+building it — including the bugs, of which the useful ones were found by tests
+that could have passed. What is not built says so, and names what it needs:
+Firecracker wants KVM, the trained models want GPUs and a corpus, "a stranger
+pays" wants a Stripe key, and the air-gap kit wants an air-gapped machine to be
+installed on. Each sits behind a trait with an `#[ignore]`d test rather than a
+fake, because a fake would produce numbers instead of evidence.
 
 ## How to use this repo
 
