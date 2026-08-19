@@ -92,7 +92,10 @@ means `apt`, which means an Ubuntu mirror. One mirror stall hung a job for 3.5 h
 retried since); then the Azure mirror went dark for an afternoon and every retry hit the same dead
 host, failing every PR on this repo for reasons unrelated to the code. A mirror outage is not an
 isolation regression, and blocking merges on one teaches people to ignore a red tick. So PR CI
-installs best-effort and emits a **warning annotation** when it could not, while
+installs best-effort and emits a **warning annotation** when it could not — including when the
+runner's kernel refuses the user namespace bwrap is built on, which Ubuntu 24.04 does by default
+(`kernel.apparmor_restrict_unprivileged_userns=1`; CI lifts it with sudo, and a deployment either
+allows userns or uses T3) — while
 `.github/workflows/nightly.yml` requires `bwrap` and fails without it — a regression is caught
 within a day, and somebody else's outage is not our merge queue's problem.
 
