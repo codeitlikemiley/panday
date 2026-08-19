@@ -77,6 +77,15 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // M18.7. Built by a human on a release commit, carried in on a USB stick, and unpacked on
+        // a machine with no internet.
+        "airgap" => match airgap(rest) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask airgap: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "wasm-fixtures" => match wasm_fixtures() {
             Ok(code) => code,
             Err(e) => {
@@ -106,13 +115,230 @@ fn usage() {
          scorecard [--write] the weekly eval scorecard; --write saves it under scorecards/\n  \
          sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n  \
          ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n  \
-         json-bench          schema-validity against a running gateway; needs a model\n"
+         json-bench          schema-validity against a running gateway; needs a model\n  \
+         airgap [--models <dir>] [--out <dir>]  build the offline install kit (M18.7)\n"
     );
 }
 
 mod sbom;
 mod sdk;
 mod ts;
+
+/// The air-gap kit (docs/18 M18.7).
+///
+/// > "one tarball (binary + catalog + models) installs on a machine with no internet; documented
+/// > for enterprise."
+///
+/// Assembles a directory and leaves the tarring to `tar`, on purpose: an enterprise operator is
+/// going to inspect this before carrying it through a door, and a directory they can `ls` is one
+/// they can review. The kit is deliberately *complete or absent* — a kit missing its models
+/// installs and then fails at the first prompt, which is the worst possible place to discover it.
+fn airgap(args: &[String]) -> Result<ExitCode, String> {
+    let flag = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let root = repo_root();
+    let out = PathBuf::from(
+        flag("--out").unwrap_or_else(|| root.join("target/airgap").display().to_string()),
+    );
+    let models = flag("--models");
+
+    // Release binaries, from this tree. Not built here: `cargo build --release` on a machine that
+    // is not the release machine is how an air-gap bundle ends up with a debug build in it.
+    let release = root.join("target/release");
+    let binaries = [
+        "panday",
+        "panday-local",
+        "panday-gateway",
+        "panday-platform",
+    ];
+    let missing: Vec<&str> = binaries
+        .iter()
+        .copied()
+        .filter(|b| !release.join(b).is_file())
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "missing release binaries: {missing:?}\n  build them first: cargo build --release"
+        ));
+    }
+
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(out.join("bin")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(out.join("models")).map_err(|e| e.to_string())?;
+
+    for binary in binaries {
+        std::fs::copy(release.join(binary), out.join("bin").join(binary))
+            .map_err(|e| format!("copy {binary}: {e}"))?;
+    }
+
+    // The policy and the catalog: a machine with no internet still routes and still knows what its
+    // models are.
+    std::fs::create_dir_all(out.join("config")).map_err(|e| e.to_string())?;
+    for (name, source) in [
+        (
+            "local.yaml",
+            root.join("crates/panday-router/policy/local.yaml"),
+        ),
+        (
+            "catalog.yaml",
+            root.join("crates/panday-router/catalog/default.yaml"),
+        ),
+    ] {
+        std::fs::copy(&source, out.join("config").join(name))
+            .map_err(|e| format!("copy {name}: {e}"))?;
+    }
+
+    let mut model_files = Vec::new();
+    if let Some(dir) = &models {
+        for entry in std::fs::read_dir(dir).map_err(|e| format!("read {dir}: {e}"))? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.extension().is_some_and(|e| e == "gguf") {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                std::fs::copy(&path, out.join("models").join(&name))
+                    .map_err(|e| format!("copy {name}: {e}"))?;
+                model_files.push(name);
+            }
+        }
+        if model_files.is_empty() {
+            return Err(format!("no .gguf files in {dir} — a kit without a model installs and then fails at the first prompt"));
+        }
+    }
+
+    std::fs::write(out.join("INSTALL.md"), install_readme(&model_files))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(out.join("install.sh"), INSTALL_SH).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            out.join("install.sh"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    println!(
+        "kit assembled at {}\n  binaries: {}\n  models:   {}\n\n  tar -czf panday-airgap.tar.gz -C {} .",
+        out.display(),
+        binaries.join(", "),
+        if model_files.is_empty() {
+            "none — pass --models <dir> to include GGUFs".to_string()
+        } else {
+            model_files.join(", ")
+        },
+        out.display()
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+const INSTALL_SH: &str = r#"#!/usr/bin/env sh
+# Panday air-gap installer (docs/18 M18.7). No network, by design.
+set -eu
+
+PREFIX="${PREFIX:-$HOME/.local}"
+MODEL_DIR="${PANDAY_MODEL_DIR:-$HOME/.panday/models}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+mkdir -p "$PREFIX/bin" "$MODEL_DIR" "$HOME/.panday"
+cp "$HERE"/bin/* "$PREFIX/bin/"
+cp "$HERE"/config/* "$HOME/.panday/"
+
+# Copied rather than linked: a USB stick that gets unplugged is not a storage backend.
+if [ -d "$HERE/models" ] && [ -n "$(ls -A "$HERE/models" 2>/dev/null)" ]; then
+  cp "$HERE"/models/*.gguf "$MODEL_DIR/"
+fi
+
+echo "installed to $PREFIX/bin"
+echo "models in    $MODEL_DIR"
+echo
+echo "Check it works, with nothing plugged in:"
+echo "  $PREFIX/bin/panday-local --serve $MODEL_DIR/<model>.gguf --workspace . 'say hello'"
+"#;
+
+fn install_readme(models: &[String]) -> String {
+    let model_list = if models.is_empty() {
+        "*(this kit ships no models — the machine will need one before `panday local` can answer)*"
+            .to_string()
+    } else {
+        models
+            .iter()
+            .map(|m| format!("- `{m}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    format!(
+        r#"# Panday — air-gapped install
+
+Everything needed to run Panday on a machine with no internet connection. Nothing in here reaches
+the network: not the installer, not the first run, not the agent (ADR-011).
+
+## What is in the box
+
+```
+bin/       panday, panday-local, panday-gateway, panday-platform
+config/    local.yaml (routing), catalog.yaml (models)
+models/    the GGUFs this kit was built with
+INSTALL.md this file
+install.sh copies the above into place
+```
+
+Models included:
+
+{model_list}
+
+## Install
+
+```sh
+./install.sh                 # into ~/.local/bin and ~/.panday/models
+PREFIX=/opt/panday ./install.sh   # or somewhere else
+```
+
+The installer copies rather than links, because a USB stick that gets unplugged is not a storage
+backend.
+
+## Verify it, offline
+
+```sh
+panday-local --serve ~/.panday/models/<model>.gguf --workspace . "say hello"
+```
+
+`panday local` refuses any base URL that is not loopback, so if the machine later gains a network,
+the offline tier still cannot reach it.
+
+## Licensing
+
+An entitlement token is a file (docs/17 M17.6). Copy it and its `.sig` onto the machine and run:
+
+```sh
+PANDAY_ENTITLEMENT_KEY=<the public key you were given>   panday-local --entitlement ~/.panday/licence.json --workspace . "…"
+```
+
+Verification is local: no activation, no call home, no revocation check. When it expires the
+software keeps working at the community tier rather than stopping — a renewal is a new file.
+
+## Updating
+
+Bring a newer kit and run `install.sh` again. The event logs under `.panday/` are append-only and
+are not touched by an install (ADR-002).
+
+## What this kit does not include
+
+- **A cloud account.** None is needed; the offline tier works without one.
+- **A model catalog signature.** `catalog.yaml` here is the routing catalog. The *signed model
+  index* (`panday models`) is for machines that can download; on an air-gapped box the models are
+  already in `models/`.
+"#
+    )
+}
 
 /// `json-bench` against a running gateway (docs/19 M19.1).
 ///

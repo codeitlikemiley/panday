@@ -217,7 +217,19 @@ offline via ed25519 pubkey baked into the binary.
   plugin tool — while a bad `read_file` costs a turn. And no profile means no claims:
   assuming frontier capabilities when nobody said is what produces a local model confidently
   promising to read an image.
-- **M18.5** mistral.rs as alternate runner behind a flag.
+- **M18.5** mistral.rs as alternate runner behind a flag. ✅ *(shipped: `panday_local::supervisor::Runner`, `panday local --runner mistralrs`.)*
+
+  **The difference is the command line and nothing else.** Both serve the OpenAI dialect over HTTP,
+  which is the whole contract the supervisor and the `local` adapter care about — mistral.rs simply
+  takes its model as a subcommand (`gguf -m <dir> -f <file>`) where llama-server takes a flag. Both
+  bind loopback, and a test asserts it for each: the offline tier's promise breaks silently on a
+  café network otherwise.
+
+  **`PANDAY_LOCAL_SERVER_ARGS` overrides the whole argument list.** These two command lines are the
+  one thing in the crate that cannot be verified here — neither binary is present — so a version
+  whose flags moved must not be an outage. "Wait for a release" is not an answer for somebody whose
+  model will not start. An unknown `--runner` name is an error rather than a silent default, because
+  starting the wrong server and failing a health check explains nothing.
 - **M18.6** Sync: offline sessions appear in cloud account after reconnect; ledger reconciles. ✅ *(shipped: `panday_platform::sync` + migration `0006_session_events.sql` + `POST /v1/sync/sessions`, `panday local --sync <url>`.)*
 
   **Idempotent, because the network it runs on is not.** Events are keyed `(session_id, seq)` and
@@ -248,4 +260,28 @@ offline via ed25519 pubkey baked into the binary.
   **Syncing is its own invocation**, not a flag on a turn: mixing "run a turn" with "upload" would
   make a failed upload look like a failed turn. And it reads the log file rather than the running
   actor — the log *is* the state (ADR-002), so yesterday's session syncs with the same command.
-- **M18.7** Air-gap kit: one tarball (binary + catalog + models) installs on a machine with no internet; documented for enterprise.
+- **M18.7** Air-gap kit: one tarball (binary + catalog + models) installs on a machine with no internet; documented for enterprise. ✅ *(shipped: `cargo xtask airgap` / `just airgap`, which assembles `bin/`, `config/`, `models/`, `install.sh` and `INSTALL.md`.)*
+
+  **A directory, and `tar` left to the operator.** Somebody is going to inspect this before carrying
+  it through a door; a directory they can `ls` is one they can review, and the tarball is one
+  obvious command away.
+
+  **Complete or absent, never partial.** Passing `--models` with no GGUF in it is an error rather
+  than a kit that installs cleanly and fails at the first prompt — which is the worst possible place
+  to discover a missing model. Missing release binaries are an error too, and the task refuses to
+  build them itself: `cargo build --release` on a machine that is not the release machine is how a
+  debug build ends up inside an enterprise bundle.
+
+  **The installer copies rather than links.** A USB stick that gets unplugged is not a storage
+  backend.
+
+  **Verified by running it**: kit built with a model, installed into a clean prefix with `PREFIX`
+  and `PANDAY_MODEL_DIR` set, and the installed `panday-local` runs from there. What remains
+  unverified here is the *air* in air-gapped — this machine has a network — and the property that
+  makes that safe is the one already tested elsewhere: `panday local` refuses any base URL that is
+  not loopback.
+
+  **What the kit deliberately does not include**: a cloud account (none is needed) and a signed
+  model index (`panday models` is for machines that can download; here the models are already in
+  the box). An entitlement token is a file the customer copies in, and is documented in
+  `INSTALL.md` alongside the fact that expiry degrades rather than stops (M17.6).

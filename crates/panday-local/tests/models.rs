@@ -359,3 +359,74 @@ fn the_example_catalog_satisfies_our_own_rules() {
     // would fail on first use while looking authoritative.
     assert!(index.models.iter().all(|m| m.sha256 == "0".repeat(64)));
 }
+
+// ── M18.5: the alternate runner ───────────────────────────────────────────────
+
+#[test]
+fn both_runners_bind_to_loopback_and_serve_the_port_they_were_given() {
+    // The only contract that matters: an OpenAI-compatible server, on this port, reachable only
+    // from this machine. Everything else about the two command lines is their own business.
+    use panday_local::supervisor::Runner;
+
+    for runner in [Runner::LlamaServer, Runner::MistralRs] {
+        let c = runner.config(std::path::Path::new("/models/qwen3.5-4b.gguf"), 8099);
+        assert_eq!(c.base_url, "http://127.0.0.1:8099");
+        assert!(
+            c.args.iter().any(|a| a == "127.0.0.1"),
+            "{runner:?} does not bind to loopback: {:?}",
+            c.args
+        );
+        assert!(
+            c.args.iter().any(|a| a == "8099"),
+            "{runner:?}: {:?}",
+            c.args
+        );
+        assert!(
+            c.args.iter().any(|a| a.contains("qwen3.5-4b")),
+            "{runner:?}: {:?}",
+            c.args
+        );
+    }
+}
+
+#[test]
+fn mistralrs_takes_the_model_as_a_subcommand_which_is_the_whole_difference() {
+    use panday_local::supervisor::Runner;
+    let c = Runner::MistralRs.config(std::path::Path::new("/models/qwen3.5-4b.gguf"), 8081);
+    assert_eq!(c.binary, "mistralrs-server");
+    // `gguf -m <dir> -f <file>`, not `-m <path>`.
+    let gguf = c
+        .args
+        .iter()
+        .position(|a| a == "gguf")
+        .expect("the subcommand");
+    assert_eq!(c.args[gguf + 1], "-m");
+    assert_eq!(c.args[gguf + 2], "/models");
+    assert_eq!(c.args[gguf + 4], "qwen3.5-4b.gguf");
+}
+
+#[test]
+fn a_runner_name_is_forgiving_but_not_a_guess() {
+    use panday_local::supervisor::Runner;
+    assert_eq!(Runner::parse("llama.cpp"), Some(Runner::LlamaServer));
+    assert_eq!(Runner::parse("mistral.rs"), Some(Runner::MistralRs));
+    // An unknown name is an error rather than a silent default: starting the wrong server and
+    // failing a health check tells the user nothing about what went wrong.
+    assert_eq!(Runner::parse("vllm"), None);
+}
+
+#[test]
+fn the_argument_list_can_be_replaced_when_a_runners_flags_move() {
+    // Neither binary is present here, so these command lines are the one thing in the crate that
+    // cannot be verified against reality. The override is what keeps a version bump from being an
+    // outage for somebody whose model will not start.
+    use panday_local::supervisor::Runner;
+    let c = Runner::LlamaServer
+        .config(std::path::Path::new("/m.gguf"), 8081)
+        .with_args(vec!["--brand-new-flag".into()]);
+    assert_eq!(c.args, ["--brand-new-flag"]);
+    assert_eq!(
+        c.base_url, "http://127.0.0.1:8081",
+        "the URL is not part of the override"
+    );
+}

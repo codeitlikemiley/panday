@@ -50,6 +50,8 @@ async fn run() -> ExitCode {
     let mut config = LocalConfig::new(std::env::current_dir().unwrap_or_else(|_| ".".into()));
     let mut prompt: Vec<String> = Vec::new();
     let mut sync_url: Option<String> = None;
+    let mut serve_gguf: Option<String> = None;
+    let mut runner = panday_local::supervisor::Runner::LlamaServer;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let mut next = || it.next().cloned();
@@ -110,26 +112,42 @@ async fn run() -> ExitCode {
             // local` attaches to whatever is already listening — which is the right default,
             // because killing a server the user started would be a surprise.
             "--serve" => match next() {
-                Some(gguf) => {
-                    let port = port_of(&config.base_url).unwrap_or(8081);
-                    let mut server = panday_local::supervisor::ServerConfig::llama_server(
-                        std::path::Path::new(&gguf),
-                        port,
-                    );
-                    if let Ok(binary) = std::env::var("PANDAY_LOCAL_SERVER_BIN") {
-                        if !binary.trim().is_empty() {
-                            server.binary = binary;
-                        }
-                    }
-                    config.serve = Some(server);
-                }
+                Some(gguf) => serve_gguf = Some(gguf),
                 None => return fail("--serve needs a path to a .gguf"),
+            },
+            // M18.5. Same dialect, same GGUFs, different flags — which is the entire difference.
+            "--runner" => match next() {
+                Some(name) => match panday_local::supervisor::Runner::parse(&name) {
+                    Some(r) => runner = r,
+                    None => {
+                        return fail(&format!("unknown runner `{name}` (llama-server|mistralrs)"))
+                    }
+                },
+                None => return fail("--runner needs llama-server or mistralrs"),
             },
             other if other.starts_with('-') => {
                 return fail(&format!("unknown flag `{other}`"));
             }
             other => prompt.push(other.to_string()),
         }
+    }
+
+    if let Some(gguf) = serve_gguf {
+        let port = port_of(&config.base_url).unwrap_or(8081);
+        let mut server = runner.config(std::path::Path::new(&gguf), port);
+        if let Ok(binary) = std::env::var("PANDAY_LOCAL_SERVER_BIN") {
+            if !binary.trim().is_empty() {
+                server.binary = binary;
+            }
+        }
+        // The escape hatch for a runner whose flags moved: neither binary can be tested from here,
+        // and "wait for a release" is not an answer for somebody whose model will not start.
+        if let Ok(args) = std::env::var("PANDAY_LOCAL_SERVER_ARGS") {
+            if !args.trim().is_empty() {
+                server = server.with_args(args.split_whitespace().map(String::from).collect());
+            }
+        }
+        config.serve = Some(server);
     }
 
     if let Some(url) = sync_url {
@@ -231,8 +249,10 @@ fn usage() -> String {
      --sync <url>   push this session's log to a cloud account and exit; needs $PANDAY_API_KEY\n  \
      --entitlement  an offline licence file (with .sig beside it); needs\n                  \
      $PANDAY_ENTITLEMENT_KEY. Absent = community tier, which is a complete product\n  \
-     --serve      start and supervise llama-server on this .gguf, instead of attaching to a\n               \
-     running one (binary from $PANDAY_LOCAL_SERVER_BIN, default `llama-server`)\n\n\
+     --serve      start and supervise an inference server on this .gguf, instead of attaching\n               \
+     to a running one\n  \
+     --runner     llama-server (default) or mistralrs — same dialect, different flags\n               \
+     ($PANDAY_LOCAL_SERVER_BIN overrides the binary, $PANDAY_LOCAL_SERVER_ARGS the flags)\n\n\
      Loopback only: a remote base URL is refused, because the offline tier's promise is\n\
      that nothing leaves the machine."
         .to_string()

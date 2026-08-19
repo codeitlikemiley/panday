@@ -77,6 +77,44 @@ pub struct ServerConfig {
     pub window: Duration,
 }
 
+/// Which inference server to spawn (docs/18 M18.5).
+///
+/// Both serve the OpenAI dialect over HTTP, which is the entire contract — the gateway's `local`
+/// adapter "doesn't care which" (docs/18), and neither does anything else here. What differs is the
+/// command line, and that is all this enum encodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Runner {
+    /// llama.cpp's server. The default: it is what most GGUFs are tested against.
+    LlamaServer,
+    /// The Rust-native alternative. Same dialect, same GGUFs, different flags.
+    MistralRs,
+}
+
+impl Runner {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "llama-server" | "llama" | "llamacpp" | "llama.cpp" => Some(Runner::LlamaServer),
+            "mistralrs" | "mistral.rs" | "mistralrs-server" => Some(Runner::MistralRs),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Runner::LlamaServer => "llama-server",
+            Runner::MistralRs => "mistralrs-server",
+        }
+    }
+
+    /// The command line for this runner, serving `model_path` on `port`, bound to loopback.
+    pub fn config(&self, model_path: &std::path::Path, port: u16) -> ServerConfig {
+        match self {
+            Runner::LlamaServer => ServerConfig::llama_server(model_path, port),
+            Runner::MistralRs => ServerConfig::mistral_rs(model_path, port),
+        }
+    }
+}
+
 impl ServerConfig {
     /// llama-server's own flags, which are the defaults docs/18 names.
     pub fn llama_server(model_path: &std::path::Path, port: u16) -> Self {
@@ -97,6 +135,55 @@ impl ServerConfig {
             max_restarts: 3,
             window: Duration::from_secs(300),
         }
+    }
+
+    /// mistral.rs — the Rust-native alternative (docs/18 M18.5).
+    ///
+    /// Its CLI takes the model as a *subcommand* (`gguf -m <dir> -f <file>`) rather than a flag,
+    /// which is the only real difference and the reason this is a second constructor rather than a
+    /// parameter. Flags as of the 0.6 series; `PANDAY_LOCAL_SERVER_ARGS` overrides the whole
+    /// argument list, because a server we cannot test against here should not be something a
+    /// version bump makes unusable.
+    pub fn mistral_rs(model_path: &std::path::Path, port: u16) -> Self {
+        let dir = model_path
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| ".".into());
+        let file = model_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        Self {
+            binary: "mistralrs-server".into(),
+            args: vec![
+                // Loopback for the same reason llama-server is: the offline tier's promise is that
+                // nothing leaves the machine (ADR-011).
+                "--serve-ip".into(),
+                "127.0.0.1".into(),
+                "--port".into(),
+                port.to_string(),
+                "gguf".into(),
+                "-m".into(),
+                dir,
+                "-f".into(),
+                file,
+            ],
+            base_url: format!("http://127.0.0.1:{port}"),
+            startup_timeout: Duration::from_secs(120),
+            max_restarts: 3,
+            window: Duration::from_secs(300),
+        }
+    }
+
+    /// Replace the argument list wholesale, for a runner version whose flags have moved.
+    ///
+    /// The escape hatch exists because these two command lines are the one thing in this crate
+    /// that cannot be tested here — neither binary is present — and "your flags are out of date,
+    /// wait for a release" is not an acceptable answer to somebody whose model will not start.
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.args = args;
+        self
     }
 }
 
