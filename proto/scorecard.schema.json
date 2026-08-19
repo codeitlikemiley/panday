@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scorecard",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "Format version. Bump rules follow docs/03: additive fields are always ok.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "suite": {
+      "description": "`route-bench`, `json-bench`, `reduce-bench`, `agent-bench`.",
+      "type": "string"
+    },
+    "subject": {
+      "description": "What was measured: a model id, or a classifier name.",
+      "type": "string"
+    },
+    "at": {
+      "description": "RFC 3339 UTC, from the caller.",
+      "type": "string"
+    },
+    "cases": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "passed": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "metrics": {
+      "description": "Suite-specific numbers, sorted so two runs of the same suite diff cleanly.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "double"
+      },
+      "default": {}
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Failure"
+      },
+      "default": []
+    },
+    "failures_omitted": {
+      "description": "Failures beyond `MAX_FAILURES`. Present so a short list is never mistaken for a short tail.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0,
+      "default": 0
+    },
+    "provenance": {
+      "description": "What produced this, so a number can be traced back to a build (docs/19 §gates).",
+      "$ref": "#/$defs/Provenance",
+      "default": {}
+    }
+  },
+  "required": [
+    "version",
+    "suite",
+    "subject",
+    "at",
+    "cases",
+    "passed"
+  ],
+  "$defs": {
+    "Failure": {
+      "type": "object",
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "detail": {
+          "description": "What went wrong, in one line. Never the model's full output — a scorecard is an artifact\npeople commit, and a transcript in it is a content-retention decision nobody made.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "case",
+        "detail"
+      ]
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "description": "Git commit of the tree that produced this.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quantization": {
+          "description": "The quantization the subject was measured at.\n\ndocs/19 §gates: \"quantize → then eval; quality dies at the quant step, so that's where you\nmeasure\". A scorecard that does not say which quantization it measured is a number that\ncannot be compared to the artifact anyone actually runs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,2 +1,7 @@
 target/
 docs/book/
+
+# The Python island builds these; nothing here is source (docs/19 §19.6).
+__pycache__/
+training/.venv/
+training/uv.lock

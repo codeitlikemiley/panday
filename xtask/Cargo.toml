@@ -12,4 +12,8 @@ schemars.workspace = true
 panday-router.workspace = true
 # For the OpenAPI document, which lives with the handlers it describes (M10.6).
 panday-gateway.workspace = true
+# `json-bench` runs against a live gateway (M19.1).
+panday-harness.workspace = true
+panday-sdk.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_json.workspace = true

@@ -66,6 +66,12 @@ it:
 deny:
     cargo deny check
 
+# The evals that need a model. Run with `llama-server` up, or against `just serve`.
+# `just check` deliberately does not include this: CI has no model, and a suite that skips is worse
+# than one that is absent.
+bench model="local/qwen3.5-4b" url="http://127.0.0.1:8088":
+    cargo run -p xtask -- json-bench --model {{model}} --base-url {{url}} --write
+
 # Regenerate everything that is checked in and derived: schemas, SBOM, the TypeScript SDK.
 generated:
     cargo xtask schemas

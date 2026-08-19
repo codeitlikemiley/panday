@@ -211,6 +211,135 @@ pub fn corpus() -> Vec<Case> {
             TaskClass::Chat,
             "should the company implement a four day week?",
         ),
+        // --- M19.1: more of the real shapes, still hand-labelled ---
+        //
+        // Grown by hand rather than generated. A template × variable corpus at this size would
+        // measure whether the classifier learned our templates; the phrasings below are the ways
+        // people actually open a request, including the ones with no verb in them at all.
+        case(
+            "stack trace pasted",
+            TaskClass::Code,
+            "thread 'main' panicked at src/gateway.rs:412: index out of bounds",
+        ),
+        case(
+            "bare file path",
+            TaskClass::Code,
+            "crates/panday-router/src/policy.rs",
+        ),
+        case(
+            "diff review",
+            TaskClass::Code,
+            "does this patch look right to you? @@ -12,7 +12,9 @@",
+        ),
+        case(
+            "add a test",
+            TaskClass::Code,
+            "write a test that covers the empty-chain case",
+        ),
+        case(
+            "dependency bump",
+            TaskClass::Code,
+            "bump sqlx to 0.9 and fix whatever breaks",
+        ),
+        case(
+            "performance ask",
+            TaskClass::Code,
+            "this endpoint takes 800ms, find out why",
+        ),
+        case(
+            "migration",
+            TaskClass::Code,
+            "add a column for last_used_at and backfill it",
+        ),
+        case(
+            "no verb, error text",
+            TaskClass::Code,
+            "error[E0277]: the trait bound `T: Send` is not satisfied",
+        ),
+        case(
+            "shell one-liner",
+            TaskClass::Code,
+            "how do I find every file over 10MB in this repo",
+        ),
+        case(
+            "release notes",
+            TaskClass::Summarize,
+            "turn these forty commits into release notes",
+        ),
+        case(
+            "meeting notes",
+            TaskClass::Summarize,
+            "condense this transcript into the decisions and the owners",
+        ),
+        case(
+            "long doc",
+            TaskClass::Summarize,
+            "give me the gist of this 40-page RFC",
+        ),
+        case(
+            "thread catch-up",
+            TaskClass::Summarize,
+            "what happened in this thread while I was away",
+        ),
+        case(
+            "pull the numbers",
+            TaskClass::Extract,
+            "pull every account id out of this log",
+        ),
+        case(
+            "table from prose",
+            TaskClass::Extract,
+            "turn the prices in this page into a table",
+        ),
+        case(
+            "fields from json",
+            TaskClass::Extract,
+            "give me just the model and cost fields from these events",
+        ),
+        case(
+            "dates",
+            TaskClass::Extract,
+            "list the dates mentioned in this changelog",
+        ),
+        case(
+            "which model",
+            TaskClass::Route,
+            "which model should handle a 200k-token refactor",
+        ),
+        case(
+            "cheap or good",
+            TaskClass::Route,
+            "is this worth sending to opus or should sonnet do",
+        ),
+        case("greeting", TaskClass::Chat, "morning! how's it going"),
+        case(
+            "open question",
+            TaskClass::Chat,
+            "what do you think about monorepos",
+        ),
+        case("thanks", TaskClass::Chat, "that worked, thanks"),
+        // More traps: markers inside ordinary sentences, which is where a keyword heuristic earns
+        // its confidence gate or loses it.
+        case(
+            "trap: test as a noun",
+            TaskClass::Chat,
+            "the driving test is on tuesday, wish me luck",
+        ),
+        case(
+            "trap: build a habit",
+            TaskClass::Chat,
+            "how long does it take to build a habit",
+        ),
+        case(
+            "trap: summarise a film",
+            TaskClass::Summarize,
+            "summarise the plot of this film for me",
+        ),
+        case(
+            "trap: route as a road",
+            TaskClass::Chat,
+            "what's the best route from the airport",
+        ),
     ]
 }
 
@@ -262,6 +391,27 @@ impl Score {
             ));
         }
         out
+    }
+
+    /// The same run as a `Scorecard` — the artifact format every suite emits (docs/19 M19.1).
+    ///
+    /// A confidently-wrong case and a gated one are both failures here, but they carry different
+    /// details: a scorecard that flattened them would lose the distinction the gate is built on.
+    pub fn artifact(&self, subject: &str, at: &str) -> panday_types::scorecard::Scorecard {
+        let mut card = panday_types::scorecard::Scorecard::new("route-bench", subject, at);
+        for _ in 0..self.correct {
+            card.record("", true, "");
+        }
+        for case in &self.confidently_wrong {
+            card.record(case, false, "wrong AND trusted — the router acts on this");
+        }
+        for case in &self.caught_by_the_gate {
+            card.record(case, false, "wrong, but below the trust threshold");
+        }
+        card.metric("accuracy", self.accuracy());
+        card.metric("confidently_wrong", self.confidently_wrong.len() as f64);
+        card.metric("caught_by_the_gate", self.caught_by_the_gate.len() as f64);
+        card
     }
 
     /// docs/19's gate, as a function: a classifier ships only if it clears the accuracy floor

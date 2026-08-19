@@ -1,0 +1,17 @@
+# The Python island's manifest (docs/19 §19.6). Managed with uv.
+#
+# Pinned loosely on purpose: this project is run by hand against models, not built into anything we
+# ship, so a caret range here costs nothing and a lockfile that goes stale between training runs
+# costs time.
+[project]
+name = "panday-training"
+version = "0.1.0"
+description = "Evals, dataset builders and training recipes (docs/19)"
+requires-python = ">=3.11"
+dependencies = [
+    "inspect-ai>=0.3",
+    "openai>=1.40",
+]
+
+[tool.uv]
+package = false

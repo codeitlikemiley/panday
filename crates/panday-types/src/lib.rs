@@ -10,6 +10,7 @@ pub mod event;
 pub mod id;
 pub mod model;
 pub mod pricing;
+pub mod scorecard;
 
 pub use capability::{CapabilityProfile, Provenance};
 pub use event::{Envelope, Event, PROTOCOL_VERSION};

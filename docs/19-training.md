@@ -169,7 +169,57 @@ artifacts; CI runs eval gates nightly.
 
 ## Milestones
 
-- **M19.1** Eval spine: inspect-ai through the gateway; route-bench + json-bench with 200 fixtures each; scorecard artifact format.
+- **M19.1** Eval spine: inspect-ai through the gateway; route-bench + json-bench with 200 fixtures each; scorecard artifact format. ✅ *(shipped: `panday_types::scorecard` + `proto/scorecard.schema.json`, `panday_harness::json_bench` (200 fixtures) and `panday_harness::json_schema`, `cargo xtask json-bench` / `just bench`, `training/evals/json_discipline.py`, route-bench grown to 50 and emitting the same artifact. **Two clauses left open** — see below.)*
+
+  **The scorecard is JSON, and markdown is a rendering of it.** A gate is only a gate if something
+  can read it without a human, and a gate that parses a table out of prose breaks the first time
+  somebody improves the wording. The type carries no clock — `at` is passed in — because a
+  scorecard that timestamped itself would diff on every regeneration, and a file that always diffs
+  is one nobody reviews. An empty run scores **zero**, not one: "nothing ran" must never read as
+  "everything passed", which is the failure mode of every gate that divides by a count.
+
+  **json-bench scores three failure modes apart**, because their fixes differ: not JSON at all
+  (prose, or an apology), JSON of the wrong shape (the interesting one), and a call that failed.
+  The last is counted as a failed case rather than skipped — a suite that drops its errors reports
+  a rate for the cases that happened to work, which is the most flattering possible lie. A fenced
+  answer is unwrapped, because the real harness unwraps one; prose *around* JSON is not salvaged,
+  because that would measure our salvage code rather than the model.
+
+  **How 200 fixtures is reached, said out loud:** ten shapes × twenty phrasings. Both dimensions
+  matter — a model that handles nested objects but only when asked politely is not usable — and
+  the alternative was writing two hundred near-duplicates by hand. Mined transcripts (M19.4) will
+  replace the phrasing dimension with real ones.
+
+  **The validator is a subset, and the corpus is asserted against it.** An ignored constraint is a
+  case scored as passing, so a test walks every schema in the corpus and fails if it uses a keyword
+  the validator does not check. Failure messages are written for a person reading a scorecard:
+  "missing required field `args.path`" is a bug report, `#/properties/args: does not match` is a
+  puzzle.
+
+  **Doubling route-bench found real bugs, which is the point of the milestone.** The corpus went
+  from 24 hand-labelled cases to 50, and the same classifier that scored 92% scored **66% with two
+  confidently-wrong answers**. Three genuine gaps: routing questions had no markers and fell
+  through to `Code`; most summarise and extract asks never contain the words "summarise" or
+  "extract"; and a single weak marker (bare `test`, `build`) was enough to clear the trust gate, so
+  "the driving test is on tuesday" was confidently code. Fixed, the classifier scores **94%
+  (47/50), zero confidently wrong** on the harder corpus. A suite you pass is not evidence until it
+  is a suite that could have failed.
+
+  **Left open, deliberately, and both need hardware this repo does not have:**
+
+  - *A measured number for json-bench.* The suite runs end to end against a gateway; nothing has
+    run it against a real model, so no scorecard is committed. `cargo xtask json-bench --write`
+    produces one, and it records the quantization it measured at (docs/19 §gates: quantize → then
+    eval).
+  - *route-bench at 200 fixtures.* It is at 50. The remaining 150 should come from mined traffic
+    (M19.4), not from invention: a corpus of made-up prompts at that size measures our imagination,
+    and the 24-case version already demonstrated what that costs.
+
+  **inspect-ai points at the gateway, never at a provider** (`training/evals/json_discipline.py`),
+  and refuses to start without `PANDAY_BASE_URL` rather than falling back to a provider default —
+  an eval that quietly measured something else is worse than one that did not run. Nothing in
+  `training/` runs in CI beyond a syntax check, and that is stated in its README: a green tick that
+  means "we did not measure" is how an eval suite rots.
 - **M19.2** Capability profiles for 3 local catalog models, generated not hand-written.
 - **M19.3** Model 1 shipped: classifier behind `Classifier` trait beats heuristic on route-bench by ≥10pt; deployed in shadow, then live.
 - **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset.

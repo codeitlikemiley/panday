@@ -105,11 +105,36 @@ const CODE_MARKERS: &[&str] = &[
     r"\bsrc/",
     r"failing tests?\b",
     r"tests? fails?\b",
-    // Bare "test" is code-specific enough in this context, and it is what
-    // makes "list all the tests that fail" register as ambiguous (extract by
-    // shape, code by subject) instead of being confidently called Extract.
-    r"\btests?\b",
     r"\bnot compile\b",
+    // M19.1: the shapes a bigger corpus surfaced. Every one of these is a word that does not turn
+    // up in ordinary conversation about anything else.
+    r"\bpanicked\b",
+    r"\bdiff\b",
+    r"@@",
+    r"\bpatch\b",
+    r"\bendpoint\b",
+    r"\bmigration\b",
+    r"\bbackfill\b",
+    r"\btrait bound\b",
+    r"\brepo\b",
+    r"\bsqlx?\b",
+];
+
+/// Markers that mean code *in a code context* and something else otherwise.
+///
+/// "the driving test is on tuesday" and "how long does it take to build a habit" are the cases that
+/// forced this split (M19.1): bare `test` and `build` were CODE_MARKERS, one hit cleared the trust
+/// gate, and the classifier was confidently wrong about a sentence with nothing technical in it. A
+/// weak marker alone now reports *below* the gate, so the caller's declared class wins; two weak
+/// markers, or one weak plus one strong, are a signal again.
+const CODE_WEAK_MARKERS: &[&str] = &[
+    r"\btests?\b",
+    r"\bbuilds?\b",
+    r"\bbumps?\b",
+    r"\bcolumns?\b",
+    r"\blatency\b",
+    r"\bshell\b",
+    r"\bfiles?\b",
 ];
 
 const SUMMARIZE_MARKERS: &[&str] = &[
@@ -119,6 +144,13 @@ const SUMMARIZE_MARKERS: &[&str] = &[
     r"\bcondense\b",
     r"\bin short\b",
     r"\bbrief overview\b",
+    // M19.1: how people actually ask for a summary, which is mostly not with the word "summarise".
+    r"\brelease notes\b",
+    r"\bthe gist\b",
+    r"\brecap\b",
+    r"\bcatch me up\b",
+    r"\bwhat happened\b",
+    r"\bdecisions and\b",
 ];
 
 const EXTRACT_MARKERS: &[&str] = &[
@@ -130,6 +162,28 @@ const EXTRACT_MARKERS: &[&str] = &[
     r"\breturn only\b",
     r"\bfields:",
     r"\btable of\b",
+    // M19.1. `pull … out of` and `into a table` are the two phrasings that dominate real extraction
+    // asks; `just the … fields` is the third.
+    r"\bpull\b.{0,40}\bout of\b",
+    r"\binto a table\b",
+    r"\bjust the\b.{0,30}\bfields?\b",
+    r"\blist (the|every) \w+ (mentioned|in)\b",
+    r"\bpull every\b",
+];
+
+/// The router's own question: which model should serve this (docs/12).
+///
+/// Routed to the cheap pool by the shipped policy — "never spend frontier tokens deciding where to
+/// spend tokens" — which is exactly why it needs to be recognised rather than falling through to
+/// `Code` because somebody said "refactor" in the sentence.
+const ROUTE_MARKERS: &[&str] = &[
+    r"\bwhich model\b",
+    r"\bwhat model\b",
+    r"\broute (this|it|that)\b",
+    r"\bopus or\b",
+    r"\bsonnet or\b",
+    r"\bcheap(er)? (model|pool|tier)\b",
+    r"\bworth sending to\b",
 ];
 
 /// Compiled once. A classifier on the request path must not recompile regexes.
@@ -167,9 +221,12 @@ impl Classifier for HeuristicClassifier {
             return (declared, 1.0);
         }
 
-        let code = hits(&s.text, CODE_MARKERS);
+        let strong_code = hits(&s.text, CODE_MARKERS);
+        let weak_code = hits(&s.text, CODE_WEAK_MARKERS);
+        let code = strong_code + weak_code;
         let summarize = hits(&s.text, SUMMARIZE_MARKERS);
         let extract = hits(&s.text, EXTRACT_MARKERS);
+        let route = hits(&s.text, ROUTE_MARKERS);
 
         // Tools present + tool results already in the transcript is the
         // strongest signal in the whole heuristic: something is *running* a
@@ -184,11 +241,18 @@ impl Classifier for HeuristicClassifier {
         // the winner is returned BELOW the trust gate and the caller's
         // declared class (or the default) wins instead. This is the whole
         // reason confidence is part of the trait.
-        let families = [code, summarize, extract]
+        let families = [code, summarize, extract, route]
             .iter()
             .filter(|n| **n > 0)
             .count();
         if families > 1 {
+            // A routing question that also mentions code — "which model should handle a 200k-token
+            // refactor" — is a routing question. It is the one family whose *presence* is decisive
+            // rather than merely competing, because the cost of misreading it is spending frontier
+            // tokens on the decision about frontier tokens.
+            if route > 0 {
+                return (TaskClass::Route, confidence_from(route, 0.6));
+            }
             let (class, _) = [
                 (TaskClass::Code, code),
                 (TaskClass::Summarize, summarize),
@@ -198,6 +262,10 @@ impl Classifier for HeuristicClassifier {
             .max_by_key(|(_, n)| *n)
             .expect("non-empty");
             return (class, AMBIGUOUS_CONFIDENCE);
+        }
+
+        if route > 0 {
+            return (TaskClass::Route, confidence_from(route, 0.6));
         }
 
         // An explicit ask wins over shape.
@@ -210,8 +278,15 @@ impl Classifier for HeuristicClassifier {
             let base = if s.chars > 4_000 { 0.85 } else { 0.62 };
             return (TaskClass::Summarize, base);
         }
-        if code > 0 {
+        if strong_code > 0 {
             return (TaskClass::Code, confidence_from(code, 0.58));
+        }
+        if weak_code > 1 {
+            // Two weak markers are a signal; one is a coincidence waiting to happen.
+            return (TaskClass::Code, confidence_from(weak_code, 0.56));
+        }
+        if weak_code == 1 {
+            return (TaskClass::Code, AMBIGUOUS_CONFIDENCE);
         }
 
         // Tool schemas offered but nothing said yet: an agent loop is starting.

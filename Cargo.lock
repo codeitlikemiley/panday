@@ -5139,10 +5139,13 @@ name = "xtask"
 version = "0.0.1"
 dependencies = [
  "panday-gateway",
+ "panday-harness",
  "panday-router",
+ "panday-sdk",
  "panday-types",
  "schemars 1.2.2",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

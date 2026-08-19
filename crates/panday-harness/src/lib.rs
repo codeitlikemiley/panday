@@ -18,6 +18,8 @@ pub mod eval;
 pub mod expand;
 pub mod filters;
 pub mod hooks;
+pub mod json_bench;
+pub mod json_schema;
 pub mod jsonl;
 pub mod load_skill;
 pub mod mcp_tool;

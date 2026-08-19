@@ -68,6 +68,15 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // M19.1. Needs a model, so it is never part of `just check`: a suite that skips when it
+        // cannot measure reports a green tick for "we did not measure".
+        "json-bench" => match json_bench(rest) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask json-bench: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "wasm-fixtures" => match wasm_fixtures() {
             Ok(code) => code,
             Err(e) => {
@@ -96,13 +105,81 @@ fn usage() {
          wasm-fixtures       rebuild fixtures/*-tool into the T1 test fixtures\n  \
          scorecard [--write] the weekly eval scorecard; --write saves it under scorecards/\n  \
          sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n  \
-         ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n"
+         ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n  \
+         json-bench          schema-validity against a running gateway; needs a model\n"
     );
 }
 
 mod sbom;
 mod sdk;
 mod ts;
+
+/// `json-bench` against a running gateway (docs/19 M19.1).
+///
+/// Against the *gateway*, not a provider: the eval exercises routing, caching and the adapter as
+/// well as the model, which is docs/19's "three birds". The scorecard it writes is a committed
+/// artifact, because a number nobody can point at later is a number nobody trusts.
+fn json_bench(args: &[String]) -> Result<ExitCode, String> {
+    let value = |flag: &str, default: &str| -> String {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| default.to_string())
+    };
+    let model = value("--model", "local/qwen3.5-4b");
+    let base_url = value("--base-url", "http://127.0.0.1:8088");
+    let at = value("--at", "unstamped");
+    let quantization = args
+        .iter()
+        .position(|a| a == "--quantization")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let write = args.iter().any(|a| a == "--write");
+
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let card = runtime.block_on(async {
+        // The gateway speaks the same dialect it accepts, so the eval reaches it with the same
+        // client any customer would use (docs/11 M11.5) — no private path.
+        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::new(
+            &base_url,
+            std::env::var("PANDAY_API_KEY").ok(),
+        );
+        let corpus = panday_harness::json_bench::corpus();
+        let mut card = panday_harness::json_bench::run(
+            &client,
+            &panday_types::model::ModelRef(model.clone()),
+            &model,
+            &at,
+            &corpus,
+        )
+        .await;
+        // docs/19 §gates: "quantize → then eval". A scorecard that does not say which quantization
+        // it measured cannot be compared to the artifact anyone actually runs.
+        card.provenance.quantization = quantization;
+        card
+    });
+
+    print!("{}", card.to_markdown());
+    if write {
+        let dir = repo_root().join("scorecards");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(format!(
+            "json-bench-{}.json",
+            card.subject.replace('/', "_")
+        ));
+        let mut json = serde_json::to_string_pretty(&card).map_err(|e| e.to_string())?;
+        json.push('\n');
+        std::fs::write(&path, json).map_err(|e| format!("write {}: {e}", path.display()))?;
+        println!("\nwrote {}", path.display());
+    }
+    // Non-zero when the suite found nothing to measure, so a broken endpoint is not a silent pass.
+    Ok(if card.cases > 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
 
 /// The generated TypeScript SDK and the OpenAPI document (docs/10 M10.6).
 fn ts_sdk(check: bool) -> Result<ExitCode, String> {
@@ -291,7 +368,10 @@ fn scorecard(write: bool) -> Result<ExitCode, String> {
     out.push_str("## what is not measured yet\n\n");
     out.push_str(
         "- `agent-bench` (M19.6): 50 verifiable repo tasks. Needs T3 (M14.5).\n\
-         - `json-bench` (M19.1): schema-validity rates.\n\
+         - `json-bench` (M19.1): the suite exists (`panday_harness::json_bench`, 200 fixtures) \
+         and runs with `cargo xtask json-bench` against a gateway — but it needs a model, so no \
+         number appears here. CI has neither a GPU nor a GGUF, and a suite that skipped would put \
+         a green tick next to 'we did not measure'.\n\
          - Capability profiles (M18.4) ship **declared**, not measured; M19.2 measures them, \
          and until then every profile says `(estimated)` in the system prompt.\n",
     );
@@ -406,10 +486,18 @@ fn repo_root() -> PathBuf {
 /// The schemas we publish, and where. Adding an entry here is all it takes to
 /// export another type.
 fn targets() -> Vec<(&'static str, schemars::Schema)> {
-    vec![(
-        "aep-envelope.schema.json",
-        schemars::schema_for!(panday_types::Envelope),
-    )]
+    vec![
+        (
+            "aep-envelope.schema.json",
+            schemars::schema_for!(panday_types::Envelope),
+        ),
+        // docs/19 M19.1: the gate ("a model enters routing pools only with a scorecard") is only
+        // enforceable if something other than a human can read one.
+        (
+            "scorecard.schema.json",
+            schemars::schema_for!(panday_types::scorecard::Scorecard),
+        ),
+    ]
 }
 
 fn render(schema: &schemars::Schema) -> Result<String, String> {

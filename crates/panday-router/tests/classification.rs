@@ -143,3 +143,27 @@ fn the_corpus_covers_every_class_it_claims_to_test() {
         );
     }
 }
+
+#[test]
+fn the_scorecard_artifact_matches_the_run_it_describes() {
+    // M19.1: every suite emits the same artifact, and a gate reads the artifact rather than prose.
+    let score = score(&HeuristicClassifier);
+    let card = score.artifact("heuristic", "2026-08-19T00:00:00Z");
+
+    assert_eq!(card.suite, "route-bench");
+    assert_eq!(card.cases as usize, score.total);
+    assert_eq!(card.passed as usize, score.correct);
+    assert!((card.metrics["accuracy"] - score.accuracy()).abs() < 1e-9);
+    // The distinction the gate is built on survives into the artifact: being wrong is tolerable,
+    // being wrong and trusted is not.
+    assert_eq!(
+        card.metrics["confidently_wrong"],
+        score.confidently_wrong.len() as f64
+    );
+    for failure in &card.failures {
+        assert!(
+            failure.detail.contains("trusted") || failure.detail.contains("threshold"),
+            "{failure:?}"
+        );
+    }
+}

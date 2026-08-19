@@ -154,11 +154,20 @@ not know the model, which reads as "no claim", not as "no capabilities".
   statement (ADR-007).
 - **M12.3** Heuristic classifier + confidence; misclassification harness with labeled fixtures. ✅ *(shipped: `panday_router::classify` — `HeuristicClassifier`, `TRUST_THRESHOLD`, `classify_or_default`; harness in `crates/panday-router/tests/classification.rs`.)*
 
-  **Measured: 92% on the labelled corpus, zero confidently-wrong.** The second
-  number is the one that matters. Being wrong is tolerable; being wrong *and*
-  trusted is not, because the router acts on it and nothing downstream can
-  tell. The two it misses are genuinely ambiguous and are correctly reported
-  below the trust gate, so they fall back rather than mislead.
+  **Measured: 94% (47/50), zero confidently-wrong.** The second number is the one that matters.
+  Being wrong is tolerable; being wrong *and* trusted is not, because the router acts on it and
+  nothing downstream can tell. The three it misses are genuinely ambiguous and are correctly
+  reported below the trust gate, so they fall back rather than mislead.
+
+  **The first number was 92% on 24 cases, and that was flattering.** Doubling the corpus at M19.1
+  dropped the same classifier to 66% and produced two *confidently* wrong answers — a corpus that
+  small had been measuring the cases somebody thought of while writing the classifier. What the
+  bigger corpus found was three real gaps: routing questions ("which model should handle this")
+  had no markers at all and fell through to `Code`; most summarise and extract asks do not contain
+  the words "summarise" or "extract"; and single weak markers like bare `test` or `build` were
+  trusted, so "the driving test is on tuesday" was confidently code. Fixing those took the score to
+  94% on the harder corpus. The lesson is the general one about evals: a suite you pass is not
+  evidence until it is a suite that could have failed.
 
   **Ambiguity is reported, not resolved.** When two marker families both fire —
   "tldr on why the cargo build broke" is honestly both summarize and code — the
@@ -199,7 +208,7 @@ not know the model, which reads as "no claim", not as "no capabilities".
   scorecard is the most important one to read — and the exit code still carries the gate for
   anything that wants to block on it.
 
-  Current numbers: heuristic classifier **92%** (22/24), **zero** confidently wrong, two
+  Current numbers: heuristic classifier **94%** (47/50), **zero** confidently wrong, three
   misses caught by the confidence gate; all three policy files lint clean. The section listing
   what is *not* measured yet (agent-bench, json-bench, capability profiles) is part of the
   artifact on purpose — a scorecard that only shows what passed reads as coverage it does not
