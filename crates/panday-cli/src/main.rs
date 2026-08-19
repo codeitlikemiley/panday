@@ -67,6 +67,32 @@ async fn run() -> ExitCode {
                 }
             };
         }
+        // Model management (M18.2). No gateway and no credentials: a catalog, a hash, and a
+        // directory of files.
+        Command::Models {
+            action,
+            catalog,
+            catalog_key,
+            mirror,
+        } => {
+            return match panday_cli::run_models(
+                &action,
+                catalog.as_deref(),
+                catalog_key.as_deref(),
+                mirror.as_deref(),
+            )
+            .await
+            {
+                Ok(text) => {
+                    print!("{text}");
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
         // An editor spawns this and speaks ACP on our stdio (docs/16, ADR-012).
         // Nothing may be printed to stdout here that is not a JSON-RPC frame.
         Command::Acp { workspace, profile } => {

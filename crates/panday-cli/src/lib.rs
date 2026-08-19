@@ -164,8 +164,39 @@ pub enum Command {
         dir: Option<std::path::PathBuf>,
         yes: bool,
     },
+    /// `panday models list|pull|verify|rm|sign` (docs/18 §Model management, M18.2).
+    Models {
+        action: ModelAction,
+        /// The signed index. A path or an `http(s)` URL — an enterprise mirror serves the same
+        /// file, and the signature is what makes that safe.
+        catalog: Option<String>,
+        /// Hex public key the catalog must be signed by. No key is baked into the binary: we have
+        /// not published one, and a placeholder would teach people to trust a key nobody holds.
+        catalog_key: Option<String>,
+        /// Rewrites the *origin* of every artifact URL, never the path or the hash.
+        mirror: Option<String>,
+    },
     Help,
     Version,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelAction {
+    List,
+    Pull {
+        id: String,
+    },
+    Verify {
+        id: Option<String>,
+    },
+    Remove {
+        id: String,
+    },
+    /// Publisher-side: sign an index with a key seed file, and print the signature.
+    Sign {
+        index: String,
+        key_file: String,
+    },
 }
 
 /// Hand-rolled because it parses one subcommand and two flags.
@@ -193,6 +224,7 @@ where
         "session" => return parse_session(it),
         "acp" => return parse_acp(it),
         "plugin" => return parse_plugin(it),
+        "models" => return parse_models(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -219,6 +251,78 @@ where
         model,
         prompt: words.join(" "),
     })
+}
+
+fn parse_models<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let action_word = it
+        .next()
+        .ok_or("panday models needs an action: list, pull, verify, rm, sign")?;
+
+    let mut positional: Vec<String> = Vec::new();
+    let mut catalog = None;
+    let mut catalog_key = None;
+    let mut mirror = None;
+    let mut key_file = None;
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--catalog" => catalog = Some(next_value(&mut it, "--catalog")?),
+            "--catalog-key" => catalog_key = Some(next_value(&mut it, "--catalog-key")?),
+            "--mirror" => mirror = Some(next_value(&mut it, "--mirror")?),
+            "--key-file" => key_file = Some(next_value(&mut it, "--key-file")?),
+            "--help" | "-h" => return Ok(Command::Help),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag `{other}` (try `panday help`)"))
+            }
+            other => positional.push(other.to_string()),
+        }
+    }
+
+    let action = match action_word.as_str() {
+        "list" => ModelAction::List,
+        "pull" => ModelAction::Pull {
+            id: positional
+                .first()
+                .cloned()
+                .ok_or("panday models pull needs a model id, e.g. qwen3.5-4b-q4")?,
+        },
+        // No id verifies everything installed, which is the form a cron job wants.
+        "verify" => ModelAction::Verify {
+            id: positional.first().cloned(),
+        },
+        "rm" | "remove" => ModelAction::Remove {
+            id: positional
+                .first()
+                .cloned()
+                .ok_or("panday models rm needs a model id")?,
+        },
+        "sign" => ModelAction::Sign {
+            index: positional
+                .first()
+                .cloned()
+                .ok_or("panday models sign needs the index file to sign")?,
+            key_file: key_file.ok_or(
+                "panday models sign needs --key-file <path> (32 raw bytes of ed25519 seed)",
+            )?,
+        },
+        other => return Err(format!("unknown models action `{other}`")),
+    };
+
+    Ok(Command::Models {
+        action,
+        catalog,
+        catalog_key,
+        mirror,
+    })
+}
+
+fn next_value<'a, I: Iterator<Item = &'a String>>(
+    it: &mut I,
+    flag: &str,
+) -> Result<String, String> {
+    it.next()
+        .cloned()
+        .ok_or_else(|| format!("{flag} needs a value"))
 }
 
 fn parse_replay<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
@@ -531,7 +635,8 @@ pub fn help() -> String {
          panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n  \
          panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n  \
          panday acp [--workspace <dir>] [--profile <name>]   (an editor spawns this)\n  \
-         panday plugin install <name>@<version> [--registry <url>] [--trust <key>] [--yes]\n\n\
+         panday plugin install <name>@<version> [--registry <url>] [--trust <key>] [--yes]\n  \
+         panday models list|pull <id>|verify [id]|rm <id> [--catalog <path|url>] [--catalog-key <hex>] [--mirror <url>]\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
@@ -549,7 +654,8 @@ pub fn help() -> String {
          ANTHROPIC_API_KEY        enables the `anthropic` provider\n  \
          PANDAY_COMPAT_BASE_URL   enables the `together` provider (any OpenAI-compatible base)\n  \
          PANDAY_COMPAT_API_KEY    its key, if the base needs one\n  \
-         PANDAY_LOCAL_BASE_URL    llama-server base (default {})\n\n\
+         PANDAY_LOCAL_BASE_URL    llama-server base (default {})\n  \
+         PANDAY_MODEL_DIR         where GGUFs live (default ~/.panday/models)\n\n\
          Every call goes through the gateway: routed by policy, metered per call.",
         Config::LOCAL_DEFAULT
     )
@@ -740,6 +846,209 @@ fn toolchain_env() -> Vec<(String, String)> {
         .iter()
         .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
         .collect()
+}
+
+// ── `panday models` (docs/18 §Model management, M18.2) ───────────────────────
+
+/// Load a catalog, from a file or an http(s) URL, and verify its signature.
+///
+/// The key is required, and there is no default. A binary with a baked-in "official" key would be
+/// teaching people to trust a key nobody has published, and the first time somebody *did* publish
+/// one under that name the trust would already be there.
+pub async fn load_catalog(
+    source: &str,
+    trusted_key_hex: &str,
+) -> Result<panday_local::catalog::Index, String> {
+    let (bytes, signature) = if source.starts_with("http://") || source.starts_with("https://") {
+        let index = reqwest::get(source)
+            .await
+            .map_err(|e| format!("fetch {source}: {e}"))?
+            .bytes()
+            .await
+            .map_err(|e| format!("read {source}: {e}"))?
+            .to_vec();
+        // Detached signature next to the index, so a mirror serves two static files and needs no
+        // logic — and so the index bytes are never rewritten in transit by something helpful.
+        let sig = reqwest::get(format!("{source}.sig"))
+            .await
+            .map_err(|e| format!("fetch {source}.sig: {e}"))?
+            .text()
+            .await
+            .map_err(|e| format!("read {source}.sig: {e}"))?;
+        (index, sig)
+    } else {
+        let index = std::fs::read(source).map_err(|e| format!("read {source}: {e}"))?;
+        let sig = std::fs::read_to_string(format!("{source}.sig"))
+            .map_err(|e| format!("read {source}.sig: {e}"))?;
+        (index, sig)
+    };
+
+    panday_local::catalog::Index::parse_verified(&bytes, signature.trim(), trusted_key_hex)
+        .map_err(|e| e.to_string())
+}
+
+/// Run one `panday models` action, returning what to print.
+pub async fn run_models(
+    action: &ModelAction,
+    catalog: Option<&str>,
+    catalog_key: Option<&str>,
+    mirror: Option<&str>,
+) -> Result<String, String> {
+    use panday_local::models::Store;
+
+    let store = Store::new(Store::default_location());
+
+    // Signing is publisher-side and needs no catalog, so it is handled before the catalog is
+    // demanded — asking a publisher for the signature of the thing they are about to sign would be
+    // a circular requirement.
+    if let ModelAction::Sign { index, key_file } = action {
+        return sign_index(index, key_file);
+    }
+
+    match action {
+        ModelAction::List => {
+            let installed = store.list();
+            let mut out = String::new();
+            if installed.is_empty() {
+                out.push_str("no models installed\n");
+            }
+            for model in &installed {
+                out.push_str(&format!(
+                    "{:<24} {:>8} MB  {}\n",
+                    model.id,
+                    model.size_bytes / 1_000_000,
+                    model.path.display()
+                ));
+            }
+
+            // The catalog half is optional: `list` must work on a machine with no catalog and no
+            // network, which is most of what the offline tier is for.
+            if let (Some(source), Some(key)) = (catalog, catalog_key) {
+                let index = load_catalog(source, key).await?;
+                out.push_str("\navailable:\n");
+                for model in &index.models {
+                    let mark = if store.is_installed(&model.id) {
+                        "*"
+                    } else {
+                        " "
+                    };
+                    out.push_str(&format!(
+                        "{mark} {:<24} {:>8} MB  ~{} MB RAM  {}\n",
+                        model.id,
+                        model.size_bytes / 1_000_000,
+                        model.ram_estimate_mb,
+                        model.license
+                    ));
+                }
+            }
+            Ok(out)
+        }
+
+        ModelAction::Pull { id } => {
+            let (source, key) = require_catalog(catalog, catalog_key)?;
+            let index = load_catalog(source, key).await?;
+            let artifact = index.get(id).map_err(|e| e.to_string())?;
+            let mirror = mirror.map(panday_local::catalog::Mirror::new);
+            let installed = store
+                .pull(artifact, mirror.as_ref())
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(format!(
+                "{} installed at {} ({} MB, {} — needs about {} MB of RAM)\n",
+                installed.id,
+                installed.path.display(),
+                installed.size_bytes / 1_000_000,
+                artifact.license,
+                artifact.ram_estimate_mb
+            ))
+        }
+
+        ModelAction::Verify { id } => {
+            let (source, key) = require_catalog(catalog, catalog_key)?;
+            let index = load_catalog(source, key).await?;
+
+            let targets: Vec<String> = match id {
+                Some(one) => vec![one.clone()],
+                None => store.list().into_iter().map(|i| i.id).collect(),
+            };
+            if targets.is_empty() {
+                return Ok("no models installed\n".into());
+            }
+
+            let mut out = String::new();
+            let mut bad = 0;
+            for target in targets {
+                match index.get(&target) {
+                    Ok(artifact) => match store.verify(artifact) {
+                        Ok(()) => {
+                            out.push_str(&format!("ok       {target} ({})\n", artifact.license))
+                        }
+                        Err(e) => {
+                            bad += 1;
+                            out.push_str(&format!("CORRUPT  {target}: {e}\n"));
+                        }
+                    },
+                    // Installed but not in the catalog: not corrupt, but not something we can
+                    // vouch for either, and silently passing it would make `verify` meaningless.
+                    Err(_) => {
+                        bad += 1;
+                        out.push_str(&format!("UNKNOWN  {target}: not in this catalog\n"));
+                    }
+                }
+            }
+            if bad > 0 {
+                return Err(format!("{out}{bad} model(s) failed verification"));
+            }
+            Ok(out)
+        }
+
+        ModelAction::Remove { id } => {
+            store.remove(id).map_err(|e| e.to_string())?;
+            Ok(format!("{id} removed\n"))
+        }
+
+        ModelAction::Sign { .. } => unreachable!("handled above"),
+    }
+}
+
+fn require_catalog<'a>(
+    catalog: Option<&'a str>,
+    key: Option<&'a str>,
+) -> Result<(&'a str, &'a str), String> {
+    match (catalog, key) {
+        (Some(c), Some(k)) => Ok((c, k)),
+        _ => Err(
+            "this needs a signed catalog: --catalog <path|url> --catalog-key <hex>\n\
+                  (no key is built in — see docs/18 §Model management)"
+                .into(),
+        ),
+    }
+}
+
+/// Publisher-side signing, so the format has a way to be produced as well as consumed.
+fn sign_index(index_path: &str, key_file: &str) -> Result<String, String> {
+    let bytes = std::fs::read(index_path).map_err(|e| format!("read {index_path}: {e}"))?;
+    // Parsed before signing: signing a catalog that our own reader would reject publishes a file
+    // nobody can use, and the licence check is exactly the rule a publisher is most likely to
+    // break.
+    panday_local::catalog::Index::parse_unverified(&bytes).map_err(|e| e.to_string())?;
+
+    let seed = std::fs::read(key_file).map_err(|e| format!("read {key_file}: {e}"))?;
+    let seed: [u8; 32] = seed
+        .as_slice()
+        .try_into()
+        .map_err(|_| format!("{key_file} must be exactly 32 bytes of ed25519 seed"))?;
+    let keys = panday_plugins::signature::SigningKeyPair::from_bytes(&seed);
+
+    let signature = keys.sign_archive(&bytes);
+    std::fs::write(format!("{index_path}.sig"), &signature)
+        .map_err(|e| format!("write {index_path}.sig: {e}"))?;
+    Ok(format!(
+        "signed {index_path}\n  signature: {index_path}.sig\n  public key: {}\n\
+         \nClients verify with --catalog-key {}\n",
+        keys.public_key_hex(),
+        keys.public_key_hex()
+    ))
 }
 
 #[cfg(test)]

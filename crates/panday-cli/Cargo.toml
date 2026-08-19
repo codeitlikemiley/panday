@@ -26,6 +26,8 @@ agent-client-protocol.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 panday-router.workspace = true
+# `panday models …` (M18.2). No cycle: panday-local knows nothing about the CLI.
+panday-local.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 

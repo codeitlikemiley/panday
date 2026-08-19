@@ -11,6 +11,19 @@
 use panday_local::{Local, LocalConfig};
 use std::process::ExitCode;
 
+/// The port `panday local` was told to talk to, so a supervised server is started on the port the
+/// gateway will actually call rather than on a default that happens to match.
+fn port_of(base_url: &str) -> Option<u16> {
+    base_url
+        .rsplit(':')
+        .next()?
+        .trim_end_matches('/')
+        .split('/')
+        .next()?
+        .parse()
+        .ok()
+}
+
 fn main() -> ExitCode {
     let rt = match tokio::runtime::Runtime::new() {
         Ok(rt) => rt,
@@ -72,6 +85,25 @@ async fn run() -> ExitCode {
                 Some(v) => config = config.log(v),
                 None => return fail("--log needs a path"),
             },
+            // M18.2: start and supervise the inference server ourselves. Without this, `panday
+            // local` attaches to whatever is already listening — which is the right default,
+            // because killing a server the user started would be a surprise.
+            "--serve" => match next() {
+                Some(gguf) => {
+                    let port = port_of(&config.base_url).unwrap_or(8081);
+                    let mut server = panday_local::supervisor::ServerConfig::llama_server(
+                        std::path::Path::new(&gguf),
+                        port,
+                    );
+                    if let Ok(binary) = std::env::var("PANDAY_LOCAL_SERVER_BIN") {
+                        if !binary.trim().is_empty() {
+                            server.binary = binary;
+                        }
+                    }
+                    config.serve = Some(server);
+                }
+                None => return fail("--serve needs a path to a .gguf"),
+            },
             other if other.starts_with('-') => {
                 return fail(&format!("unknown flag `{other}`"));
             }
@@ -128,7 +160,9 @@ fn usage() -> String {
      --model      a `local/...` model id\n  \
      --workspace  the directory tools are scoped to (default: cwd)\n  \
      --profile    read_only | dev | unleashed (default dev)\n  \
-     --log        where the event log goes (default <workspace>/.panday/session.jsonl)\n\n\
+     --log        where the event log goes (default <workspace>/.panday/session.jsonl)\n  \
+     --serve      start and supervise llama-server on this .gguf, instead of attaching to a\n               \
+     running one (binary from $PANDAY_LOCAL_SERVER_BIN, default `llama-server`)\n\n\
      Loopback only: a remote base URL is refused, because the offline tier's promise is\n\
      that nothing leaves the machine."
         .to_string()

@@ -103,7 +103,52 @@ offline via ed25519 pubkey baked into the binary.
   "the client cannot tell" something you can check rather than assert. Usage is metered at
   real token counts and zero money: a free tier that reports nothing is a free tier nobody
   can reason about.
-- **M18.2** Model supervisor: spawn/health/restart llama-server; `models pull/verify` with signed catalog.
+- **M18.2** Model supervisor: spawn/health/restart llama-server; `models pull/verify` with signed catalog. ✅ *(shipped: `panday_local::supervisor`, `panday_local::catalog`, `panday_local::models`, `panday models list|pull|verify|rm|sign`, `panday local --serve <gguf>`.)*
+
+  **The supervisor supervises a command, not llama.cpp.** The contract is "a process that serves an
+  OpenAI-compatible API on a port and answers a health check" — which is exactly what makes
+  mistral.rs a drop-in, and what the `local` adapter already assumed. A supervisor that parsed
+  llama-server's flags would need rewriting for the alternative it is supposed to support.
+
+  **Restarts are bounded, and the reason is kept.** A model that crashes on load crashes on every
+  load; restarting forever burns a laptop's battery and buries the one error message that explains
+  why. After N restarts inside a window the state becomes `Failed` holding the last exit status.
+  Deaths outside the window do not count — a server that ran all day and then crashed twice is not
+  the same thing as one that never started.
+
+  **A process that has already exited is reported immediately**, rather than after the startup
+  timeout: waiting two minutes to say "it died in 30ms" spends the only attention the user was
+  going to give it. And stopping is not a crash — the shutdown flag is checked before the death is
+  classified, or a supervisor fights its own shutdown and becomes a process nobody can stop.
+
+  **Supervising is opt-in** (`--serve`). Both workflows are real: a developer with `llama-server`
+  already up wants `panday local` to attach to it, and somebody with a GGUF and no patience wants
+  one command. Supervising a server we did not start would mean killing a process the user is
+  using. When we did start it, dropping the session stops it — a 6GB process outliving the thing
+  that spawned it is one nobody remembers running.
+
+  **The catalog is checked twice, and both checks matter.** The signature covers the index, so a
+  mirror — by design a host we do not control — cannot add a model, change a URL, or lower a hash.
+  The sha256 covers the artifact, so the file that arrives is the file the signed index named. A
+  signature over an index whose contents nobody verifies authenticates a promise, not a download.
+  Verification happens over the bytes as received, before parsing: verifying a re-serialization is
+  the canonicalization hole, because two documents that parse the same can serialize differently.
+
+  **Downloads are hashed while they stream**, into a `.partial` file that is renamed only after the
+  digest matches. Hashing afterwards means writing a file that might be wrong and then trusting a
+  second read of the same disk; a rejected file is deleted rather than left for somebody to
+  eventually rename.
+
+  **A licence we cannot redistribute is a parse error, not a filtered row.** docs/18 says the
+  catalog "refuses to list anything we can't redistribute" — a rejected catalog is a bug report,
+  and a silently shortened one is a mystery. Llama- and Gemma-style community licences are
+  therefore not on the allowlist.
+
+  **No trusted key is baked into the binary, and the shipped catalog is an example.** We have not
+  published an index, and a placeholder key would teach people to trust a key nobody holds — so
+  `--catalog-key` is required and `catalog/models.example.json` carries zeroed digests and says so
+  in the file. `panday models sign` is the publisher half, and it parses before it signs: signing a
+  catalog our own reader would reject publishes a file nobody can use.
 - **M18.3** SQLite event store passes the same harness suite as PG (one test matrix, two stores). ✅ *(shipped: `panday_local::sqlite::SqliteStore` + `panday_harness::store_conformance`; matrix in `crates/panday-local/tests/store_matrix.rs`.)*
 
   **The matrix is one function, not one suite per store.** `store_conformance::run` holds

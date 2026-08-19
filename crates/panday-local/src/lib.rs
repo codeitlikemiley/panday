@@ -22,7 +22,10 @@
 //! honest", and a second gateway would be the first thing to drift. The metering,
 //! routing, cache and breaker paths are the cloud's, exercised locally.
 
+pub mod catalog;
+pub mod models;
 pub mod sqlite;
+pub mod supervisor;
 
 use panday_harness::native::{register_native, Workspace};
 use panday_harness::tools::ToolRegistry;
@@ -66,6 +69,12 @@ pub struct LocalConfig {
     /// Declared, not measured — M19.2 measures them, and the system prompt says
     /// "(estimated)" until it does.
     pub capabilities: panday_types::CapabilityProfile,
+    /// Spawn and supervise the inference server, rather than expecting one to be running (M18.2).
+    ///
+    /// Optional because both are real workflows: a developer with `llama-server` already up wants
+    /// `panday local` to attach to it, and somebody with a GGUF and no patience wants one command.
+    /// Supervising a server we did not start would mean killing a process the user is using.
+    pub serve: Option<crate::supervisor::ServerConfig>,
 }
 
 impl LocalConfig {
@@ -74,6 +83,7 @@ impl LocalConfig {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
             model: ModelRef("local/qwen3.5-4b".into()),
+            serve: None,
             log: workspace.join(".panday/session.jsonl"),
             workspace,
             // A local session is still gated: docs/13's profiles are about what a human
@@ -146,11 +156,16 @@ pub enum LocalError {
     Log(String, String),
     #[error("turn: {0}")]
     Turn(String),
+    #[error("model server: {0}")]
+    Server(String),
 }
 
 /// A booted offline session.
 pub struct Local {
     actor: SessionActor,
+    /// Alive for as long as the session is, when we started it. Dropping `Local` stops it — a
+    /// model server outliving the thing that spawned it is a 6GB process nobody remembers running.
+    server: Option<crate::supervisor::Supervisor>,
     store: Arc<JsonlStore>,
     usage: Arc<panday_gateway::CollectUsage>,
     renderer: panday_harness::replay::Renderer,
@@ -160,12 +175,37 @@ pub struct Local {
     rendered: usize,
 }
 
+impl Drop for Local {
+    fn drop(&mut self) {
+        // Only ever stops a server this process started; one that was already running is somebody
+        // else's, and killing it on exit would be a surprise nobody could explain.
+        if let Some(server) = &self.server {
+            server.stop();
+        }
+    }
+}
+
 impl Local {
     /// Boot the whole composition.
     pub async fn boot(config: LocalConfig) -> Result<Self, LocalError> {
         if !is_loopback(&config.base_url) {
             return Err(LocalError::NotLoopback(config.base_url));
         }
+
+        // Before anything else: if we are supervising the server, it has to be up, because every
+        // turn below assumes it. Failing here says "the model server did not start"; failing later
+        // says "connection refused", and only one of those is actionable.
+        let server = match &config.serve {
+            Some(server_config) => Some(
+                crate::supervisor::Supervisor::start(
+                    server_config.clone(),
+                    Arc::new(crate::supervisor::HttpHealth::new(&server_config.base_url)),
+                )
+                .await
+                .map_err(|e| LocalError::Server(e.to_string()))?,
+            ),
+            None => None,
+        };
 
         let workspace = config.workspace.canonicalize().map_err(|e| {
             LocalError::Workspace(config.workspace.display().to_string(), e.to_string())
@@ -257,6 +297,7 @@ impl Local {
 
         Ok(Self {
             actor,
+            server,
             store,
             usage,
             renderer: panday_harness::replay::Renderer::new(ReplayOptions {

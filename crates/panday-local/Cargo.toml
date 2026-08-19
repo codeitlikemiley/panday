@@ -15,12 +15,20 @@ panday-router.workspace = true
 panday-reducer.workspace = true
 panday-sandbox.workspace = true
 thiserror.workspace = true
+panday-plugins.workspace = true
+tracing.workspace = true
+serde.workspace = true
+sha2.workspace = true
+# `models pull` is the one thing in this crate that touches the network, and it is explicit:
+# nothing else here reaches past loopback (ADR-011).
+reqwest.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+# `process` for the model-server supervisor, which spawns and reaps llama-server.
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "time", "io-util"] }
 
 [dev-dependencies]
 axum.workspace = true

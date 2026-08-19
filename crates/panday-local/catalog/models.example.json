@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "An EXAMPLE catalog, not a published one. The digests below are zeros and no key has signed it.",
+    "A real index needs two things we cannot fabricate here: the sha256 of each GGUF as actually",
+    "published, and a signature from a key whose public half users are told to trust. Shipping a",
+    "file with invented digests would fail on first use, and shipping a placeholder signing key",
+    "would be worse than shipping none.",
+    "Publish one with: panday models sign <index.json> (docs/18 M18.2), and point clients at it",
+    "with --catalog and --catalog-key."
+  ],
+  "version": 1,
+  "models": [
+    {
+      "id": "qwen3.5-4b-q4",
+      "url": "https://example.invalid/gguf/qwen3.5-4b-q4_k_m.gguf",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "license": "Apache-2.0",
+      "size_bytes": 2500000000,
+      "ram_estimate_mb": 6000,
+      "profile": {
+        "max_context_tokens": 16000,
+        "json_reliability": 0.7,
+        "tool_reliability": 0.6,
+        "vision": false,
+        "max_subagents": 1,
+        "provenance": "declared"
+      }
+    },
+    {
+      "id": "gpt-oss-20b-q4",
+      "url": "https://example.invalid/gguf/gpt-oss-20b-q4_k_m.gguf",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "license": "Apache-2.0",
+      "size_bytes": 12000000000,
+      "ram_estimate_mb": 24000,
+      "profile": {
+        "max_context_tokens": 32000,
+        "json_reliability": 0.85,
+        "tool_reliability": 0.75,
+        "vision": false,
+        "max_subagents": 2,
+        "provenance": "declared"
+      }
+    }
+  ]
+}
