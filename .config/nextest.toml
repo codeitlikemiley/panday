@@ -22,3 +22,20 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# The `#[tool]` compile-fail suite (docs/10 M10.4) builds a scratch crate, which means
+# compiling the workspace's dependency tree a second time into `target/tests/trybuild`.
+# On a cold CI cache that is minutes, and the default 2-minute kill (30s × 4) ends the
+# run before rustc has finished — which is what happened on the first CI run after
+# M10.4 landed: "(test timed out)" with nothing else failing.
+#
+# Overridden rather than `#[ignore]`d: the error messages *are* the milestone's
+# deliverable, and a compile-fail suite that only runs when someone remembers is a
+# suite that stops matching the macro.
+[[profile.default.overrides]]
+filter = 'test(bad_signatures_fail_to_compile_with_a_useful_message)'
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+[[profile.ci.overrides]]
+filter = 'test(bad_signatures_fail_to_compile_with_a_useful_message)'
+slow-timeout = { period = "60s", terminate-after = 10 }

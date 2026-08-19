@@ -87,6 +87,14 @@ commercial product; know your license graph early.
 5. Docs lane: `mdbook build docs` + link check — docs that don't build are
    broken builds
 
+**One test has its own timeout** (`.config/nextest.toml`): the `#[tool]` compile-fail
+suite (docs/10 M10.4) builds a scratch crate, so on a cold cache it compiles the
+dependency tree a second time. The default 2-minute kill ended the run before rustc
+finished, which showed up as "(test timed out)" with nothing else failing. It is
+overridden rather than `#[ignore]`d — a macro's error messages are its quality, and a
+compile-fail suite that runs only when someone remembers stops matching the macro.
+
+
 ## Testing philosophy
 
 - The event protocol gets **golden-file tests**: serialized fixtures checked
