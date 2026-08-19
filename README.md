@@ -43,6 +43,16 @@ cargo build --release
 ./target/release/panday replay .panday/session.jsonl --costs
 ```
 
+**The hosted shape, on a laptop.** `just dev` brings up Postgres and MinIO, migrates,
+and prints an API key with the `curl` that uses it — accounts, per-key rate limiting,
+the ledger and the route audit all wired (`docs/22-deployment.md`).
+
+```bash
+just dev        # stack up, migrated, one API key printed once
+just serve      # the platform on the host, against that database
+just check      # fmt, clippy, the whole test suite
+```
+
 **Skills port unmodified.** Drop a directory containing a `SKILL.md`: frontmatter
 keys other runtimes use (`allowed-tools`, `license`, nested `metadata`) are
 ignored rather than rejected, and `references/` loads on demand

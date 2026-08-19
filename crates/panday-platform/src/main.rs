@@ -1,6 +1,268 @@
-//! panday-platform service binary. REST API, Stripe webhooks, admin — per
-//! docs/17 milestones.
+//! The `panday-platform` service (docs/17, docs/22 shape 2).
+//!
+//! The composition root. Every other binary in the tree is a *deployment shape* with a piece
+//! missing on purpose: `panday-gateway` has no database (it cannot — `panday-platform` depends on
+//! it, not the other way round), `panday local` has no accounts (ADR-011). This one has all of it,
+//! and that is its whole job: connect the ledger to the gateway's usage sink, the key table to the
+//! ingress, the route audit to the router.
+//!
+//! Configuration is environment variables, because that is what every platform in docs/22 shape 2
+//! supplies. A missing `PANDAY_DATABASE_URL` is fatal rather than defaulted: a billing service that
+//! silently starts without its ledger is worse than one that does not start.
 
-fn main() {
-    println!("panday-platform: see docs/17-platform.md — first milestone M17.1");
+use panday_gateway::adapters::anthropic::Anthropic;
+use panday_gateway::adapters::openai_compat::OpenAiCompat;
+use panday_gateway::ingress::{IngressState, RateLimiter};
+use panday_gateway::{Gateway, ProviderAdapter};
+use panday_platform::entitlements::Plan;
+use panday_platform::keys::KeyAuthenticator;
+use panday_platform::ledger::{LedgerBudget, LedgerSink, OnWriteFailure};
+use panday_platform::pg;
+use panday_platform::routes::PgRouteAudit;
+use panday_router::{ModelCatalog, PolicyRouter};
+use std::sync::Arc;
+
+const POLICY: &str = include_str!("../../panday-router/policy/default.yaml");
+
+const USAGE: &str = "\
+panday-platform — the hosted control plane (docs/17)
+
+  panday-platform serve                          serve the API (default)
+  panday-platform migrate                        apply migrations and exit
+  panday-platform account <name>                 create an account, print its id
+  panday-platform issue-key <account-id> <name> [scopes]
+                                                 mint an API key; the secret is printed ONCE
+  panday-platform keys <account-id>              list an account's keys (never the secret)
+  panday-platform revoke-key <account-id> <key-id>
+  panday-platform prune-routes <days>            drop route audit rows older than <days>
+
+Scopes are comma-separated: models,sessions,admin (default: models,sessions).
+PANDAY_DATABASE_URL is required by every subcommand.
+";
+
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    // Bootstrap lives in the same binary as the service on purpose: the first key on a fresh
+    // deployment has to come from somewhere, and "somewhere" being a second tool nobody built is
+    // how a service ships without a way to use it. M17.7's admin panel replaces the ergonomics,
+    // not the need.
+    let result = match argv.as_slice() {
+        [] | ["serve"] => run().await,
+        ["migrate"] => migrate().await,
+        ["account", name] => account(name).await,
+        ["issue-key", account, name] => issue_key(account, name, "models,sessions").await,
+        ["issue-key", account, name, scopes] => issue_key(account, name, scopes).await,
+        ["keys", account] => list_keys(account).await,
+        ["revoke-key", account, key] => revoke_key(account, key).await,
+        ["prune-routes", days] => prune_routes(days).await,
+        ["-h" | "--help" | "help"] => {
+            print!("{USAGE}");
+            return;
+        }
+        other => {
+            eprint!("panday-platform: unknown command {other:?}\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+
+    if let Err(e) = result {
+        eprintln!("panday-platform: {e}");
+        std::process::exit(1);
+    }
+}
+
+/// The pool every subcommand needs, migrated. A CLI that ran against an un-migrated database would
+/// fail with a missing-column error instead of doing its job.
+async fn admin_pool() -> Result<sqlx::PgPool, String> {
+    let url = env("PANDAY_DATABASE_URL").ok_or("PANDAY_DATABASE_URL is required")?;
+    let pool = pg::connect(&url).await.map_err(|e| e.to_string())?;
+    pg::migrate_embedded(&pool)
+        .await
+        .map_err(|e| format!("migrate: {e}"))?;
+    Ok(pool)
+}
+
+/// Migrate and exit — what a deploy step or a `just dev` runs before anything serves.
+async fn migrate() -> Result<(), String> {
+    let pool = admin_pool().await?;
+    // `admin_pool` already migrated; report what the schema is, because "it worked" with no output
+    // is indistinguishable from "it did nothing" in a deploy log.
+    let names = pg::migrate_embedded(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("schema up to date ({} migrations)", names.len());
+    Ok(())
+}
+
+async fn account(name: &str) -> Result<(), String> {
+    let pool = admin_pool().await?;
+    let id = pg::create_account(&pool, name)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("{id}");
+    Ok(())
+}
+
+async fn issue_key(account: &str, name: &str, scopes: &str) -> Result<(), String> {
+    use panday_platform::keys::{self, Environment, Scope};
+
+    let account = parse_uuid(account)?;
+    let scopes: Vec<Scope> = scopes
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| Scope::parse(s).ok_or_else(|| format!("unknown scope `{s}`")))
+        .collect::<Result<_, _>>()?;
+
+    let pool = admin_pool().await?;
+    let issued = keys::issue(&pool, account, name, Environment::Live, &scopes)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Printed once, to stdout, with the warning on stderr so a script can capture the key alone.
+    eprintln!("This is the only time this key is shown. Store it now.");
+    println!("{}", issued.plaintext);
+    Ok(())
+}
+
+async fn list_keys(account: &str) -> Result<(), String> {
+    let pool = admin_pool().await?;
+    for key in panday_platform::keys::list(&pool, parse_uuid(account)?)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        let state = if key.revoked { "revoked" } else { "active" };
+        let used = key.last_used_at.as_deref().unwrap_or("never used");
+        let scopes: Vec<&str> = key.scopes.iter().map(|s| s.as_str()).collect();
+        println!(
+            "{}  {:<20} {:<8} {:<24} {}",
+            key.key_id,
+            key.name,
+            state,
+            used,
+            scopes.join(",")
+        );
+    }
+    Ok(())
+}
+
+async fn revoke_key(account: &str, key: &str) -> Result<(), String> {
+    let pool = admin_pool().await?;
+    panday_platform::keys::revoke(&pool, parse_uuid(account)?, parse_uuid(key)?)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("revoked");
+    Ok(())
+}
+
+async fn prune_routes(days: &str) -> Result<(), String> {
+    let days: i64 = days
+        .parse()
+        .map_err(|_| format!("`{days}` is not a number"))?;
+    let pool = admin_pool().await?;
+    let dropped = panday_platform::routes::prune(&pool, days)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("{dropped} route decisions older than {days} days deleted");
+    Ok(())
+}
+
+fn parse_uuid(s: &str) -> Result<uuid::Uuid, String> {
+    s.parse().map_err(|_| format!("`{s}` is not a uuid"))
+}
+
+async fn run() -> Result<(), String> {
+    // Content-free telemetry (docs/20 T5): a platform log with a prompt in it is a data-retention
+    // problem nobody chose.
+    panday_sdk::telemetry::init("panday-platform").map_err(|e| e.to_string())?;
+
+    let database_url = env("PANDAY_DATABASE_URL")
+        .ok_or("PANDAY_DATABASE_URL is required — the platform is the service that has a ledger")?;
+    let addr = env("PANDAY_PLATFORM_ADDR").unwrap_or_else(|| "0.0.0.0:8080".to_string());
+
+    let pool = pg::connect(&database_url)
+        .await
+        .map_err(|e| format!("database: {e}"))?;
+    // Migrate-then-serve, with the advisory lock making a rolling deploy safe (docs/22 §release
+    // engineering). Compiled-in migrations, because a container has no source tree.
+    let applied = pg::migrate_embedded(&pool)
+        .await
+        .map_err(|e| format!("migrate: {e}"))?;
+    tracing::info!(count = applied.len(), "schema up to date");
+
+    // The catalog resolves the policy's pool patterns and supplies the prices the ledger bills at.
+    // A pool pattern that resolves to nothing is a rule that routes nowhere, so this is checked
+    // before anything is served rather than discovered per request.
+    let catalog = ModelCatalog::shipped();
+    let prices = Arc::new(catalog.price_table());
+    let router = PolicyRouter::from_yaml(POLICY)
+        .map_err(|e| format!("policy: {e}"))?
+        .with_catalog(catalog);
+
+    let mut builder = Gateway::builder(Arc::new(router))
+        .costs(prices.clone())
+        // Fail-closed: this surface is the API product, and docs/17 is explicit that an API key's
+        // usage must be billed or refused — never served for free because a write failed.
+        .usage_sink(Arc::new(LedgerSink::new(
+            pool.clone(),
+            prices,
+            OnWriteFailure::FailClosed,
+        )))
+        .budget(Arc::new(LedgerBudget::new(pool.clone(), Plan::free())))
+        .route_audit(Arc::new(PgRouteAudit::new(pool.clone())));
+
+    for (provider, adapter) in adapters() {
+        builder = builder.adapter(provider, adapter);
+    }
+    let gateway = Arc::new(builder.build());
+    tracing::info!(providers = ?gateway.providers(), "model plane ready");
+
+    // Every request carries a key; the account comes from the key, so the fallback account here is
+    // only ever used by code paths that cannot reach the network.
+    let mut state = IngressState::open(gateway, panday_types::id::AccountId::new())
+        .with_auth(Arc::new(KeyAuthenticator::new(pool.clone())));
+    if let Some(limit) = env("PANDAY_RATE_LIMIT_PER_MIN").and_then(|v| v.parse().ok()) {
+        state = state.with_rate_limit(Arc::new(RateLimiter::per_minute(limit)));
+    }
+
+    let app = panday_gateway::ingress::router(state);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("bind {addr}: {e}"))?;
+    println!("panday-platform listening on {addr}");
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("serve: {e}"))
+}
+
+/// Adapters the environment actually configured.
+///
+/// The local tier is always registered: it needs no credentials, and a llama-server that is not
+/// running fails at connect with a clear error rather than being invisible here.
+fn adapters() -> Vec<(&'static str, Arc<dyn ProviderAdapter>)> {
+    let mut out: Vec<(&'static str, Arc<dyn ProviderAdapter>)> = Vec::new();
+    if let Some(key) = env("ANTHROPIC_API_KEY") {
+        out.push(("anthropic", Arc::new(Anthropic::new(key))));
+    }
+    if let Some(base) = env("PANDAY_COMPAT_BASE_URL") {
+        out.push((
+            "together",
+            Arc::new(OpenAiCompat::new(base, env("PANDAY_COMPAT_API_KEY"))),
+        ));
+    }
+    let local = env("PANDAY_LOCAL_BASE_URL").unwrap_or_else(|| "http://127.0.0.1:8081".to_string());
+    out.push(("local", Arc::new(OpenAiCompat::local(local))));
+    out
+}
+
+/// An environment variable that is set *and* has content. An empty string is how a compose file
+/// spells "unset", and treating it as configured is how a service starts with an empty API key.
+fn env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }

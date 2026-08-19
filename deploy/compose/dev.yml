@@ -1,0 +1,82 @@
+# Shape 1 — dev/solo (docs/22). Postgres, MinIO, and optionally the services themselves.
+#
+#   just dev              # infra up, migrated, with an API key printed
+#   just dev-down         # stop it
+#   just dev-reset        # stop it and delete the data
+#
+# Two differences from `deploy/integration-compose.yml`, both deliberate:
+#
+# - **The data survives a restart.** Named volumes, not tmpfs, and fsync left on. The integration
+#   lane's database is disposable by definition; this one holds the account and the API key you
+#   just minted, and losing those on every `docker compose down` would make the workflow useless.
+# - **Different ports again** (5442, 9200/9201). So that `just dev` and the integration lane can
+#   run at the same time without one migrating over the other's schema mid-test.
+#
+# The services are behind a profile: `docker compose --profile services up` builds and runs the
+# platform in a container, which is what you want when testing the deployable artifact. The default
+# is infra only, because during development the service belongs on the host where a rebuild is
+# seconds rather than a container image.
+name: panday-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: panday
+      POSTGRES_PASSWORD: panday
+      POSTGRES_DB: panday
+    ports:
+      - "5442:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panday -d panday"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Artifact storage (docs/15 §spilling). S3-compatible, so one code path serves MinIO here and S3
+  # in production. Nothing reads it yet — the artifact store lands with the reducer's spill path —
+  # and it is here so that when it does, the dev shape does not change.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9201"
+    environment:
+      MINIO_ROOT_USER: panday
+      MINIO_ROOT_PASSWORD: pandaypanday
+    ports:
+      - "9200:9000"
+      - "9201:9201"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  platform:
+    profiles: ["services"]
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    environment:
+      # `postgres`, not localhost: inside the compose network the service resolves by name.
+      PANDAY_DATABASE_URL: postgres://panday:panday@postgres:5432/panday
+      PANDAY_PLATFORM_ADDR: 0.0.0.0:8080
+      PANDAY_RATE_LIMIT_PER_MIN: "120"
+      # A llama-server on the host, if one is running. `host.docker.internal` is how a container
+      # reaches it on macOS and Windows; on Linux the compose `extra_hosts` below provides it.
+      PANDAY_LOCAL_BASE_URL: http://host.docker.internal:8081/v1
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8088:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:

@@ -34,6 +34,18 @@ pub enum Scope {
 }
 
 impl Scope {
+    /// The wire spelling, for a CLI argument or an audit row. Unknown scopes are rejected rather
+    /// than ignored: silently dropping a misspelled `admn` would mint a key that is weaker than the
+    /// operator believes it is.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "models" => Some(Scope::Models),
+            "sessions" => Some(Scope::Sessions),
+            "admin" => Some(Scope::Admin),
+            _ => None,
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Scope::Models => "models",

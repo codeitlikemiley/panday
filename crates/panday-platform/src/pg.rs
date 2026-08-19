@@ -50,6 +50,70 @@ pub async fn connect(url: &str) -> Result<PgPool, PgError> {
 /// a no-op — a tracking table can come with M17.1 when there is a second migration whose order
 /// matters. Being honest about that now is better than a half-built migration framework.
 pub async fn migrate(pool: &PgPool, dir: &std::path::Path) -> Result<Vec<String>, PgError> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| PgError::Migrate {
+            file: dir.display().to_string(),
+            detail: e.to_string(),
+        })?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "sql"))
+        .collect();
+    files.sort();
+
+    let mut owned: Vec<(String, String)> = Vec::new();
+    for path in files {
+        let sql = std::fs::read_to_string(&path).map_err(|e| PgError::Migrate {
+            file: path.display().to_string(),
+            detail: e.to_string(),
+        })?;
+        owned.push((
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            sql,
+        ));
+    }
+    let borrowed: Vec<(&str, &str)> = owned
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect();
+    apply(pool, &borrowed).await
+}
+
+/// The migrations compiled into the binary, in order.
+///
+/// A service in a container has no `migrations/` directory to read — `CARGO_MANIFEST_DIR` is a
+/// build machine's path — so the deployable path is this one. Listed by hand rather than globbed
+/// because a build script that walked the directory would make the set depend on what happened to
+/// be checked out; a test asserts this list and the directory agree, so adding a file and
+/// forgetting this line fails in CI rather than at the first boot after a deploy.
+pub const EMBEDDED_MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init.sql", include_str!("../migrations/0001_init.sql")),
+    (
+        "0002_accounts_keys_plans.sql",
+        include_str!("../migrations/0002_accounts_keys_plans.sql"),
+    ),
+    (
+        "0003_balances.sql",
+        include_str!("../migrations/0003_balances.sql"),
+    ),
+    (
+        "0004_key_last_used.sql",
+        include_str!("../migrations/0004_key_last_used.sql"),
+    ),
+    (
+        "0005_route_decisions.sql",
+        include_str!("../migrations/0005_route_decisions.sql"),
+    ),
+];
+
+/// Apply the compiled-in migrations. What a deployed service calls.
+pub async fn migrate_embedded(pool: &PgPool) -> Result<Vec<String>, PgError> {
+    apply(pool, EMBEDDED_MIGRATIONS).await
+}
+
+async fn apply(pool: &PgPool, migrations: &[(&str, &str)]) -> Result<Vec<String>, PgError> {
     // One migrator at a time. `CREATE TABLE IF NOT EXISTS` is *not* atomic against a concurrent
     // create: two of them race in the system catalog and one gets "duplicate key value violates
     // unique constraint pg_type_typname_nsp_index". Found by the integration suite, whose six
@@ -72,7 +136,7 @@ pub async fn migrate(pool: &PgPool, dir: &std::path::Path) -> Result<Vec<String>
             detail: e.to_string(),
         })?;
 
-    let result = apply_all(&mut conn, dir).await;
+    let result = apply_all(&mut conn, migrations).await;
 
     // Released even on failure: holding it would block every other migrator on a database that
     // is already in trouble.
@@ -85,40 +149,21 @@ pub async fn migrate(pool: &PgPool, dir: &std::path::Path) -> Result<Vec<String>
 
 async fn apply_all(
     conn: &mut sqlx::PgConnection,
-    dir: &std::path::Path,
+    migrations: &[(&str, &str)],
 ) -> Result<Vec<String>, PgError> {
-    let mut files: Vec<_> = std::fs::read_dir(dir)
-        .map_err(|e| PgError::Migrate {
-            file: dir.display().to_string(),
-            detail: e.to_string(),
-        })?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|e| e == "sql"))
-        .collect();
-    files.sort();
-
     let mut applied = Vec::new();
-    for path in files {
-        let sql = std::fs::read_to_string(&path).map_err(|e| PgError::Migrate {
-            file: path.display().to_string(),
-            detail: e.to_string(),
-        })?;
+    for (name, sql) in migrations {
         // `AssertSqlSafe`, because the string comes from a checked-in migration file rather
         // than from anything a user typed. sqlx makes this explicit on purpose, and the honest
         // answer is the one it asks for: this SQL is ours.
-        sqlx::raw_sql(sqlx::AssertSqlSafe(sql.clone()))
+        sqlx::raw_sql(sqlx::AssertSqlSafe(sql.to_string()))
             .execute(&mut *conn)
             .await
             .map_err(|e| PgError::Migrate {
-                file: path.display().to_string(),
+                file: (*name).to_string(),
                 detail: e.to_string(),
             })?;
-        applied.push(
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        );
+        applied.push((*name).to_string());
     }
     Ok(applied)
 }
@@ -333,4 +378,41 @@ pub fn test_database_url() -> Option<String> {
 /// Convenience for a caller that wants JSON out of a typed value.
 pub fn json(value: &impl Serialize) -> serde_json::Value {
     serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
+}
+
+#[cfg(test)]
+mod embedded_tests {
+    use super::*;
+
+    #[test]
+    fn every_migration_file_is_compiled_into_the_binary() {
+        // The failure this prevents: a new migration is written, tests pass (they read the
+        // directory), and the deployed service — which can only see what was compiled in — boots
+        // against a schema that is one table short.
+        let mut on_disk: Vec<String> = std::fs::read_dir(migrations_dir())
+            .expect("migrations directory")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".sql"))
+            .collect();
+        on_disk.sort();
+
+        let embedded: Vec<String> = EMBEDDED_MIGRATIONS
+            .iter()
+            .map(|(n, _)| (*n).to_string())
+            .collect();
+        assert_eq!(
+            embedded, on_disk,
+            "EMBEDDED_MIGRATIONS and migrations/ disagree — add the new file to the list, in order"
+        );
+    }
+
+    #[test]
+    fn the_embedded_migrations_are_in_filename_order() {
+        // Order is the schema: 0004 alters a table 0002 creates.
+        let mut sorted: Vec<&str> = EMBEDDED_MIGRATIONS.iter().map(|(n, _)| *n).collect();
+        let original = sorted.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, original);
+    }
 }

@@ -57,7 +57,44 @@ as versioned bundles. Support boundary documented per bundle version.
 
 ## Milestones
 
-- **M22.1** dev compose (PG+MinIO+services) + one-command bootstrap (`just dev`).
+- **M22.1** dev compose (PG+MinIO+services) + one-command bootstrap (`just dev`). ✅ *(shipped: `deploy/compose/dev.yml`, `deploy/Dockerfile`, `justfile`, `scripts/dev-key.sh`, and the `panday-platform` service binary that is the thing being brought up.)*
+
+  **`just dev` mints a key, because a stack you cannot call is not up.** It brings the containers up
+  waited-on-healthy, migrates, creates an account and prints an API key with the `curl` that uses
+  it. The alternative — infra up, then read three docs to discover you need a key and a subcommand
+  that mints one — is the "one-command bootstrap" that takes five commands.
+
+  **The platform binary is the composition root, and this is where that becomes visible.** Every
+  other binary is a deployment shape with a piece deliberately missing: `panday-gateway` has no
+  database (it *cannot* — `panday-platform` depends on it, not the reverse), `panday local` has no
+  accounts (ADR-011). Only this one wires the ledger to the gateway's usage sink, the key table to
+  the ingress, and the route audit to the router. It also carries the bootstrap subcommands
+  (`migrate`, `account`, `issue-key`, `keys`, `revoke-key`, `prune-routes`): the first key on a
+  fresh deployment has to come from somewhere, and "somewhere" being a second tool nobody built is
+  how a service ships without a way to use it. M17.7's admin panel replaces the ergonomics, not the
+  need.
+
+  **Migrations are compiled into the binary.** A container has no source tree, and
+  `CARGO_MANIFEST_DIR` is a path on a build machine. `pg::EMBEDDED_MIGRATIONS` is listed by hand
+  with a test asserting it matches `migrations/` — so adding a file and forgetting the list fails in
+  CI rather than at the first boot after a deploy.
+
+  **Three databases, three ports, on purpose.** 5432 is whatever the developer already runs, 5433 is
+  the integration lane (tmpfs, fsync off, disposable by definition), 5442 is this one — named
+  volumes and fsync on, because it holds the account and key you just minted. `just it` and `just
+  dev` can run at the same time without one migrating over the other mid-test, and no target of
+  either can wipe a developer's own database.
+
+  **The services are behind a compose profile.** `docker compose --profile services up` builds the
+  deployable image; the default is infra only, because during development the service belongs on the
+  host where a rebuild is seconds rather than a container image. The image itself is multi-stage,
+  runs as an unprivileged user, and is debian-slim rather than distroless — the platform needs a CA
+  bundle to reach a managed Postgres, and a smaller image that cannot verify a certificate is a
+  smaller image that does not work.
+
+  **MinIO is in the file with nothing reading it yet.** The artifact store (docs/15 §spilling) lands
+  later; having it here means the dev shape does not change when it does. Stated rather than
+  discovered, because a compose service nobody consumes is a service nobody notices is broken.
 - **M22.2** CI → staging deploy on merge; smoke suite (create session, run turn, check ledger row).
 - **M22.3** Production shape 2 live with status page; backup/restore drill passes.
 - **M22.4** T3 pool on KVM nodes with warm snapshots; chaos test: kill a pool node mid-exec, session resumes elsewhere.
