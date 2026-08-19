@@ -162,5 +162,37 @@ display encoding, not a second id.
   Storage here is the in-memory `EventStore`. The Postgres-backed store needs
   a live database and belongs to **M2.3** (the integration lane with PG+MinIO
   compose), which is where `sqlx`'s compile-time-checked queries land.
-- **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events.
+- **M3.4** Unknown-event tolerance test in CLI; ACP mapping table implemented for the core six events. ✅ *(shipped: `panday_cli::acp`, tests in `crates/panday-cli/tests/acp_mapping.rs` and `panday replay`'s own suite.)*
+
+  docs/16 calls the mapping "mechanical", which is true of the shape and not of
+  three seams:
+
+  - **A tool call is one ACP entity across two AEP events.** `ToolCall` and
+    `ToolResult` are separate log entries; ACP models one `toolCallId` that starts
+    `in_progress` and is *updated* to `completed`/`failed`. Emitting two
+    `tool_call` updates would make an editor draw the same call twice, so both
+    events derive the id through one function.
+  - **A permission request is not a session update.** It is a request *to* the
+    client that the agent blocks on, so it maps to `RequestPermissionRequest` and
+    `session_update` returns `None` for it. As a notification it would let the
+    loop run a tool nobody approved — the one bug here that costs more than a
+    rendering glitch.
+  - **ACP has a fourth permission answer we do not.** `reject_always` is a
+    remembered *denial*, which is a policy change rather than a turn answer, so
+    `decision_of` returns it flagged instead of folding it into `Deny`.
+
+  Deltas and folded messages are the same text, so a live stream sends the deltas
+  and a replay sends the folded messages; sending both prints the answer twice.
+  Tool results carry the *reduced* text — an editor showing what the model never
+  saw would be debugging a different session.
+
+  Assertions are made against serialized ACP JSON, not the Rust types: an editor
+  parses bytes, and a mapping that type-checks while emitting the wrong field name
+  does not work. The types come from the official crate's `schema::v1` module
+  rather than its root, which pins the protocol version explicitly — the crate
+  also carries a v2 draft, and drifting onto it would change the wire format
+  silently.
+
+  This is the table only; stdio transport, the `session/new` handshake and the
+  answer round trip are M16.5.
 - **M3.5** Ledger-rebuild-from-log: property test that replaying any session yields the ledger totals the live path recorded.

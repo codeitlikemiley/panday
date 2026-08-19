@@ -64,6 +64,10 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 sha2 = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
+# ACP for editors (docs/02 dependency table, docs/16 §ACP bridge). The AEP⇄ACP
+# mapping is written against the official crate's types rather than a private
+# ACP-shaped struct, so M16.5 is transport wiring and not a second translation.
+agent-client-protocol = "2"
 # docs/02: "tracing | tracing + opentelemetry". The OTLP exporter uses the
 # http-proto transport so it rides the reqwest/rustls stack already present
 # rather than pulling in a second one (tonic/grpc).

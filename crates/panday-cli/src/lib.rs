@@ -14,6 +14,8 @@
 //! rather than dialled. When M11.5 lands, this swaps to
 //! `panday_sdk::gateway::connect()` and nothing else changes.
 
+pub mod acp;
+
 use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat};
 pub use panday_gateway::CollectUsage;
 use panday_gateway::{Gateway, ProviderAdapter};
@@ -459,6 +461,32 @@ mod tests {
         let cmd = parse_args(["replay", path.to_str().unwrap()]).unwrap();
         let text = run_replay(&cmd).unwrap();
         assert!(text.contains("hello there"), "{text}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn replay_renders_a_log_containing_an_event_from_a_newer_version() {
+        // M3.4: unknown-event tolerance, in the CLI specifically. A client that
+        // failed here would break the moment the server shipped ahead of it —
+        // and `panday replay` is the tool someone reaches for at exactly that
+        // moment.
+        let path =
+            std::env::temp_dir().join(format!("panday-cli-unknown-{}.jsonl", std::process::id()));
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"v":1,"session_id":"01930000-0000-7000-8000-000000000001","seq":1,"at":"2026-01-15T12:00:00Z","event":"user_message","source":"cli","content":[{"type":"text","text":"hello"}]}"#,
+                "\n",
+                r#"{"v":1,"session_id":"01930000-0000-7000-8000-000000000001","seq":2,"at":"2026-01-15T12:00:01Z","event":"plan_updated","steps":["a"]}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+
+        let text = run_replay(&parse_args(["replay", path.to_str().unwrap()]).unwrap()).unwrap();
+        assert!(text.contains("hello"), "{text}");
+        assert!(text.contains("unknown event"), "{text}");
+        assert!(text.contains("plan_updated"), "the kind is named: {text}");
         std::fs::remove_file(&path).ok();
     }
 

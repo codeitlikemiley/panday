@@ -17,6 +17,11 @@ panday-types.workspace = true
 panday-sdk.workspace = true
 panday-gateway.workspace = true
 panday-harness.workspace = true
+agent-client-protocol.workspace = true
+serde_json.workspace = true
 panday-router.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+time.workspace = true

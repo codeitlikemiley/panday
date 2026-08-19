@@ -131,5 +131,5 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   technical demonstration.
 - **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
 - **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite.
-- **M16.5** ACP bridge: interactive session from Zed; permission round-trip works.
+- **M16.5** ACP bridge: interactive session from Zed; permission round-trip works. *(The AEP⇄ACP mapping table landed early at M3.4 — `panday_cli::acp` — so what remains here is transport: stdio, the `session/new` handshake, and awaiting the client's permission answer.)*
 - **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4.
