@@ -233,10 +233,7 @@ async fn the_endpoint_serves_prometheus_text() {
     let g = Gateway::builder(Arc::new(PolicyRouter::from_yaml(DEV_POLICY).unwrap()))
         .adapter("local", Arc::new(Fake { fail: None }))
         .build();
-    let app = panday_gateway::ingress::router(IngressState {
-        gateway: Arc::new(g),
-        account: AccountId::new(),
-    });
+    let app = panday_gateway::ingress::router(IngressState::open(Arc::new(g), AccountId::new()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {

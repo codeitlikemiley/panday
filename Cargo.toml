@@ -58,7 +58,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "stream",
     "json",
 ] }
-uuid = { version = "1", features = ["v7", "serde"] }
+# `v4` alongside `v7` (M17.3): ids are time-ordered (v7) but *secrets* must not be — a v7 key would
+# carry its own creation time and 48 fewer random bits. Both generators come from the same approved
+# dependency; this is a feature choice, not a new one.
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
 time = { version = "0.3", features = ["serde-well-known", "macros"] }
 # Router policy files are YAML (docs/12). Upstream serde_yaml is deprecated;
 # serde_yaml_ng is its maintained continuation with the same derive API.

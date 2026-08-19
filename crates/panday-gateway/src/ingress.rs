@@ -178,12 +178,138 @@ fn now_secs() -> u64 {
 // Routing
 // ---------------------------------------------------------------------------
 
+/// Who is calling (M17.3).
+///
+/// A trait because the ingress must not know about Postgres or key hashing — it knows that a
+/// request carries a bearer token and that something can turn one into an account. `panday-platform`
+/// is that something; `panday chat`, `panday local` and every test wire the no-auth default.
+#[async_trait::async_trait]
+pub trait Authenticator: Send + Sync {
+    /// Resolve a bearer token. `Err` is a refusal; the caller turns it into 401 without repeating
+    /// the reason, because the caller learns nothing from "revoked" that they do not learn from
+    /// "no".
+    async fn authenticate(&self, bearer: &str) -> Result<Caller, AuthError>;
+}
+
+/// The identity a request runs as.
+#[derive(Debug, Clone)]
+pub struct Caller {
+    pub account: AccountId,
+    /// Stable per key, for rate limiting and for logs. Not the key.
+    pub key_id: String,
+    pub scopes: Vec<String>,
+}
+
+impl Caller {
+    pub fn allows(&self, scope: &str) -> bool {
+        self.scopes.iter().any(|s| s == scope)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("no key")]
+    Missing,
+    #[error("not a valid key")]
+    Invalid,
+    #[error("this key does not carry the `{0}` scope")]
+    MissingScope(String),
+}
+
+/// Accepts everything, as one fixed account.
+///
+/// The default, and correct for every deployment that has no accounts: `panday local`, a solo
+/// gateway on a laptop, the test suites. An ingress that demanded a key before the platform exists
+/// would make the offline tier impossible.
+pub struct NoAuth {
+    pub account: AccountId,
+}
+
+#[async_trait::async_trait]
+impl Authenticator for NoAuth {
+    async fn authenticate(&self, _bearer: &str) -> Result<Caller, AuthError> {
+        Ok(Caller {
+            account: self.account,
+            key_id: "anonymous".into(),
+            scopes: vec!["models".into(), "sessions".into()],
+        })
+    }
+}
+
+/// Per-key request rate limiting (docs/17 M17.3).
+///
+/// **Per process, deliberately.** A shared limiter needs Redis or a database round trip on every
+/// request; neither is in docs/02's dependency table and both cost more than the thing they bound.
+/// With N gateway instances the effective limit is N×, which is stated here rather than discovered
+/// later — and is the right trade until the deployment shape that needs a shared one exists
+/// (docs/22 shape 3).
+pub struct RateLimiter {
+    per_minute: u32,
+    /// key_id → (window start, count).
+    seen: std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, u32)>>,
+}
+
+impl RateLimiter {
+    pub fn per_minute(limit: u32) -> Self {
+        Self {
+            per_minute: limit,
+            seen: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// A fixed window rather than a token bucket: a bucket is smoother and needs a timestamp per
+    /// key *and* a refill rate, and the thing being defended here is a database, which cares about
+    /// requests per minute rather than about burst shape.
+    pub fn check(&self, key_id: &str) -> Result<(), PandayError> {
+        let mut seen = self.seen.lock().unwrap();
+        let now = std::time::Instant::now();
+        let entry = seen.entry(key_id.to_string()).or_insert((now, 0));
+        if now.duration_since(entry.0) >= std::time::Duration::from_secs(60) {
+            *entry = (now, 0);
+        }
+        entry.1 += 1;
+        if entry.1 > self.per_minute {
+            // The retry hint is the rest of the window, so a client that honours it stops hammering.
+            let elapsed = now.duration_since(entry.0).as_millis() as u64;
+            return Err(PandayError::RateLimited {
+                retry_after_ms: 60_000u64.saturating_sub(elapsed),
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct IngressState {
     pub gateway: Arc<Gateway>,
-    /// Until accounts exist (M17.1) every ingress call is billed to one
-    /// account. The shape is already right, so the ledger can adopt it.
+    /// The account a request runs as when there is no authenticator (M17.1 gave accounts meaning;
+    /// M17.3 gave requests identity).
     pub account: AccountId,
+    pub auth: Arc<dyn Authenticator>,
+    /// `None` means unlimited, which is right for a laptop and wrong for anything public.
+    pub rate_limit: Option<Arc<RateLimiter>>,
+}
+
+impl IngressState {
+    /// The unauthenticated shape: one account, no keys, no limit.
+    pub fn open(gateway: Arc<Gateway>, account: AccountId) -> Self {
+        Self {
+            gateway,
+            account,
+            auth: Arc::new(NoAuth { account }),
+            rate_limit: None,
+        }
+    }
+
+    pub fn with_auth(mut self, auth: Arc<dyn Authenticator>) -> Self {
+        self.auth = auth;
+        self
+    }
+
+    pub fn with_rate_limit(mut self, limiter: Arc<RateLimiter>) -> Self {
+        self.rate_limit = Some(limiter);
+        self
+    }
 }
 
 pub fn router(state: IngressState) -> Router {
@@ -206,6 +332,48 @@ async fn metrics_endpoint() -> Response {
             panday_sdk::metrics::CONTENT_TYPE,
         )],
         panday_sdk::metrics::render(),
+    )
+        .into_response()
+}
+
+/// Pull the bearer token out and resolve it.
+///
+/// One 401 for every failure — missing, malformed, unknown, revoked. The caller learns nothing from
+/// the distinction that they could not learn by trying, and telling them "revoked" confirms the key
+/// was once real, which is a fact worth having if you found it in a log.
+async fn authenticate(
+    state: &IngressState,
+    headers: &axum::http::HeaderMap,
+) -> Result<Caller, Response> {
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("")
+        .trim();
+
+    match state.auth.authenticate(bearer).await {
+        Ok(caller) => {
+            // The ingress is the model plane; a key without `models` has no business here even if it
+            // is otherwise valid.
+            if !caller.allows("models") {
+                return Err(unauthorized("this key does not carry the `models` scope"));
+            }
+            Ok(caller)
+        }
+        Err(_) => Err(unauthorized("invalid API key")),
+    }
+}
+
+fn unauthorized(message: &str) -> Response {
+    use axum::http::StatusCode;
+    (
+        StatusCode::UNAUTHORIZED,
+        // The same envelope as every other error, so a client that understands OpenAI's shape can
+        // read this one too.
+        Json(serde_json::json!({
+            "error": { "message": message, "type": "authentication_error" }
+        })),
     )
         .into_response()
 }
@@ -244,11 +412,26 @@ fn error_response(e: PandayError) -> Response {
 
 async fn chat_completions(
     State(state): State<IngressState>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<IngressRequest>,
 ) -> Response {
+    // Authenticate first: a request that will be refused should not reach the router, the cache or
+    // the provider, and an unauthenticated caller must not be able to make us do work.
+    let caller = match authenticate(&state, &headers).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    if let Some(limiter) = &state.rate_limit {
+        if let Err(e) = limiter.check(&caller.key_id) {
+            return error_response(e);
+        }
+    }
+
     let streaming = req.stream;
     let model_label = req.model.clone();
-    let ir = req.into_ir(state.account);
+    // Billed to the key's account, not to the process's: this is the line that makes the ledger's
+    // per-account totals mean anything on a shared gateway.
+    let ir = req.into_ir(caller.account);
 
     let stream = match state.gateway.chat(ir).await {
         Ok(s) => s,

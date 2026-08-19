@@ -68,12 +68,33 @@ async fn main() {
     let gateway = builder.build();
     println!("panday-gateway providers: {:?}", gateway.providers());
 
-    let app = panday_gateway::ingress::router(IngressState {
-        gateway: Arc::new(gateway),
+    // Open by default: this binary is the dev/solo shape (docs/01), where there are no accounts and
+    // no keys. The authenticated shape is `IngressState::open(..).with_auth(..).with_rate_limit(..)`,
+    // wired by whatever runs the platform alongside it (M17.3) — an ingress that demanded a key
+    // before the platform exists would make `panday-gateway` unusable on a laptop.
+    let mut state = IngressState::open(
+        Arc::new(gateway),
         // Accounts arrive with the platform (M17.1); the record shape is
         // already correct so the ledger can adopt it unchanged.
-        account: panday_types::id::AccountId::new(),
-    });
+        panday_types::id::AccountId::new(),
+    );
+    if let Ok(limit) = std::env::var("PANDAY_RATE_LIMIT_PER_MIN") {
+        match limit.parse::<u32>() {
+            Ok(limit) => {
+                state = state.with_rate_limit(Arc::new(
+                    panday_gateway::ingress::RateLimiter::per_minute(limit),
+                ));
+                println!("panday-gateway rate limit: {limit}/min per key");
+            }
+            Err(_) => {
+                eprintln!(
+                    "panday-gateway: PANDAY_RATE_LIMIT_PER_MIN wants a number, got `{limit}`"
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+    let app = panday_gateway::ingress::router(state);
 
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,

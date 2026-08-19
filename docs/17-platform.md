@@ -101,10 +101,10 @@ overage policy per plan: block (free), throttle-to-cheap-pool (pro), invoice
 ## Auth
 
 OIDC (any IdP; start with GitHub/Google) for humans → short-lived JWTs.
-API keys for machines: random 256-bit, stored as argon2 hash, prefix-typed
-(`pnd_live_`, `pnd_test_`), scoped (models? sessions? admin?), last-used
-tracking, instant revoke. Service-to-service: mTLS or private-network + key,
-per deployment shape.
+API keys for machines: random 256-bit, stored as a **sha256** hash (amended
+from argon2, see M17.3), prefix-typed (`pnd_live_`, `pnd_test_`), scoped
+(models? sessions? admin?), last-used tracking, instant revoke.
+Service-to-service: mTLS or private-network + key, per deployment shape.
 
 ## Enterprise / offline licensing
 
@@ -182,7 +182,40 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   is one nobody schedules), and `repair_balance` recomputes one account. A monitor that only reports
   leaves an operator hand-writing `UPDATE`s against a money table at 3am, which is how a drift becomes
   a bigger drift. M21.4's monitor is what will call these on a schedule.
-- **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting.
+- **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting. ✅
+
+  **Amended: sha256, not argon2.** Argon2 exists to make guessing a *low-entropy* secret expensive —
+  a password. A key here is 244 bits of `Uuid::new_v4()` randomness; there is no dictionary to run
+  and no brute-force surface for a work factor to defend. What argon2 would add is ~100ms of CPU on
+  the authentication path of every request, and the predictable consequence of that is a verification
+  cache — which is a second copy of the credential store, with its own invalidation bug, standing
+  between `revoke` and the request it is meant to stop. sha256 keeps revocation instant and the auth
+  path a single indexed lookup. This holds *only* because the key is machine-generated; the day a
+  user-chosen secret enters this table, it needs argon2 and its own column.
+
+  **One 401 for every failure.** Missing, malformed, unknown and revoked all return the same body.
+  Distinguishing them tells somebody holding a token they found in a log whether it was ever real,
+  which is exactly the fact worth having. The one exception is a *scope* failure, which is named:
+  the holder already proved they have the key, so the only thing left to tell them is which door it
+  does not open.
+
+  **The plaintext is returned once and is not recoverable.** `issue` is the only function that ever
+  sees it; the table holds a hash, and `list` returns no key material at all — not even a truncated
+  form, which would make every audit log a partial leak. A key you can retrieve is a key an attacker
+  can retrieve.
+
+  **Rate limiting is per process, deliberately.** A shared limiter needs Redis or a database round
+  trip on every request; neither is in docs/02's dependency table, and both cost more than the thing
+  they bound. With N gateway instances the effective limit is N×, which is stated here rather than
+  discovered later — the right trade until the deployment shape that needs a shared counter exists
+  (docs/22 shape 3). The limit is checked *after* authentication, or an unauthenticated flood would
+  consume the budget of whatever key it guesses at and turn the limiter into the denial of service
+  it exists to prevent.
+
+  **The ingress default is still no auth.** `NoAuth` accepts everything as one account, and that is
+  what `panday local`, a solo gateway on a laptop and every M11.5 test wire. An ingress that demanded
+  a key before accounts exist would make the offline tier (ADR-011) impossible. `panday-platform`
+  supplies the real `Authenticator`, so the gateway never links Postgres.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
 - **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.
 - **M17.6** Entitlement tokens for offline; `panday local` honors + expires them.

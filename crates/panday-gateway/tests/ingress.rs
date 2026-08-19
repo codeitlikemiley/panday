@@ -63,10 +63,8 @@ async fn serve(adapter: Arc<dyn ProviderAdapter>) -> String {
         .adapter("local", adapter)
         .build();
 
-    let app = panday_gateway::ingress::router(IngressState {
-        gateway: Arc::new(gateway),
-        account: AccountId::new(),
-    });
+    let app =
+        panday_gateway::ingress::router(IngressState::open(Arc::new(gateway), AccountId::new()));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
