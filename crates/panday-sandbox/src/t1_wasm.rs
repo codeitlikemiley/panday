@@ -111,11 +111,19 @@ pub struct GuestLogs(pub Vec<(String, String)>);
 
 const MAX_GUEST_LOGS: usize = 64;
 
-struct HostState {
-    wasi: WasiCtx,
-    table: ResourceTable,
-    limits: StoreLimits,
-    logs: Vec<(String, String)>,
+/// Ticks, not milliseconds: `increment_epoch` fires every TICK. A *component* is
+/// several core instances — the guest module plus the WASI adapter — so the store
+/// limits below are not "one"; the first draft used 1 and every real component
+/// failed to instantiate.
+pub(crate) fn ticks_for(wall: Duration) -> u64 {
+    (wall.as_millis() / TICK.as_millis().max(1)).max(1) as u64
+}
+
+pub(crate) struct HostState {
+    pub(crate) wasi: WasiCtx,
+    pub(crate) table: ResourceTable,
+    pub(crate) limits: StoreLimits,
+    pub(crate) logs: Vec<(String, String)>,
 }
 
 impl WasiView for HostState {
@@ -223,6 +231,39 @@ impl T1Runtime {
         SandboxTier::T1Wasm
     }
 
+    /// The shared engine. `t1_hook` builds its own linker against it: one engine
+    /// per process means one JIT cache and one epoch ticker for tools and hooks
+    /// alike.
+    pub fn engine(&self) -> &Engine {
+        &self.engine
+    }
+
+    /// A store with the tier's capabilities: nothing granted, limits applied.
+    /// Shared with the hook runtime so a hook cannot end up with a more generous
+    /// context than a tool by accident.
+    pub(crate) fn store(&self, limits: T1Limits) -> Result<Store<HostState>, T1Error> {
+        let mut store = Store::new(
+            &self.engine,
+            HostState {
+                wasi: WasiCtxBuilder::new().build(),
+                table: ResourceTable::new(),
+                limits: StoreLimitsBuilder::new()
+                    .memory_size(limits.memory)
+                    .instances(64)
+                    .memories(16)
+                    .tables(16)
+                    .build(),
+                logs: Vec::new(),
+            },
+        );
+        store.limiter(|s| &mut s.limits);
+        store
+            .set_fuel(limits.fuel)
+            .map_err(|e| T1Error::Invalid(e.to_string()))?;
+        store.set_epoch_deadline(ticks_for(limits.wall));
+        Ok(store)
+    }
+
     /// Compile a component. Rejects core modules and anything malformed *here*,
     /// at install time, rather than on the first call in front of a user.
     pub fn compile(&self, name: &str, bytes: &[u8]) -> Result<WasmTool, T1Error> {
@@ -259,37 +300,10 @@ impl T1Runtime {
         )
         .map_err(|e| T1Error::Invalid(format!("link host: {e}")))?;
 
-        let mut store = Store::new(
-            &self.engine,
-            HostState {
-                // No preopens, no env, no stdio, no sockets. The builder's
-                // default is already deny-everything; it is spelled out because
-                // a future edit that adds `.inherit_stdio()` for debugging should
-                // read as the security change it is.
-                wasi: WasiCtxBuilder::new().build(),
-                table: ResourceTable::new(),
-                limits: StoreLimitsBuilder::new()
-                    .memory_size(limits.memory)
-                    // A *component* is several core instances — the guest module
-                    // plus the WASI adapter — so the cap is not "one". These are
-                    // set to catch a guest that instantiates in a loop, not to
-                    // describe the shape of a normal one; the first draft used 1
-                    // and every real component failed to instantiate.
-                    .instances(64)
-                    .memories(16)
-                    .tables(16)
-                    .build(),
-                logs: Vec::new(),
-            },
-        );
-        store.limiter(|s| &mut s.limits);
-        store
-            .set_fuel(limits.fuel)
-            .map_err(|e| T1Error::Invalid(e.to_string()))?;
-
-        // Ticks, not milliseconds: `increment_epoch` fires every TICK.
-        let ticks = (limits.wall.as_millis() / TICK.as_millis().max(1)).max(1) as u64;
-        store.set_epoch_deadline(ticks);
+        // No preopens, no env, no stdio, no sockets; limits applied. Spelled out
+        // in `store()` because a future edit that adds `.inherit_stdio()` for
+        // debugging should read as the security change it is.
+        let mut store = self.store(limits)?;
 
         let instance = Tool::instantiate(&mut store, &tool.component, &linker)
             .map_err(|e| classify(e, &store, limits))?;
@@ -307,11 +321,14 @@ impl T1Runtime {
 
 /// Turn a wasmtime error into the reason an operator needs.
 ///
+/// Shared with the hook runtime: the same three outcomes matter there, and two
+/// classifiers would drift.
+///
 /// The distinction that matters is between "the guest hit a limit" and "the guest
 /// asked for something it was not granted": the first is a plugin to tune, the
 /// second is a plugin to reject, and one `Trap(String)` for both would make that
 /// call a grep through error text.
-fn classify(e: wasmtime::Error, store: &Store<HostState>, limits: T1Limits) -> T1Error {
+pub(crate) fn classify(e: wasmtime::Error, store: &Store<HostState>, limits: T1Limits) -> T1Error {
     let text = format!("{e:#}");
     if e.downcast_ref::<wasmtime::Trap>() == Some(&wasmtime::Trap::OutOfFuel)
         || text.contains("all fuel consumed")

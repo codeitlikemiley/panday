@@ -1,0 +1,19 @@
+# The demo T1 hook (docs/16 M16.4). See ../demo-tool/Cargo.toml for why this is
+# outside the workspace and why the build output is checked in.
+[workspace]
+
+[package]
+name = "demo-hook"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.51"
+
+[profile.release]
+opt-level = "s"
+strip = true

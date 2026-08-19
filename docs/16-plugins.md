@@ -130,6 +130,40 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   someone's skill verbatim into this repo is a licensing question, not a
   technical demonstration.
 - **M16.3** MCP client host (stdio under T2): mount a public MCP server, call its tool through the loop with Ask-gating.
-- **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite.
+- **M16.4** WASM tool + hook runtime (wasmtime, WIT world v1); fuel/epoch limits enforced in escape suite. ✅ *(shipped: `panday_sandbox::t1_hook` + the `hook` world in `crates/panday-sandbox/wit/plugin.wit`, `panday_harness::{WasmPluginTool, WasmPluginHook}`; suites in `crates/panday-sandbox/tests/t1_hooks.rs` and `crates/panday-harness/tests/wasm_plugin.rs`; demo hook in `fixtures/demo-hook`.)*
+
+  **"Vetoes limited to `pre_tool`" is a type, not a policy check.** In the WIT world
+  only `pre-tool` returns a `verdict`; `post-tool` and `on-stop` return nothing, so
+  there is no value for a caller to misread as a vote and no way for a plugin to try.
+
+  **A budget breach is `Proceed`.** docs/16 says a hook that exceeds its 10ms budget
+  "is skipped and the event logged", and docs/13 gives the same rule for any hook
+  failure. Both other readings are wrong in a specific way: treating the breach as a
+  veto lets a slow plugin disable a tool, and treating it as approval lets one bypass
+  a policy by timing out. The breach is reported through `HookReporter`, because a
+  skipped hook nobody hears about is the failure mode that reporter exists to prevent.
+
+  **Redaction happens on our side of the boundary**, in the harness adapter rather
+  than in the tier — it is the only place a plugin receives tool arguments, and doing
+  it deeper would silently hold native hooks to a different standard. It is a denylist
+  of key *shapes*, not a scan for secret-looking values: a value-based filter has to
+  guess, and the token that does not match the guess is the one that leaks. Redacted
+  values become `[redacted]` rather than disappearing, so a DLP hook can tell "there
+  was a token here" from "there was no token". The end-to-end test is the plugin's own
+  word for it — the demo hook vetoes if it ever sees `sk-live-`, and the control case
+  (unredacted) proves the veto fires, so a redaction that stripped the whole object
+  could not pass.
+
+  **An unparseable rewrite is not a rewrite.** The hook's replacement arguments come
+  back as a JSON string; if it does not parse, the original arguments proceed and the
+  failure is reported. Substituting something the hook did not ask for would be worse
+  than ignoring it.
+
+  Plugin tools run on `spawn_blocking`: wasmtime's sync API blocks its thread and a
+  guest may use its whole fuel budget, so running it on an async worker would stall
+  every other session on that thread for as long as the budget allows. And a plugin
+  tool reports `sandbox_tier: T1Wasm` with `SideEffects` from its manifest, which is
+  what makes docs/16's claim exact — the loop cannot tell it from a native tool, the
+  permission engine can, and sandbox-seconds land under the right tier (M21.2).
 - **M16.5** ACP bridge: interactive session from Zed; permission round-trip works. *(The AEP⇄ACP mapping table landed early at M3.4 — `panday_cli::acp` — so what remains here is transport: stdio, the `session/new` handshake, and awaiting the client's permission answer.)*
 - **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4.

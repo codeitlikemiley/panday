@@ -24,6 +24,7 @@ pub mod replay;
 pub mod summarize;
 pub mod testing;
 pub mod tools;
+pub mod wasm_plugin;
 
 pub use actor::{
     CancelHandle, CollectSink, EventSink, HarnessError, MemoryStore, SessionActor, SubagentFactory,
@@ -38,6 +39,7 @@ pub use permissions::{Gate, PermissionEngine, Profile};
 pub use replay::{render, turn_costs, ReplayOptions, TurnCost};
 pub use summarize::CheapPoolSummarizer;
 pub use tools::{Tool, ToolCtx, ToolOutcome, ToolReq, ToolSpec};
+pub use wasm_plugin::{WasmPluginHook, WasmPluginTool};
 
 /// Where events live. PG in cloud, SQLite/file in `panday local`; in-memory
 /// in tests. Contract: `append` is fsync-durable before it returns

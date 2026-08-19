@@ -1,0 +1,63 @@
+// The T1 worlds (docs/14 §tiers, docs/16 §plugin.toml capabilities and §hooks).
+//
+// Everything a plugin can do is in this file. That is the point of the tier:
+// "capability: only WIT imports we grant" — a capability that is not an import
+// here does not exist for the guest, so it cannot be reached by a bug, a clever
+// prompt, or a malicious plugin.
+//
+// v1 is deliberately tiny. Every import added here is a permanent promise to every
+// installed plugin, and widening a world later is easy while narrowing it breaks
+// people.
+package panday:plugin@1.0.0;
+
+interface host {
+    /// Structured logging back into the harness. Content-free by convention
+    /// (docs/21 T5): a plugin's log line lands in our spans, so it carries a level
+    /// and a message and never gets to name a field of ours.
+    log: func(level: string, message: string);
+}
+
+interface hook-types {
+    /// The pre-tool verdict. `rewrite` carries replacement arguments as JSON — the
+    /// DLP / command-rewrite path from docs/13.
+    variant verdict {
+        proceed,
+        rewrite(string),
+        veto(string),
+    }
+}
+
+/// A plugin-provided tool.
+///
+/// JSON in, JSON out, because the tool's arguments already have a JSON Schema in
+/// `plugin.toml` and the ToolRegistry speaks JSON (docs/13). A richer WIT record
+/// would mean two schema languages for one contract.
+world tool {
+    import host;
+
+    /// `args` is the JSON object the model produced. The `error` string is shown to
+    /// the model as a tool error, so it is a message and not a code.
+    export run: func(args: string) -> result<string, string>;
+}
+
+/// A plugin-provided hook.
+///
+/// Separate from `tool` because the guarantees differ: a tool produces a result the
+/// model consumes, while a hook gets a say over whether something happens at all.
+/// Only `pre-tool` returns a verdict — that is docs/16's "vetoes limited to
+/// pre_tool", expressed in a type rather than in a policy check.
+world hook {
+    import host;
+    use hook-types.{verdict};
+
+    /// `args` is a REDACTED view of the tool arguments: values under secret-shaped
+    /// keys are replaced before the guest sees them (docs/16: "Hooks see *redacted*
+    /// views (no secrets in args)"). A hook that needs a secret to make a decision
+    /// is a hook that should not have one.
+    export pre-tool: func(tool: string, args: string) -> verdict;
+
+    /// Notifications. No return value, because a hook cannot undo what already
+    /// happened, and pretending otherwise invites a plugin to try.
+    export post-tool: func(tool: string, output: string);
+    export on-stop: func(reason: string);
+}

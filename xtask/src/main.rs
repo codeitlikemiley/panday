@@ -83,6 +83,7 @@ fn wasm_fixtures() -> Result<ExitCode, String> {
     for (dir, artifact) in [
         ("fixtures/demo-tool", "demo_tool.wasm"),
         ("fixtures/greedy-tool", "greedy_tool.wasm"),
+        ("fixtures/demo-hook", "demo_hook.wasm"),
     ] {
         let crate_dir = root.join(dir);
         let status = std::process::Command::new(env!("CARGO"))
