@@ -44,12 +44,63 @@ fn bodies() -> Arc<BTreeMap<String, String>> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn both_skills_load_unmodified_including_keys_we_do_not_model() {
+fn a_published_skill_loads_with_no_edits_at_all() {
+    // Phase 2's exit criterion says a stranger "ports an existing SKILL.md unmodified".
+    // The strongest evidence for that is a file in exactly the published shape — frontmatter
+    // with `license`, `allowed-tools` and a nested `metadata` table, none of which we model,
+    // plus a `references/` directory. docs/16 chose SKILL.md compatibility on purpose ("the
+    // existing ecosystem should port with zero edits"), and this is the test that keeps it
+    // true rather than aspirational.
     let skills = loaded_skills();
-    assert_eq!(skills.len(), 2, "expected two skills");
+    let pdf = skills
+        .iter()
+        .find(|s| s.frontmatter.name == "pdf-processing")
+        .expect("the published-shape fixture loaded");
 
+    assert!(pdf
+        .frontmatter
+        .description
+        .contains("Extract text and tables"));
+    assert!(
+        pdf.body.contains("pdftotext -layout"),
+        "the body must survive verbatim"
+    );
+    // Unknown keys are ignored, not rejected: `allowed-tools` is another product's
+    // vocabulary, and refusing it would mean every ported skill needs an edit.
+    assert!(
+        !pdf.body.contains("allowed-tools"),
+        "frontmatter must not leak into the body: {}",
+        pdf.body
+    );
+    // The reference file is discovered but is not a skill of its own (docs/16: loaded on
+    // demand, not in the index).
+    assert!(
+        !skills.iter().any(|s| s.frontmatter.name == "forms"),
+        "reference material is not a skill: {:?}",
+        skills
+            .iter()
+            .map(|s| &s.frontmatter.name)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn every_skill_loads_unmodified_including_keys_we_do_not_model() {
+    let skills = loaded_skills();
+    assert_eq!(skills.len(), 3, "expected three skills");
+
+    // Sorted, so the index is byte-identical across runs — it lives in the stable cached
+    // prefix, and a directory-order index would break the cache on a different machine
+    // (ADR-008).
     let names: Vec<&str> = skills.iter().map(|s| s.frontmatter.name.as_str()).collect();
-    assert_eq!(names, ["conventional-commits", "rust-error-handling"]);
+    assert_eq!(
+        names,
+        [
+            "conventional-commits",
+            "pdf-processing",
+            "rust-error-handling"
+        ]
+    );
 
     let rust = skills
         .iter()

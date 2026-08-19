@@ -80,6 +80,20 @@ observability spine (M21.1–21.2).
 **Exit:** a stranger installs the CLI, connects their editor via ACP, ports
 an existing SKILL.md unmodified, and completes a task offline on a laptop.
 
+**Where that stands (M0.2).** Like Phase 0's exit, this criterion has work in it
+that no component milestone owns — so it is written down here rather than left
+invisible:
+
+| Clause | State |
+|---|---|
+| installs the CLI | Binaries build for four targets in `release.yml`; the README's "Try it" is the stranger's path. No package-manager recipe yet, and no signed release (M20.5). |
+| connects their editor via ACP | `panday acp` (M16.5), verified against the official crate's own client over a real ACP conversation. **Zed itself is unverified** — CI cannot run an editor, so that is one manual check by whoever has it installed. |
+| ports an existing SKILL.md unmodified | Covered by a fixture in the published shape (`allowed-tools`, `license`, nested `metadata`, `references/`) that loads with no edits (M16.1, test at `crates/panday-harness/tests/skills_in_context.rs`). |
+| completes a task offline on a laptop | `panday local` (M18.1) with the SQLite store (M18.3), against an OpenAI-compatible server on loopback. The suite uses a fake one because CI has no GGUF; the llama-server leg is `#[ignore]`d and runnable by anyone with one. |
+
+So three clauses hold as far as CI can hold them, and two things remain that only
+a human can do: run it in Zed, and run it against a real local model.
+
 ## Phase 3 — Money (~weeks 23–32)
 
 Platform service: accounts/keys/entitlements (M17.1–17.3), ledger from

@@ -1,10 +1,11 @@
 # Panday — a Rust AI platform, built from first principles
 
-> **Panday** (Fe — iron; the thing rust comes from) is the working codename.
-> Every crate is prefixed `panday-`; one `sed -i 's/panday/yourname/g'` renames the world.
+> **Panday** is Tagalog for *blacksmith*. The name is settled, not a placeholder
+> (`docs/00-vision.md` §Naming): crates are prefixed `panday-`, the CLI binary is
+> `panday`, and API keys are `pnd_live_` / `pnd_test_`.
 
-This repository is the blueprint and the seed of a full AI infrastructure
-platform: an agent harness, an LLM gateway with a model router, a tiered
+This repository is the specification *and* the implementation of a full AI
+infrastructure platform: an agent harness, an LLM gateway with a model router, a tiered
 sandbox, a plugin system (skills + MCP + ACP), a token-economy layer, a
 subscription platform with metered billing, an offline/local tier, and a
 path to training your own task models.
@@ -14,7 +15,51 @@ path to training your own task models.
 | Path | What it is |
 |---|---|
 | `docs/` | The documentation set — 21 specs, ADRs, threat model, roadmap. The source of truth. Renders with `mdbook serve docs`. |
-| `crates/` | A compiling cargo workspace seeded with the core types and traits the specs define. `cargo check` is green. |
+| `crates/` | The implementation. `cargo nextest run --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are green on every commit; `docs/` is updated in the same commit whenever the code diverges from a spec. |
+
+## Try it
+
+Nothing below needs an account, a server, or a network connection.
+
+```bash
+# Rust 1.95, pinned in rust-toolchain.toml.
+cargo build --release
+
+# 1. One-shot chat through your own gateway: routed by policy, metered per call.
+#    Set ANTHROPIC_API_KEY, or point at anything OpenAI-compatible with
+#    PANDAY_COMPAT_BASE_URL=http://127.0.0.1:8080
+./target/release/panday chat "why is this test failing?"
+
+# 2. Offline: a local model, a jailed workspace, nothing leaving the machine.
+#    Needs an OpenAI-compatible server on loopback (llama-server, mistral.rs, …).
+#    A remote base URL is refused rather than honoured.
+./target/release/panday-local --workspace . "read src/lib.rs and explain it"
+
+# 3. Your editor, over ACP. Point Zed / JetBrains / nvim at this command:
+./target/release/panday acp --workspace .
+
+# 4. Read any session back, exactly as the CLI showed it — including one that
+#    crashed halfway. The log is the state (ADR-002).
+./target/release/panday replay .panday/session.jsonl --costs
+```
+
+**Skills port unmodified.** Drop a directory containing a `SKILL.md`: frontmatter
+keys other runtimes use (`allowed-tools`, `license`, nested `metadata`) are
+ignored rather than rejected, and `references/` loads on demand
+(`docs/16-plugins.md` §Skills).
+
+**MCP servers mount as tools.** They run as child processes with a cleared
+environment, appear as `mcp:{server}:{tool}`, and ask before every call until you
+grant them per tool (`docs/16` §MCP host).
+
+## Status
+
+Phases 0 and 1 are complete and phase 2 is most of the way there;
+`docs/23-roadmap.md` carries the honest sequencing, and every shipped milestone is
+marked ✅ in its own spec together with what was learned building it — including
+the bugs. What is not built says so: anything needing Postgres, Stripe, GPUs, KVM
+or a running llama-server sits behind a trait with an `#[ignore]`d test rather
+than a fake.
 
 ## How to use this repo
 
