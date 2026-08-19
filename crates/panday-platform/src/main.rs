@@ -39,6 +39,9 @@ panday-platform — the hosted control plane (docs/17)
                                                  sign an offline licence (docs/17 M17.6)
   panday-platform drift <provider> <report.csv> <from> <to>
                                                  reconcile the ledger against a usage report
+  panday-platform billing apply                  apply pending webhooks (the nightly reconcile)
+  panday-platform billing stuck                  webhooks that could not be applied
+  panday-platform billing export <hours-ago>     send an hour of usage to the meter (dry run)
 
 Scopes are comma-separated: models,sessions,admin (default: models,sessions).
 PANDAY_DATABASE_URL is required by every subcommand.
@@ -66,6 +69,9 @@ async fn main() {
             entitle(subject, plan, seats, days, key_file)
         }
         ["drift", provider, report, from, to] => drift(provider, report, from, to).await,
+        ["billing", "apply"] => billing_apply().await,
+        ["billing", "stuck"] => billing_stuck().await,
+        ["billing", "export", hours_ago] => billing_export(hours_ago).await,
         ["-h" | "--help" | "help"] => {
             print!("{USAGE}");
             return;
@@ -286,6 +292,69 @@ async fn drift(provider: &str, report: &str, from: &str, to: &str) -> Result<(),
     Ok(())
 }
 
+/// The nightly reconcile (M17.4): apply what arrived, and say what did not.
+///
+/// docs/17: "never trust webhook delivery; poll-reconcile nightly". This is the poll half.
+async fn billing_apply() -> Result<(), String> {
+    let pool = admin_pool().await?;
+    let report = panday_platform::billing::apply_pending(&pool, 500)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!(
+        "applied {} · failed {} · unknown customer {}",
+        report.applied, report.failed, report.unknown_customer
+    );
+    if report.failed > 0 || report.unknown_customer > 0 {
+        // Non-zero, because a webhook nobody could apply is a customer on the wrong plan.
+        return Err("some events could not be applied — `billing stuck` lists them".into());
+    }
+    Ok(())
+}
+
+async fn billing_stuck() -> Result<(), String> {
+    let pool = admin_pool().await?;
+    let stuck = panday_platform::billing::stuck(&pool, 100)
+        .await
+        .map_err(|e| e.to_string())?;
+    if stuck.is_empty() {
+        println!("nothing stuck");
+        return Ok(());
+    }
+    for (id, error, attempts) in &stuck {
+        println!("{id}  attempts {attempts}  {error}");
+    }
+    Err(format!("{} event(s) stuck", stuck.len()))
+}
+
+/// Export one hour of usage (M17.5).
+///
+/// A recording sink for now: the Stripe transport is a trait, and nothing in this repo has an
+/// account to send to. What this proves is our half — the aggregate, the cursor, and the
+/// idempotency — which is the half that can be wrong in a way a customer would pay for.
+async fn billing_export(hours_ago: &str) -> Result<(), String> {
+    let hours: i64 = hours_ago
+        .parse()
+        .map_err(|_| format!("`{hours_ago}` is not a number of hours"))?;
+    let pool = admin_pool().await?;
+    let hour = time::OffsetDateTime::now_utc() - time::Duration::hours(hours);
+
+    let sink = panday_platform::billing::RecordingMeter::new();
+    let report = panday_platform::billing::export_hour(&pool, &sink, hour)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!(
+        "hour {hours}h ago: {} event(s), {} token(s), {} already exported, {} failed",
+        report.events_sent, report.tokens, report.already_exported, report.failed
+    );
+    for (customer, meter, value) in sink.sent() {
+        println!("  {customer:<40} {meter} {value}");
+    }
+    if report.failed > 0 {
+        return Err(format!("{} account(s) failed to export", report.failed));
+    }
+    Ok(())
+}
+
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, String> {
     s.parse().map_err(|_| format!("`{s}` is not a uuid"))
 }
@@ -346,13 +415,29 @@ async fn run() -> Result<(), String> {
 
     // Two routers on one port: the model plane and the sync endpoint. A customer who has a key
     // should not need a second host to push the sessions that key already paid for (M18.6).
-    let app = panday_gateway::ingress::router(state).merge(panday_platform::sync::http::router(
-        panday_platform::sync::http::SyncState {
+    let mut app = panday_gateway::ingress::router(state).merge(
+        panday_platform::sync::http::router(panday_platform::sync::http::SyncState {
             pool: pool.clone(),
             prices: prices.clone(),
             auth: Arc::new(KeyAuthenticator::new(pool.clone())),
-        },
-    ));
+        }),
+    );
+
+    // Mounted only when a secret is configured. An unauthenticated webhook endpoint is an
+    // open write into the billing inbox, and defaulting the secret to something would make that
+    // the out-of-the-box state.
+    match env("PANDAY_BILLING_WEBHOOK_SECRET") {
+        Some(secret) => {
+            app = app.merge(panday_platform::billing::http::router(
+                panday_platform::billing::http::WebhookState {
+                    pool: pool.clone(),
+                    secret,
+                },
+            ));
+            tracing::info!("billing webhook mounted");
+        }
+        None => tracing::info!("no PANDAY_BILLING_WEBHOOK_SECRET — billing webhook not mounted"),
+    }
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;

@@ -110,6 +110,10 @@ pub const EMBEDDED_MIGRATIONS: &[(&str, &str)] = &[
         "0006_session_events.sql",
         include_str!("../migrations/0006_session_events.sql"),
     ),
+    (
+        "0007_billing_inbox.sql",
+        include_str!("../migrations/0007_billing_inbox.sql"),
+    ),
 ];
 
 /// Apply the compiled-in migrations. What a deployed service calls.

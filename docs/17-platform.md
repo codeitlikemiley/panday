@@ -216,8 +216,50 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   what `panday local`, a solo gateway on a laptop and every M11.5 test wire. An ingress that demanded
   a key before accounts exist would make the offline tier (ADR-011) impossible. `panday-platform`
   supplies the real `Authenticator`, so the gateway never links Postgres.
-- **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
-- **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.
+- **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries. ✅ *(shipped: `panday_platform::billing` + migration `0007_billing_inbox.sql`, `POST /v1/billing/webhook`, `panday-platform billing apply|stuck`. **Stripe's own API is not called** — see below.)*
+
+  **Receiving and applying are separate steps over a durable row.** A handler that applies an effect
+  and then returns 200 has three ways to be wrong — the effect applied twice, the 200 lost, events
+  out of order — and all three disappear when the inbox is keyed by Stripe's own event id. A
+  redelivery is a no-op decided by the primary key, not by whichever code path happens to run.
+
+  **Nothing here calls Stripe, and that is the design rather than a gap.** docs/17 already says
+  "Meters are *reporting*; enforcement already happened at the edge". Plan state, grants and the
+  ledger live in our database; Stripe is a system we tell and a system that tells us about payments.
+  What could not be built without a live account is the signature check and the HTTP client — the
+  webhook endpoint takes a shared secret instead, compared in constant time, and refuses to mount at
+  all unless one is configured. A half-implemented signature check would be worse than an honest
+  shared secret, because it looks like the real thing.
+
+  **A grant's effect is a ledger entry keyed by the Stripe event id.** So replaying the whole inbox
+  — which an operator will do — cannot double-credit, and the balance stays a sum over one table.
+
+  **Nothing is dropped to keep the queue moving.** A malformed event or an unknown customer stays
+  in the table with its reason and an attempt count; the batch is ordered *fewest attempts first*,
+  because ordering by age alone lets a wall of permanently-broken events starve a paying customer's
+  checkout behind a finite batch limit. That ordering exists because a test wrote twenty unappliable
+  events and then a good one.
+- **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month. ✅ *(shipped: `billing::export_hour`, `billing::check_invoice`, `meter_exports` cursor, `panday-platform billing export <hours-ago>`. **The sink is a trait** — the shipped implementation records rather than sends.)*
+
+  **The cursor is ours because Stripe's aggregation is asynchronous** and cannot deduplicate for us
+  (ADR-009). `meter_exports` is keyed `(account, hour, meter)`, so re-running an hour is a
+  primary-key collision rather than a second charge — and the row is claimed *before* the send and
+  released if the send fails, because a cursor that advances on a failure silently drops an hour of
+  somebody's usage and nothing downstream ever notices: the invoice is simply smaller.
+
+  **One account's failure does not abandon the hour.** The first version returned on the first
+  error, which meant a single bad customer record stopped every other account from being reported
+  and made the retry re-walk the whole hour to reach the same failure. Failures are counted, their
+  cursors released, and the caller decides what a non-zero count means.
+
+  **Whole tokens, priced per million on Stripe's side.** docs/17 flags per-token rounding as a known
+  footgun, and it is: a fractional unit price rounded per event loses a percent of a bill in a way
+  nobody can reconstruct afterwards. Rounding happens once, on a number both sides can see.
+
+  **The sanity check compares what we reported against the ledger**, not against an invoice PDF —
+  the report is the number the invoice is computed from, so a difference is a bug we can fix before
+  a customer sees it. It is signed, and there is a test where it *fails*, because a check that
+  cannot fail is decoration.
 - **M17.6** Entitlement tokens for offline; `panday local` honors + expires them. ✅ *(shipped: `panday_plugins::entitlement`, `panday-platform entitle …`, `panday local --entitlement <file>`.)*
 
   **Expiry degrades; it does not brick.** Past the grace window the token stops granting and the
