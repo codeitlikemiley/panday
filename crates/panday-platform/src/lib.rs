@@ -3,6 +3,7 @@
 //! The commercial spine: entitlements + the append-only ledger
 //! (docs/17-platform.md, ADR-009). Stripe is a projection; this is truth.
 
+pub mod entitlements;
 pub mod pg;
 pub mod registry;
 pub mod tenancy;

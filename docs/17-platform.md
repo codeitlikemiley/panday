@@ -121,7 +121,41 @@ graphs, keys, invoices) is part of the phase-3 web surface.
 
 ## Milestones
 
-- **M17.1** Schema migration set: accounts/keys/plans/ledger; entitlement engine unit-tested against fixture plans.
+- **M17.1** Schema migration set: accounts/keys/plans/ledger; entitlement engine unit-tested against fixture plans. ✅ *(shipped: `migrations/0001_init.sql` + `0002_accounts_keys_plans.sql`, `panday_platform::entitlements`; suites in `tests/entitlements.rs` and the integration lane's `tests/pg_integration.rs`.)*
+
+  **The engine returns three answers, not two.** `Allow`, `Deny`, and `Degrade` — docs/17 says a
+  budget stop is "a graceful session pause, not a 500" and docs/12's `budget_soft` demotes to a
+  cheaper pool, so an engine that only said yes or no would force every caller to invent the middle
+  case and they would each invent it differently. The free plan asking for `frontier` degrades
+  rather than failing: a route is a choice among pools, and refusing a request for naming the wrong
+  one is pedantry.
+
+  **Order of evaluation is money, then rate, then capability.** The first limit reported is the one
+  the user has to act on; telling someone over their spend ceiling that they used the wrong pool
+  wastes a support ticket. There is a test that an account over all three limits at once hears
+  about the money.
+
+  **A missing measurement is no evidence, not zero.** `Observed` is all `Option`s, because an
+  engine that read "usage not looked up" as "usage is zero" allows every request on an account
+  nobody measured — the most expensive possible default. It also reads no database and knows nothing
+  about time windows: `TokensPerDay` needs *today's* usage, which is a ledger query, and mixing
+  "what is allowed" with "what has been spent" makes both untestable.
+
+  **A test walks the free plan's entitlements and requires each one to actually deny at its limit.**
+  The failure that catches: a limit added to a plan and never wired into the engine — enforcement
+  that exists in the catalogue and nowhere else, which reads as real to everyone who looks at the
+  plan.
+
+  **The schema puts invariants in the database rather than in handlers.** One active subscription
+  per account is a partial unique index ("two active plans" is a state nobody wrote a handler for);
+  a grant must be positive (a "grant" that takes credit away is an adjustment, and calling it a
+  grant makes the two indistinguishable in a report); API keys store a **hash only**, so a stolen
+  database is not a stolen key, and revocation is a timestamp because an audit that cannot show a
+  key *was* revoked cannot show when.
+
+  `plans` moved to the lint's `GLOBAL_TABLES` when the table was actually written: it had been
+  guessed at as tenant-scoped, and a plan is a catalogue row that means the same thing for every
+  account — the account's relationship to it lives in `subscriptions`, which is scoped.
 - **M17.2** Ledger write path from gateway+sandbox with idempotency; balance view; property test vs event-log replay.
 - **M17.3** API keys end-to-end (issue, scope, revoke) securing the OpenAI-compat ingress; per-key rate limiting.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.

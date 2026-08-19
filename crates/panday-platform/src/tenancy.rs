@@ -28,7 +28,8 @@
 pub const TENANT_TABLES: &[&str] = &[
     "accounts",
     "api_keys",
-    "plans",
+    "subscriptions",
+    "credit_grants",
     "grants",
     "ledger_entries",
     "balances",
@@ -49,6 +50,11 @@ pub const GLOBAL_TABLES: &[&str] = &[
     "models",
     "prices",
     "migrations",
+    // A plan is a catalogue row: the same plan means the same thing for every account, and an
+    // account's relationship to it lives in `subscriptions` (which *is* tenant-scoped). Moved
+    // here at M17.1 when the table was actually written — it had been guessed at as
+    // tenant-scoped, and the migration made the guess wrong.
+    "plans",
 ];
 
 /// The marker a single-tenant store puts at the top of its file.

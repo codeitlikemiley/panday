@@ -207,3 +207,195 @@ async fn a_dead_database_fails_fast_rather_than_hanging() {
         started.elapsed()
     );
 }
+
+// ── M17.1: the rest of the account model ─────────────────────────────────────
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn the_account_model_migration_applies_and_enforces_its_invariants() {
+    let pool = database().await;
+
+    // One active subscription per account, enforced by a partial unique index rather than by
+    // application code: "two active plans" is a state nobody wrote a handler for.
+    let account = pg::create_account(&pool, "acme").await.unwrap();
+    sqlx::query("INSERT INTO plans (plan_id, name, entitlements) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+        .bind("pro")
+        .bind("Pro")
+        .bind(serde_json::json!([{"kind": "requests_per_min", "limit": 300}]))
+        .execute(&pool)
+        .await
+        .expect("plan");
+
+    let first = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO subscriptions (subscription_id, account_id, plan_id) VALUES ($1, $2, $3)",
+    )
+    .bind(first)
+    .bind(account)
+    .bind("pro")
+    .execute(&pool)
+    .await
+    .expect("first subscription");
+
+    let second = sqlx::query(
+        "INSERT INTO subscriptions (subscription_id, account_id, plan_id) VALUES ($1, $2, $3)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(account)
+    .bind("pro")
+    .execute(&pool)
+    .await;
+    assert!(
+        second.is_err(),
+        "a second active subscription must be refused by the database"
+    );
+
+    // Ending the first frees the slot: a cancellation is an end date, so history survives.
+    sqlx::query(
+        "UPDATE subscriptions SET ended_at = now() WHERE subscription_id = $1 AND account_id = $2",
+    )
+    .bind(first)
+    .bind(account)
+    .execute(&pool)
+    .await
+    .expect("cancel");
+    sqlx::query(
+        "INSERT INTO subscriptions (subscription_id, account_id, plan_id) VALUES ($1, $2, $3)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(account)
+    .bind("pro")
+    .execute(&pool)
+    .await
+    .expect("a new subscription after cancellation");
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn an_api_key_is_stored_as_a_hash_and_revoked_by_timestamp() {
+    // A stolen database must not be a stolen key: the plaintext exists once, in the response to
+    // the create call. And revocation is a timestamp, because an audit that cannot show a key
+    // *was* revoked cannot show when.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "acme").await.unwrap();
+    let plaintext = format!("pnd_live_{}", Uuid::now_v7().simple());
+    let hash = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(plaintext.as_bytes());
+        format!("{:x}", h.finalize())
+    };
+
+    let key_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO api_keys (key_id, account_id, key_hash, prefix, name)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(key_id)
+    .bind(account)
+    .bind(&hash)
+    .bind("pnd_live_")
+    .bind("ci")
+    .execute(&pool)
+    .await
+    .expect("insert key");
+
+    // The lookup is by hash and scoped by account, one index hit — the auth path runs on every
+    // request and cannot afford a scan.
+    let found: (Uuid,) = sqlx::query_as(
+        "SELECT key_id FROM api_keys WHERE key_hash = $1 AND account_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(&hash)
+    .bind(account)
+    .fetch_one(&pool)
+    .await
+    .expect("find key");
+    assert_eq!(found.0, key_id);
+
+    // The plaintext is nowhere in the row.
+    let row: (String,) =
+        sqlx::query_as("SELECT key_hash FROM api_keys WHERE key_id = $1 AND account_id = $2")
+            .bind(key_id)
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(row.0, plaintext);
+    assert_eq!(row.0, hash);
+
+    sqlx::query("UPDATE api_keys SET revoked_at = now() WHERE key_id = $1 AND account_id = $2")
+        .bind(key_id)
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let after: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT key_id FROM api_keys WHERE key_hash = $1 AND account_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(&hash)
+    .bind(account)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert!(after.is_none(), "a revoked key must not resolve");
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane"]
+async fn a_credit_grant_points_at_the_ledger_entry_it_produced() {
+    // Grants live beside the ledger rather than inside it because a grant can expire while a
+    // ledger entry never changes — but the *effect* is a ledger entry, so the balance stays a sum
+    // over one table.
+    let pool = database().await;
+    let account = pg::create_account(&pool, "acme").await.unwrap();
+    let tag = Uuid::now_v7();
+    let ledger_id = Uuid::now_v7();
+
+    pg::append(
+        &pool,
+        &pg::LedgerEntry {
+            id: ledger_id,
+            kind: "grant.purchase".into(),
+            amount_micros: 5_000_000,
+            quantity: serde_json::json!({"credits": 5}),
+            idempotency_key: format!("purchase-{tag}"),
+            ..entry(
+                account,
+                "grant.purchase",
+                5_000_000,
+                &format!("purchase-{tag}"),
+            )
+        },
+    )
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO credit_grants (grant_id, account_id, reason, amount_micros, ledger_entry_id)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(account)
+    .bind("purchase")
+    .bind(5_000_000i64)
+    .bind(ledger_id)
+    .execute(&pool)
+    .await
+    .expect("grant");
+
+    assert_eq!(pg::balance_micros(&pool, account).await.unwrap(), 5_000_000);
+
+    // A grant of zero or less is refused by the CHECK: a "grant" that takes credit away is an
+    // adjustment, and calling it a grant would make the two indistinguishable in a report.
+    let bad = sqlx::query(
+        "INSERT INTO credit_grants (grant_id, account_id, reason, amount_micros)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(account)
+    .bind("promo")
+    .bind(0i64)
+    .execute(&pool)
+    .await;
+    assert!(bad.is_err(), "a non-positive grant must be refused");
+}
