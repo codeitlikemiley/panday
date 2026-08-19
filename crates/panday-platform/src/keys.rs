@@ -111,6 +111,9 @@ pub enum KeyError {
     NotFound,
     #[error("key is revoked")]
     Revoked,
+    /// The account is suspended (M20.4). Distinct from `Revoked` internally, identical at the edge.
+    #[error("this account is suspended")]
+    Suspended,
     #[error("key does not carry the `{0}` scope")]
     MissingScope(&'static str),
     #[error("not a panday key: expected a `pnd_live_` or `pnd_test_` prefix")]
@@ -179,6 +182,18 @@ pub async fn issue(
 /// The row shape every read here selects, named once so the two call sites decode it the same way —
 /// a column added to `api_keys` is then one type change rather than two hand-written tuples that
 /// silently disagree.
+/// `KeyRow` plus the account's `suspended_at` — what the auth path selects in one round trip.
+type AuthRow = (
+    Uuid,
+    Uuid,
+    String,
+    String,
+    serde_json::Value,
+    Option<time::OffsetDateTime>,
+    Option<time::OffsetDateTime>,
+    Option<time::OffsetDateTime>,
+);
+
 type KeyRow = (
     Uuid,
     Uuid,
@@ -217,16 +232,38 @@ pub async fn authenticate(pool: &PgPool, plaintext: &str) -> Result<ApiKey, KeyE
     // round trip — and so the error says which of the two problems it is.
     Environment::of(plaintext).ok_or(KeyError::Malformed)?;
 
-    let row: Option<KeyRow> = sqlx::query_as(
-        "SELECT key_id, account_id, name, prefix, scopes, revoked_at, last_used_at
-         FROM api_keys WHERE key_hash = $1",
+    // The account's suspension is read in the same query as the key, so the kill switch bites on
+    // the very next request with nothing to invalidate (M20.4). A separate lookup would be a second
+    // round trip on the auth path and a window where a suspended account still works.
+    let row: Option<AuthRow> = sqlx::query_as(
+        "SELECT k.key_id, k.account_id, k.name, k.prefix, k.scopes, k.revoked_at, k.last_used_at,
+                a.suspended_at
+         FROM api_keys k JOIN accounts a ON a.account_id = k.account_id
+         WHERE k.key_hash = $1",
     )
     .bind(hash(plaintext))
     .fetch_optional(pool)
     .await
     .map_err(|e| PgError::Query(e.to_string()))?;
 
-    let key = ApiKey::from_row(row.ok_or(KeyError::NotFound)?);
+    let (key_id, account_id, name, prefix, scopes, revoked_at, last_used_at, suspended_at) =
+        row.ok_or(KeyError::NotFound)?;
+    if suspended_at.is_some() {
+        // Distinct internally so an operator can see a suspended account still being called;
+        // collapsed to the same 401 at the edge, because telling a suspended caller *why* is
+        // telling an abuser which control they tripped.
+        return Err(KeyError::Suspended);
+    }
+
+    let key = ApiKey::from_row((
+        key_id,
+        account_id,
+        name,
+        prefix,
+        scopes,
+        revoked_at,
+        last_used_at,
+    ));
     if key.revoked {
         // Distinct from `NotFound` internally — an operator wants to know a *revoked* key is still
         // being presented, which is either a stale deployment or an attacker with an old secret. The
@@ -338,6 +375,12 @@ impl panday_gateway::ingress::Authenticator for KeyAuthenticator {
                 // the HTTP layer collapses everything to 401.
                 KeyError::Revoked => {
                     tracing::warn!("a revoked key was presented");
+                    AuthError::Invalid
+                }
+                // A suspended account being called is the loudest of the three: it means either a
+                // customer has not noticed, or somebody is still using a key we killed.
+                KeyError::Suspended => {
+                    tracing::warn!("a suspended account's key was presented");
                     AuthError::Invalid
                 }
                 KeyError::Malformed => AuthError::Invalid,

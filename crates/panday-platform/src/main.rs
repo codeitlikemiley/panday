@@ -42,6 +42,9 @@ panday-platform — the hosted control plane (docs/17)
   panday-platform billing apply                  apply pending webhooks (the nightly reconcile)
   panday-platform billing stuck                  webhooks that could not be applied
   panday-platform billing export <hours-ago>     send an hour of usage to the meter (dry run)
+  panday-platform suspend <account-id> <reason>  kill switch: refuse this account's keys now
+  panday-platform unsuspend <account-id>         reinstate it
+  panday-platform watch                          velocity + anomaly report (the nightly look)
 
 Scopes are comma-separated: models,sessions,admin (default: models,sessions).
 PANDAY_DATABASE_URL is required by every subcommand.
@@ -72,6 +75,9 @@ async fn main() {
         ["billing", "apply"] => billing_apply().await,
         ["billing", "stuck"] => billing_stuck().await,
         ["billing", "export", hours_ago] => billing_export(hours_ago).await,
+        ["suspend", account, reason] => suspend(account, reason).await,
+        ["unsuspend", account] => unsuspend(account).await,
+        ["watch"] => watch().await,
         ["-h" | "--help" | "help"] => {
             print!("{USAGE}");
             return;
@@ -355,6 +361,102 @@ async fn billing_export(hours_ago: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The kill switch from a terminal (M20.4).
+///
+/// Available as a command as well as a page, because the moment you need it most is the moment
+/// something else is on fire and a browser is the wrong tool.
+async fn suspend(account: &str, reason: &str) -> Result<(), String> {
+    let pool = admin_pool().await?;
+    panday_platform::abuse::suspend(&pool, parse_uuid(account)?, "cli", reason)
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("suspended — this account's keys are refused from the next request");
+    Ok(())
+}
+
+async fn unsuspend(account: &str) -> Result<(), String> {
+    let pool = admin_pool().await?;
+    panday_platform::abuse::unsuspend(&pool, parse_uuid(account)?, "cli")
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("reinstated");
+    Ok(())
+}
+
+/// The velocity and anomaly report (M20.4).
+///
+/// Reports; it does not act. A heuristic wired to an irreversible action will eventually be wrong
+/// about a real customer on their busiest day — so this prints what a person should look at, and
+/// `suspend` is a separate, deliberate command.
+async fn watch() -> Result<(), String> {
+    use panday_platform::abuse::{accounts_created, keys_issued, spend_micros, Velocity};
+
+    let pool = admin_pool().await?;
+    let signups = Velocity {
+        window_hours: 1,
+        limit: 50,
+    };
+    let seen = accounts_created(&pool, signups.window_hours)
+        .await
+        .map_err(|e| e.to_string())?;
+    let verdict = signups.judge(seen);
+    println!(
+        "signups (1h): {seen} — {}",
+        if verdict.is_suspicious() {
+            "OVER LIMIT"
+        } else {
+            "ok"
+        }
+    );
+
+    // The accounts worth a look: the biggest spenders in the last day, with their key-minting rate
+    // beside them. Two ordinary numbers whose *combination* is the signal.
+    let accounts: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+        "-- tenant-scoping: cross-tenant — the abuse watch is a population view by construction.
+         SELECT account_id, name FROM accounts WHERE suspended_at IS NULL ORDER BY created_at DESC LIMIT 200",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let keys = Velocity {
+        window_hours: 1,
+        limit: 10,
+    };
+    let mut flagged = 0;
+    for (account_id, name) in accounts {
+        let spent = spend_micros(&pool, account_id, 24)
+            .await
+            .map_err(|e| e.to_string())?;
+        let minted = keys_issued(&pool, account_id, keys.window_hours)
+            .await
+            .map_err(|e| e.to_string())?;
+        let key_verdict = keys.judge(minted);
+        if spent == 0 && !key_verdict.is_suspicious() {
+            continue;
+        }
+        if key_verdict.is_suspicious() {
+            flagged += 1;
+        }
+        println!(
+            "  {:<24} spent ${:>8.2}/24h · {minted} key(s)/1h{}",
+            name,
+            spent as f64 / 1e6,
+            if key_verdict.is_suspicious() {
+                "  ← LOOK"
+            } else {
+                ""
+            }
+        );
+    }
+
+    if verdict.is_suspicious() || flagged > 0 {
+        // Non-zero so a cron job surfaces it, and nothing is suspended automatically.
+        return Err("something is worth a look — nothing was suspended automatically".into());
+    }
+    Ok(())
+}
+
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, String> {
     s.parse().map_err(|_| format!("`{s}` is not a uuid"))
 }
@@ -422,6 +524,15 @@ async fn run() -> Result<(), String> {
             auth: Arc::new(KeyAuthenticator::new(pool.clone())),
         }),
     );
+
+    // The admin surface (M17.7). Always mounted, always behind an `admin`-scoped key: an admin page
+    // that appears only when a flag is set is one that is off in the deployment where it is needed.
+    app = app.merge(panday_platform::admin::router(
+        panday_platform::admin::AdminState {
+            pool: pool.clone(),
+            auth: Arc::new(KeyAuthenticator::new(pool.clone())),
+        },
+    ));
 
     // Mounted only when a secret is configured. An unauthenticated webhook endpoint is an
     // open write into the billing inbox, and defaulting the secret to something would make that

@@ -289,4 +289,22 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   **Issuing needs no database.** A licence is a statement about a contract, and an air-gapped
   customer may never have had an account (docs/18 M18.7); tying the one artifact that must work
   offline to the one component that cannot would be backwards.
-- **M17.7** Admin panel + abuse guardrails (velocity checks, disposable-email list).
+- **M17.7** Admin panel + abuse guardrails (velocity checks, disposable-email list). ✅ *(shipped: `panday_platform::admin` at `/admin`, plus the guardrails in `panday_platform::abuse` — see docs/20 M20.4.)*
+
+  **HTML, and boring on purpose.** No JavaScript, no build step, no framework: this is a page an
+  operator opens at 3am on whatever browser is on the machine they are logged into, and a
+  single-page app with a build pipeline is a thing that can break on the day you need it. The
+  stylesheet is inline, because a separate asset is a second request that can 404.
+
+  **Behind an `admin`-scoped key, not yet behind an IdP.** docs/17 asks for an IdP and this repo has
+  none to integrate with. The scope check is the honest interim and a real control rather than a
+  placeholder: an admin key is minted deliberately, revoked in one command, and its id lands in
+  every audit row so "who did this" has an answer. A key that authenticates but lacks the scope gets
+  the same refusal as one that does not authenticate at all — learning that it *almost* worked is
+  learning that it is close.
+
+  **Every value on the page is escaped.** Account names are customer-chosen, and an admin page that
+  renders one unescaped is a stored XSS aimed at the single session with admin scope.
+
+  **The kill switch exists as a command as well as a page**, because the moment you need it most is
+  the moment something else is already on fire and a browser is the wrong tool.

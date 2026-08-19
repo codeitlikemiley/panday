@@ -213,7 +213,39 @@ the audit trail *is* the product's data model (ADR-002).
   `.sql` file and one Rust string literal and requires both walkers to find them. It
   plants outside the repo because writing into it would race the scan test running
   concurrently — which the first draft did, and failed.
-- **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented.
+- **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented. ✅ *(shipped: `panday_platform::abuse`, migration `0008_abuse_controls.sql`, `panday-platform suspend|unsuspend|watch`, `scripts/backup-drill.sh` / `just drill`.)*
+
+  **Three mechanisms, in increasing order of the certainty they need.** Velocity checks are
+  advisory: thirty accounts from one source in an hour is a signal, not a verdict, and `watch`
+  *reports* — a heuristic wired to an irreversible action will eventually be wrong about a real
+  customer on their busiest day. Disposable-email detection is advisory too, and deliberately a
+  checked-in **list** rather than a cleverness: a regex that guesses at throwaway domains catches a
+  university and misses `mailinator`, and a list is something a customer who writes in can be shown.
+  Sub-addressing (`user+tag@`) is explicitly not suspicious — it is how careful people track who
+  leaked their address, and punishing it annoys exactly the customers worth keeping.
+
+  **The kill switch is certain, immediate and reversible.** A timestamp and a reason on the account,
+  read in the same query as the API key — so it bites on the very next request with nothing to
+  invalidate and no window where a killed account still works. Not a delete: a deleted account
+  cannot be investigated and cannot be reinstated. Both the suspension and the reinstatement are
+  written to an append-only `admin_actions` table in the same transaction as their effect, because
+  "who turned it off" and "who turned it back on" are the first two questions an incident review
+  asks — and an admin action that leaves no trace is indistinguishable from an intrusion.
+
+  **Drill #1, run and recorded.** `scripts/backup-drill.sh` dumps the database, restores it into a
+  *different* one, and compares the numbers that matter: account count, ledger entry count, ledger
+  sum, and whether the restored `balances` summary still agrees with the restored entries. A drill
+  that only checks `pg_restore`'s exit code proves that `pg_restore` exited zero. It refuses to
+  overwrite a restore target that already holds tables — a drill that can destroy the thing it is
+  rehearsing for is not a drill — and it runs its client tools in a container matching the server's
+  major version, because a laptop's Homebrew `pg_dump` is routinely older than the database and
+  refuses outright.
+
+  **Result of drill #1 (2026-08-19, dev stack, `postgres:17-alpine`):** 5 accounts, 52 ledger
+  entries, balance −1,275,000 micro-credits dumped and restored identically; the derived `balances`
+  table agreed with the restored entries. The consistency check was then verified to *fail* by
+  deleting one entry from the restored copy — it reported one account whose balance disagreed. A
+  check that has never failed is a check nobody has tested.
 - **M20.5** SBOM + signed releases; dependency-update cadence with an owner. ✅ *(shipped: `cargo xtask sbom`, the checked-in `sbom.cdx.json`, the `sign` job in `.github/workflows/release.yml`, `.github/dependabot.yml`.)*
 
   **The SBOM is checked in, not only released.** A document produced at release time answers "what
