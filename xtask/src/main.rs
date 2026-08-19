@@ -4,6 +4,7 @@
 //! ```text
 //! cargo xtask schemas          # regenerate proto/
 //! cargo xtask schemas --check  # fail if proto/ is stale (CI)
+//! cargo xtask reduce-bench     # reduce-then-solve scorecard + regression gate
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -30,6 +31,10 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // M15.5. A task rather than only a test so the nightly job has one thing
+        // to run and one artifact to keep, and so a human can read the scorecard
+        // without decoding `cargo test` output.
+        "reduce-bench" => reduce_bench(rest.iter().any(|a| a == "--quiet")),
         "help" | "--help" | "-h" => {
             usage();
             ExitCode::SUCCESS
@@ -46,8 +51,45 @@ fn usage() {
     eprintln!(
         "usage: cargo xtask <task>\n\n\
          tasks:\n  \
-         schemas [--check]   export JSON Schema for the event protocol to proto/\n"
+         schemas [--check]   export JSON Schema for the event protocol to proto/\n  \
+         reduce-bench        run the reduce-then-solve eval; non-zero on regression\n"
     );
+}
+
+/// docs/15 M15.5: "nightly job + regression gate". The gate is the exit code.
+fn reduce_bench(quiet: bool) -> ExitCode {
+    // Delegating to the test binary rather than reimplementing the corpus here:
+    // two copies of an eval corpus drift, and the copy the gate runs would be
+    // the one nobody looks at.
+    let status = std::process::Command::new(env!("CARGO"))
+        .current_dir(repo_root())
+        .args([
+            "test",
+            "-p",
+            "panday-harness",
+            "--test",
+            "reduce_then_solve",
+            "--",
+            "--nocapture",
+        ])
+        .args(if quiet { vec!["--quiet"] } else { vec![] })
+        .status();
+
+    match status {
+        Ok(s) if s.success() => ExitCode::SUCCESS,
+        Ok(_) => {
+            eprintln!(
+                "\nreduce-bench FAILED — reduction made a recorded task unsolvable.\n\
+                 docs/15: \"a reducer that loses the plot is negative value at any \
+                 compression ratio\". This blocks release."
+            );
+            ExitCode::FAILURE
+        }
+        Err(e) => {
+            eprintln!("reduce-bench: cannot run cargo test: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn repo_root() -> PathBuf {

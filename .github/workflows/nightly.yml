@@ -1,0 +1,30 @@
+name: nightly
+# docs/15 M15.5: "nightly job + regression gate", and docs/19's `reduce-bench`.
+#
+# Nightly rather than per-PR because the eval is a *quality* signal over a corpus
+# rather than a correctness check on a diff — and because the corpus is meant to
+# grow until it is too slow for the PR lane. The regression gate itself
+# (`the_shipping_reducer_keeps_every_task_solvable`) also runs in the normal
+# suite, so a PR that breaks retention still fails immediately; this job exists to
+# publish the scorecard and to catch a slow drift nobody's diff caused.
+on:
+  schedule:
+    # 04:00 UTC — after the day's merges, before anyone reads it.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  reduce-bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Non-zero exit on regression is the gate; the scorecard goes to the log
+      # and to an artifact so a trend is readable without re-running anything.
+      - run: cargo run -p xtask -- reduce-bench | tee reduce-bench.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reduce-bench-scorecard
+          path: reduce-bench.txt

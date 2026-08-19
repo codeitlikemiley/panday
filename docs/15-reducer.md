@@ -219,5 +219,39 @@ argument.
   `dashboard_line()` puts dollars first and the ratio in parentheses, because a
   ratio in the lead position is how a \$0.002 saving gets celebrated as a 90%
   win.
-- **M15.5** Reduce-then-solve replay eval harness; nightly job + regression gate.
+- **M15.5** Reduce-then-solve replay eval harness; nightly job + regression gate. ✅ *(shipped: `panday_harness::eval`, `crates/panday-harness/tests/reduce_then_solve.rs`, `cargo xtask reduce-bench`, `.github/workflows/nightly.yml`.)*
+
+  **Current scorecard** (the five recorded outputs the retention fixtures use):
+  100% of solvable tasks still solved, mean reduction 93.7%, zero regressions —
+  `cargo_test_v1` 95.8%, `cargo_build_v1` 88.6%, `pytest_v1` 98.3%,
+  `git_status_v1` 93.6%, `generic_headtail_v1` 92.5%.
+
+  **Why this is not the retention suite again.** Those fixtures assert a fact
+  survived the *compressor*. This asserts the task stayed solvable through the
+  whole *loop* — assembly, spilling, compaction — and a fact can survive the first
+  and be lost in the second. The solver in the loop is mechanical rather than an
+  LLM: a real model would make the eval non-deterministic and put its own judgement
+  under test instead of the reducer's. It succeeds only if every required fact is in
+  the context the loop assembled, which is a lower bound on a real model's needs and
+  the part that can be gated in CI.
+
+  **The gate is asymmetric on purpose.** A regression is "solvable with reduction
+  off, unsolvable with it on". A scenario that fails both ways is a broken scenario,
+  and failing the build on it would teach everyone to ignore this gate — so a second
+  test asserts every scenario is solvable with reduction off, or a broken corpus
+  would silently exempt itself.
+
+  **The harness is tested by making it fail.** A `Vandal` reducer that keeps two
+  lines scores 99.0% reduction and breaks exactly the three failure diagnoses; the
+  two remaining scenarios survive because their fact happens to sit in the first
+  line. That is the real lesson about head-keeping strategies — they look fine on a
+  file read and destroy a test failure, because the interesting part of a diagnostic
+  is at the end. An eval that cannot fail says nothing, and this one's whole claim
+  is that it notices when an impressive ratio costs task success (ADR-007).
+
+  `PassthroughReducer` landed with this as the control arm, and it is also docs/15
+  §Config's `reducer: off` kill-switch. It is a `Reducer` and not an
+  `Option<Reducer>` so the loop is byte-identical in both arms — otherwise the
+  comparison measures the loop, and the debugging flag would change two things at
+  once.
 - **M15.6** Semantic tier behind budget gate (provider cheap model); swap-in point defined for our tuned summarizer.

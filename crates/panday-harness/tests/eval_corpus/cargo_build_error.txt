@@ -1,0 +1,108 @@
+   Compiling panday-gateway v0.0.1
+   Compiling dep_1 v1.0.1
+   Compiling dep_2 v1.0.2
+   Compiling dep_3 v1.0.3
+   Compiling dep_4 v1.0.4
+   Compiling dep_5 v1.0.5
+   Compiling dep_6 v1.0.6
+   Compiling dep_7 v1.0.7
+   Compiling dep_8 v1.0.8
+   Compiling dep_9 v1.0.9
+   Compiling dep_10 v1.0.10
+   Compiling dep_11 v1.0.11
+   Compiling dep_12 v1.0.12
+   Compiling dep_13 v1.0.13
+   Compiling dep_14 v1.0.14
+   Compiling dep_15 v1.0.15
+   Compiling dep_16 v1.0.16
+   Compiling dep_17 v1.0.17
+   Compiling dep_18 v1.0.18
+   Compiling dep_19 v1.0.19
+   Compiling dep_20 v1.0.20
+   Compiling dep_21 v1.0.21
+   Compiling dep_22 v1.0.22
+   Compiling dep_23 v1.0.23
+   Compiling dep_24 v1.0.24
+   Compiling dep_25 v1.0.25
+   Compiling dep_26 v1.0.26
+   Compiling dep_27 v1.0.27
+   Compiling dep_28 v1.0.28
+   Compiling dep_29 v1.0.29
+   Compiling dep_30 v1.0.30
+   Compiling dep_31 v1.0.31
+   Compiling dep_32 v1.0.32
+   Compiling dep_33 v1.0.33
+   Compiling dep_34 v1.0.34
+   Compiling dep_35 v1.0.35
+   Compiling dep_36 v1.0.36
+   Compiling dep_37 v1.0.37
+   Compiling dep_38 v1.0.38
+   Compiling dep_39 v1.0.39
+   Compiling dep_40 v1.0.40
+   Compiling dep_41 v1.0.41
+   Compiling dep_42 v1.0.42
+   Compiling dep_43 v1.0.43
+   Compiling dep_44 v1.0.44
+   Compiling dep_45 v1.0.45
+   Compiling dep_46 v1.0.46
+   Compiling dep_47 v1.0.47
+   Compiling dep_48 v1.0.48
+   Compiling dep_49 v1.0.49
+   Compiling dep_50 v1.0.50
+   Compiling dep_51 v1.0.51
+   Compiling dep_52 v1.0.52
+   Compiling dep_53 v1.0.53
+   Compiling dep_54 v1.0.54
+   Compiling dep_55 v1.0.55
+   Compiling dep_56 v1.0.56
+   Compiling dep_57 v1.0.57
+   Compiling dep_58 v1.0.58
+   Compiling dep_59 v1.0.59
+   Compiling dep_60 v1.0.60
+error[E0308]: mismatched types
+   --> crates/panday-gateway/src/gateway.rs:142:23
+    |
+142 |         let usage = compute(req);
+    |                     ^^^^^^^ expected `Usage`, found `Option<Usage>`
+    |
+note: irrelevant context line 1
+note: irrelevant context line 2
+note: irrelevant context line 3
+note: irrelevant context line 4
+note: irrelevant context line 5
+note: irrelevant context line 6
+note: irrelevant context line 7
+note: irrelevant context line 8
+note: irrelevant context line 9
+note: irrelevant context line 10
+note: irrelevant context line 11
+note: irrelevant context line 12
+note: irrelevant context line 13
+note: irrelevant context line 14
+note: irrelevant context line 15
+note: irrelevant context line 16
+note: irrelevant context line 17
+note: irrelevant context line 18
+note: irrelevant context line 19
+note: irrelevant context line 20
+note: irrelevant context line 21
+note: irrelevant context line 22
+note: irrelevant context line 23
+note: irrelevant context line 24
+note: irrelevant context line 25
+note: irrelevant context line 26
+note: irrelevant context line 27
+note: irrelevant context line 28
+note: irrelevant context line 29
+note: irrelevant context line 30
+note: irrelevant context line 31
+note: irrelevant context line 32
+note: irrelevant context line 33
+note: irrelevant context line 34
+note: irrelevant context line 35
+note: irrelevant context line 36
+note: irrelevant context line 37
+note: irrelevant context line 38
+note: irrelevant context line 39
+note: irrelevant context line 40
+error: could not compile `panday-gateway` (lib) due to 1 previous error

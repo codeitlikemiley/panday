@@ -37,6 +37,27 @@ pub trait Reducer: Send + Sync {
     fn reduce(&self, raw: &str, ctx: &ReduceCtx) -> ReducedOutput;
 }
 
+/// Keeps everything. docs/15 §Config's "global kill-switch (`reducer: off`) for
+/// debugging 'did compression eat it?' — one flag, not an argument", and the
+/// control arm of the reduce-then-solve eval (M15.5).
+///
+/// It is a `Reducer` rather than an `Option<Reducer>` on purpose: the loop must be
+/// byte-identical with reduction off, or the comparison measures the loop instead
+/// of the reducer, and the debugging flag would change two things at once.
+pub struct PassthroughReducer;
+
+impl Reducer for PassthroughReducer {
+    fn reduce(&self, raw: &str, _ctx: &ReduceCtx) -> ReducedOutput {
+        let tokens = approx_tokens(raw);
+        ReducedOutput {
+            text: raw.to_string(),
+            tokens_raw: tokens,
+            tokens_kept: tokens,
+            strategy: "passthrough".into(),
+        }
+    }
+}
+
 /// ~4 chars/token; good enough for sizing decisions (never for billing).
 pub fn approx_tokens(s: &str) -> u32 {
     (s.len() as u32).div_ceil(4)
