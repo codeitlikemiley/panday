@@ -218,5 +218,33 @@ graphs, keys, invoices) is part of the phase-3 web surface.
   supplies the real `Authenticator`, so the gateway never links Postgres.
 - **M17.4** Stripe checkout+webhooks inbox+nightly reconcile in test mode; plan grants land as ledger entries.
 - **M17.5** Meter export job (hourly aggregates → Billing Meters); invoice sanity check vs ledger to the cent on a seeded month.
-- **M17.6** Entitlement tokens for offline; `panday local` honors + expires them.
+- **M17.6** Entitlement tokens for offline; `panday local` honors + expires them. ✅ *(shipped: `panday_plugins::entitlement`, `panday-platform entitle …`, `panday local --entitlement <file>`.)*
+
+  **Expiry degrades; it does not brick.** Past the grace window the token stops granting and the
+  software keeps working at the community tier. Bricking a paying customer's laptop over a renewal
+  e-mail is not a business model, it is an outage you charged for — and ADR-011 says the offline
+  tier needs no account at all, so there is a complete product to fall back to.
+
+  **Verification is local, always.** No revocation check, no activation, no call home. A licence
+  that stops working because a network is down fails exactly when the offline tier is most
+  valuable.
+
+  **Seats are declared, never counted.** The token carries the number that was bought. Nothing
+  counts machines, fingerprints hardware or phones home, and there is a test asserting so — the day
+  something starts counting, that test is what has to be deleted, which is the point of writing it.
+  docs/17 calls the alternative spyware.
+
+  **A wrong file is an error; an expired one is not.** A typo in a path or a key silently
+  downgrading a paying customer to the community tier is a support ticket that takes a week to
+  reach the truth, so a missing or tampered licence stops the boot. An expired licence boots and
+  says so, every run — a warning that appears once, on the day it expires, is one nobody sees.
+
+  **A day of clock skew is tolerated.** An air-gapped box with a dead RTC is a real thing, and
+  refusing a valid licence because a laptop thinks it is Tuesday gets a product ripped out. Moving
+  a clock back to extend a licence works with or without that tolerance, which is the honest reason
+  expiry is a business control rather than a security one.
+
+  **Issuing needs no database.** A licence is a statement about a contract, and an air-gapped
+  customer may never have had an account (docs/18 M18.7); tying the one artifact that must work
+  offline to the one component that cannot would be backwards.
 - **M17.7** Admin panel + abuse guardrails (velocity checks, disposable-email list).

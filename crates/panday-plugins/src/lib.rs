@@ -5,6 +5,7 @@
 //! and capability model; loaders land in M16.1+.
 
 pub mod archive;
+pub mod entitlement;
 pub mod mcp;
 pub mod signature;
 pub mod skill;

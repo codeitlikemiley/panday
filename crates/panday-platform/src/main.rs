@@ -35,6 +35,8 @@ panday-platform — the hosted control plane (docs/17)
   panday-platform keys <account-id>              list an account's keys (never the secret)
   panday-platform revoke-key <account-id> <key-id>
   panday-platform prune-routes <days>            drop route audit rows older than <days>
+  panday-platform entitle <subject> <plan> <seats> <days> --key-file <path>
+                                                 sign an offline licence (docs/17 M17.6)
 
 Scopes are comma-separated: models,sessions,admin (default: models,sessions).
 PANDAY_DATABASE_URL is required by every subcommand.
@@ -58,6 +60,9 @@ async fn main() {
         ["keys", account] => list_keys(account).await,
         ["revoke-key", account, key] => revoke_key(account, key).await,
         ["prune-routes", days] => prune_routes(days).await,
+        ["entitle", subject, plan, seats, days, "--key-file", key_file] => {
+            entitle(subject, plan, seats, days, key_file)
+        }
         ["-h" | "--help" | "help"] => {
             print!("{USAGE}");
             return;
@@ -167,6 +172,68 @@ async fn prune_routes(days: &str) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     println!("{dropped} route decisions older than {days} days deleted");
+    Ok(())
+}
+
+/// Sign an offline entitlement (M17.6).
+///
+/// Needs no database: a licence is a statement about a contract, and an air-gapped customer may
+/// never have had an account at all (docs/18 M18.7). Making it a database operation would tie the
+/// one artifact that has to work offline to the one component that cannot.
+fn entitle(
+    subject: &str,
+    plan: &str,
+    seats: &str,
+    days: &str,
+    key_file: &str,
+) -> Result<(), String> {
+    use panday_plugins::entitlement::{issue, Entitlement};
+
+    let seats: u32 = seats
+        .parse()
+        .map_err(|_| format!("`{seats}` is not a seat count"))?;
+    let days: i64 = days
+        .parse()
+        .map_err(|_| format!("`{days}` is not a number of days"))?;
+
+    let seed = std::fs::read(key_file).map_err(|e| format!("read {key_file}: {e}"))?;
+    let seed: [u8; 32] = seed
+        .as_slice()
+        .try_into()
+        .map_err(|_| format!("{key_file} must be exactly 32 bytes of ed25519 seed"))?;
+    let keys = panday_plugins::signature::SigningKeyPair::from_bytes(&seed);
+
+    let now = time::OffsetDateTime::now_utc();
+    let rfc3339 = time::format_description::well_known::Rfc3339;
+    let entitlement = Entitlement {
+        version: 1,
+        subject: subject.to_string(),
+        plan: plan.to_string(),
+        seats,
+        issued_at: now.format(&rfc3339).map_err(|e| e.to_string())?,
+        expires_at: (now + time::Duration::days(days))
+            .format(&rfc3339)
+            .map_err(|e| e.to_string())?,
+        // docs/17: "~90-day expiry + grace". Thirty days of grace, because a renewal that has to
+        // land on the day is one that will eventually not.
+        grace_days: 30,
+        note: None,
+    };
+
+    let (document, signature) = issue(&keys, &entitlement)?;
+    let path = format!("{subject}.entitlement.json");
+    std::fs::write(&path, &document).map_err(|e| format!("write {path}: {e}"))?;
+    std::fs::write(format!("{path}.sig"), &signature)
+        .map_err(|e| format!("write {path}.sig: {e}"))?;
+
+    println!(
+        "wrote {path} and {path}.sig\n  subject: {subject} · plan: {plan} · seats: {seats}\n  \
+         expires: {} (+{} days grace)\n\nThe customer runs:\n  \
+         PANDAY_ENTITLEMENT_KEY={} panday local --entitlement {path}",
+        entitlement.expires_at,
+        entitlement.grace_days,
+        keys.public_key_hex(),
+    );
     Ok(())
 }
 

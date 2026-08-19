@@ -69,6 +69,12 @@ pub struct LocalConfig {
     /// Declared, not measured — M19.2 measures them, and the system prompt says
     /// "(estimated)" until it does.
     pub capabilities: panday_types::CapabilityProfile,
+    /// An offline entitlement token and the key it must be signed by (M17.6).
+    ///
+    /// Absent is the normal case: the offline tier needs no account and no licence (ADR-011). A
+    /// token unlocks the enterprise tier; it never gates basic use, and an expired one degrades
+    /// rather than bricking.
+    pub entitlement: Option<(PathBuf, String)>,
     /// Spawn and supervise the inference server, rather than expecting one to be running (M18.2).
     ///
     /// Optional because both are real workflows: a developer with `llama-server` already up wants
@@ -83,6 +89,7 @@ impl LocalConfig {
         Self {
             base_url: "http://127.0.0.1:8080".into(),
             model: ModelRef("local/qwen3.5-4b".into()),
+            entitlement: None,
             serve: None,
             log: workspace.join(".panday/session.jsonl"),
             workspace,
@@ -158,11 +165,18 @@ pub enum LocalError {
     Turn(String),
     #[error("model server: {0}")]
     Server(String),
+    #[error("entitlement: {0}")]
+    Entitlement(String),
 }
 
 /// A booted offline session.
 pub struct Local {
     actor: SessionActor,
+    /// The licence, if one was supplied and verified (M17.6).
+    entitlement: Option<(
+        panday_plugins::entitlement::Entitlement,
+        panday_plugins::entitlement::Status,
+    )>,
     /// Alive for as long as the session is, when we started it. Dropping `Local` stops it — a
     /// model server outliving the thing that spawned it is a 6GB process nobody remembers running.
     server: Option<crate::supervisor::Supervisor>,
@@ -173,6 +187,36 @@ pub struct Local {
     /// first. The log is the source of truth for what to render — the same fold a replay
     /// does (ADR-002).
     rendered: usize,
+}
+
+/// Read and verify an entitlement file (M17.6).
+///
+/// Offline, always: no revocation check and no phone-home. A licence that stops working because a
+/// network is down fails exactly when the offline tier is most valuable.
+fn load_entitlement(
+    path: &Path,
+    trusted_key_hex: &str,
+) -> Result<
+    (
+        panday_plugins::entitlement::Entitlement,
+        panday_plugins::entitlement::Status,
+    ),
+    LocalError,
+> {
+    let document = std::fs::read(path)
+        .map_err(|e| LocalError::Entitlement(format!("read {}: {e}", path.display())))?;
+    // Detached signature beside the file, exactly like the model catalog — one convention for every
+    // signed artifact a customer receives.
+    let signature = std::fs::read_to_string(format!("{}.sig", path.display()))
+        .map_err(|e| LocalError::Entitlement(format!("read {}.sig: {e}", path.display())))?;
+
+    panday_plugins::entitlement::verify(
+        &document,
+        signature.trim(),
+        trusted_key_hex,
+        time::OffsetDateTime::now_utc(),
+    )
+    .map_err(|e| LocalError::Entitlement(e.to_string()))
 }
 
 impl Drop for Local {
@@ -191,6 +235,15 @@ impl Local {
         if !is_loopback(&config.base_url) {
             return Err(LocalError::NotLoopback(config.base_url));
         }
+
+        // The licence, before anything runs. A bad *file* is an error the operator must see now —
+        // a typo in a path or a key silently downgrading a paying customer to the community tier is
+        // a support ticket that takes a week to reach the truth. An *expired* licence is not an
+        // error: it degrades, loudly, below.
+        let entitlement = match &config.entitlement {
+            Some((path, key)) => Some(load_entitlement(path, key)?),
+            None => None,
+        };
 
         // Before anything else: if we are supervising the server, it has to be up, because every
         // turn below assumes it. Failing here says "the model server did not start"; failing later
@@ -297,6 +350,7 @@ impl Local {
 
         Ok(Self {
             actor,
+            entitlement,
             server,
             store,
             usage,
@@ -307,6 +361,33 @@ impl Local {
             // Everything already in the log belongs to a previous run; this boot renders
             // only what it does itself.
             rendered: existing.len(),
+        })
+    }
+
+    /// The licence and where it stands, for a caller that wants to print it (M17.6).
+    ///
+    /// `None` is the community tier, which is a complete product rather than a crippled one — the
+    /// offline tier's whole promise is that it needs no account (ADR-011).
+    pub fn entitlement(
+        &self,
+    ) -> Option<(
+        &panday_plugins::entitlement::Entitlement,
+        &panday_plugins::entitlement::Status,
+    )> {
+        self.entitlement.as_ref().map(|(e, s)| (e, s))
+    }
+
+    /// The one line a user should see about their licence, if any.
+    pub fn licence_line(&self) -> Option<String> {
+        let (entitlement, status) = self.entitlement.as_ref()?;
+        let tier = if status.grants() {
+            entitlement.plan.as_str()
+        } else {
+            "community"
+        };
+        Some(match status.warning() {
+            Some(warning) => format!("licence: {tier} ({} seats) — {warning}", entitlement.seats),
+            None => format!("licence: {tier} ({} seats)", entitlement.seats),
         })
     }
 

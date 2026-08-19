@@ -85,6 +85,19 @@ async fn run() -> ExitCode {
                 Some(v) => config = config.log(v),
                 None => return fail("--log needs a path"),
             },
+            // M17.6. Two flags rather than a baked-in key, for the same reason the model catalog
+            // has none: we have published no key, and a placeholder would teach people to trust
+            // one nobody holds.
+            "--entitlement" => match next() {
+                Some(path) => {
+                    let key = std::env::var("PANDAY_ENTITLEMENT_KEY").unwrap_or_default();
+                    if key.trim().is_empty() {
+                        return fail("--entitlement needs PANDAY_ENTITLEMENT_KEY (hex public key)");
+                    }
+                    config.entitlement = Some((std::path::PathBuf::from(path), key));
+                }
+                None => return fail("--entitlement needs a path to the licence file"),
+            },
             // M18.2: start and supervise the inference server ourselves. Without this, `panday
             // local` attaches to whatever is already listening — which is the right default,
             // because killing a server the user started would be a surprise.
@@ -124,6 +137,11 @@ async fn run() -> ExitCode {
         local.session().0,
         local.log_path().display()
     );
+    // Printed every run when there is anything to say. A licence warning that appears once, on the
+    // day it expires, is a licence warning nobody sees.
+    if let Some(line) = local.licence_line() {
+        println!("{line}");
+    }
 
     match local.turn(&prompt.join(" ")).await {
         Ok(rendered) => {
@@ -161,6 +179,8 @@ fn usage() -> String {
      --workspace  the directory tools are scoped to (default: cwd)\n  \
      --profile    read_only | dev | unleashed (default dev)\n  \
      --log        where the event log goes (default <workspace>/.panday/session.jsonl)\n  \
+     --entitlement  an offline licence file (with .sig beside it); needs\n                  \
+     $PANDAY_ENTITLEMENT_KEY. Absent = community tier, which is a complete product\n  \
      --serve      start and supervise llama-server on this .gguf, instead of attaching to a\n               \
      running one (binary from $PANDAY_LOCAL_SERVER_BIN, default `llama-server`)\n\n\
      Loopback only: a remote base URL is refused, because the offline tier's promise is\n\
