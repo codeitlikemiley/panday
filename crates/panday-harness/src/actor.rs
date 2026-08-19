@@ -333,6 +333,23 @@ impl SessionActor {
         self
     }
 
+    /// The `PermissionRequest` event for a parked call, rebuilt the same way the
+    /// logged one was.
+    ///
+    /// Exposed for the ACP bridge (M16.5), which has to ask the *editor* the question
+    /// the log recorded. Rebuilt through the same `describe()` the commit used, so the
+    /// text a human approves in their editor is the text the log says they approved —
+    /// two renderings of one request is how a consent record stops being evidence.
+    pub fn parked_permission(&self, call_id: CallId) -> Option<Event> {
+        let call = self.parked.iter().find(|c| c.id == call_id)?;
+        Some(Event::PermissionRequest {
+            call_id: call.id,
+            tool: call.name.clone(),
+            action: describe(&call.name, &call.args),
+            options: vec!["allow".into(), "allow_remember".into(), "deny".into()],
+        })
+    }
+
     /// A handle that can request cancellation from another task — the client
     /// pressing ctrl-c is not on the actor's task.
     pub fn cancel_handle(&self) -> CancelHandle {
@@ -837,7 +854,8 @@ impl SessionActor {
     ) -> Result<(), HarnessError> {
         self.absorb_skill(&call, &outcome);
 
-        let _reduce_span = tracing::info_span!("reduce", tool = %call.name).entered();
+        use tracing::Instrument;
+        let reduce_span = tracing::info_span!("reduce", tool = %call.name);
 
         // Tool output NEVER enters context raw (ADR-007).
         let ctx = ReduceCtx {
@@ -854,14 +872,19 @@ impl SessionActor {
             Some(scrub) => scrub.scrub(&outcome.raw),
             None => outcome.raw.clone(),
         };
-        let mut reduced = self.reducer.reduce(&raw, &ctx);
+        // `in_scope` for the synchronous part: it enters and exits without an await in
+        // between, which is the only shape where entering a span is safe.
+        let mut reduced = reduce_span.in_scope(|| self.reducer.reduce(&raw, &ctx));
 
         // Layer 5, if configured and if the accounting says it is worth it. The
         // decision is recorded in `strategy`, which the log carries and
         // `panday replay` renders — a summarization that silently did not happen
         // is otherwise indistinguishable from one that did nothing.
         if let Some(tier) = &self.semantic {
-            let (out, decision) = tier.apply(reduced, &ctx).await;
+            let (out, decision) = tier
+                .apply(reduced, &ctx)
+                .instrument(reduce_span.clone())
+                .await;
             tracing::debug!(
                 tool = %call.name,
                 decision = ?decision,
@@ -1022,6 +1045,7 @@ impl SessionActor {
         // Synchronous span entry is correct here only because nothing between
         // this point and the await is thread-sensitive; the await itself is
         // instrumented below.
+        use tracing::Instrument;
         let exec_span = tracing::info_span!("sandbox.exec", tool = %call.name);
 
         let outcome = match self.tools.get(&call.name) {
@@ -1032,9 +1056,14 @@ impl SessionActor {
                     turn: TurnId::new(),
                 };
                 let cancelled = self.cancelled.clone();
-                let _entered = exec_span.clone().entered();
                 tokio::select! {
-                    outcome = tool.call(ctx, call.args.clone()) => outcome,
+                    // `.instrument()`, not an `entered()` guard: a guard is
+                    // thread-local *and* not `Send`, so holding one across this await
+                    // both lost the span on a multi-thread runtime (the M21.1 bug,
+                    // reintroduced here) and made the whole turn future non-`Send` —
+                    // which is how it was found, when the ACP bridge needed to await a
+                    // turn from a task.
+                    outcome = tool.call(ctx, call.args.clone()).instrument(exec_span.clone()) => outcome,
                     // Dropping the tool future drops its ExecStream, which is
                     // what kills the child process (see the sandbox note on
                     // receiver-drop). Polling a flag is enough here because a

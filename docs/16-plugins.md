@@ -205,5 +205,31 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   tool reports `sandbox_tier: T1Wasm` with `SideEffects` from its manifest, which is
   what makes docs/16's claim exact — the loop cannot tell it from a native tool, the
   permission engine can, and sandbox-seconds land under the right tier (M21.2).
-- **M16.5** ACP bridge: interactive session from Zed; permission round-trip works. *(The AEP⇄ACP mapping table landed early at M3.4 — `panday_cli::acp` — so what remains here is transport: stdio, the `session/new` handshake, and awaiting the client's permission answer.)*
+- **M16.5** ACP bridge: interactive session from Zed; permission round-trip works. ✅ *(shipped: `panday_cli::acp_server` + `panday acp`; suite in `crates/panday-cli/tests/acp_bridge.rs`. The mapping table landed at M3.4.)*
+
+  **What is verified, and what is not.** Zed cannot run in CI, so the suite drives our
+  agent with the official crate's own `Client` role over an in-memory `Channel`: a real
+  ACP conversation — initialize, `session/new`, `session/prompt`, `session/update`
+  notifications, `session/request_permission` — in the order an editor does it, over the
+  protocol it speaks. "It works in Zed" remains a claim someone verifies by hand once.
+
+  **The deadlock the crate warns about, made twice.** A turn asks the *client* for
+  permission mid-way. Awaiting that from inside the `session/prompt` handler blocks the
+  dispatch loop, so the loop cannot deliver the answer the handler is waiting for — the
+  crate documents this on `block_task` with a "❌ DEADLOCK" example, and the first draft
+  did it anyway: the whole suite hung with no output. The turn now runs in a spawned task
+  and responds from there, which works because `Responder` is `Send` and `respond`
+  consumes it.
+
+  **A found bug in the harness.** Making the bridge compile required the turn future to
+  be `Send`, and it was not: `execute()` held a `tracing` span *guard* across the tool
+  await, and `record_outcome()` held one across the commit. A guard is thread-local
+  (docs/21 M21.1's lesson) **and** `!Send`, so those two sites were silently losing their
+  spans on the multi-thread runtime as well as making the turn unusable from a spawned
+  task. Both are `.instrument()`/`in_scope()` now. The ACP work found a telemetry bug,
+  which is the sort of thing that only turns up when a second caller appears.
+
+  `panday acp` defaults to the `dev` profile rather than `unleashed`: an editor session
+  has a human in it, and the point of the gate is that they see the question. The jail's
+  environment is five toolchain variables, never the parent environment (docs/20 T4).
 - **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4.

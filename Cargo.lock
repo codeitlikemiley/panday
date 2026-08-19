@@ -1925,12 +1925,15 @@ dependencies = [
  "panday-gateway",
  "panday-harness",
  "panday-harnessd",
+ "panday-reducer",
  "panday-router",
+ "panday-sandbox",
  "panday-sdk",
  "panday-types",
  "serde_json",
  "time",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

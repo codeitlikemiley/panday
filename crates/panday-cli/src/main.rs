@@ -67,6 +67,17 @@ async fn run() -> ExitCode {
                 }
             };
         }
+        // An editor spawns this and speaks ACP on our stdio (docs/16, ADR-012).
+        // Nothing may be printed to stdout here that is not a JSON-RPC frame.
+        Command::Acp { workspace, profile } => {
+            return match panday_cli::run_acp(workspace, &profile).await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
         Command::Chat { model, prompt } => (model, prompt),
     };
 

@@ -15,6 +15,7 @@
 //! `panday_sdk::gateway::connect()` and nothing else changes.
 
 pub mod acp;
+pub mod acp_server;
 
 use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat};
 pub use panday_gateway::CollectUsage;
@@ -138,6 +139,12 @@ pub enum Command {
         /// Resume from a `seq` — proves the resume path from a shell.
         after_seq: Option<u64>,
     },
+    /// docs/16 §ACP bridge, ADR-012: the server thirteen editors can drive.
+    Acp {
+        /// Workspace root the session's tools are scoped to.
+        workspace: std::path::PathBuf,
+        profile: String,
+    },
     Help,
     Version,
 }
@@ -165,6 +172,7 @@ where
         "chat" => {}
         "replay" => return parse_replay(it),
         "session" => return parse_session(it),
+        "acp" => return parse_acp(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -241,6 +249,38 @@ fn parse_replay<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command
         diff_against,
         summary,
     })
+}
+
+fn parse_acp<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let mut workspace = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    // `dev` rather than `unleashed`: an editor session has a human in it, and the
+    // point of the gate is that they see the question (docs/13 §profiles).
+    let mut profile = "dev".to_string();
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--workspace" => {
+                workspace = it
+                    .next()
+                    .ok_or_else(|| "--workspace needs a path".to_string())?
+                    .into()
+            }
+            "--profile" => {
+                profile = it
+                    .next()
+                    .ok_or_else(|| "--profile needs one of read_only|dev|unleashed".to_string())?
+                    .clone()
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(format!("unknown flag `{other}` (try `panday help`)")),
+        }
+    }
+    if !["read_only", "dev", "unleashed"].contains(&profile.as_str()) {
+        return Err(format!(
+            "unknown profile `{profile}`; expected read_only, dev or unleashed"
+        ));
+    }
+    Ok(Command::Acp { workspace, profile })
 }
 
 fn parse_session<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
@@ -409,7 +449,8 @@ pub fn help() -> String {
          USAGE:\n  \
          panday chat [--model <provider/model>] <prompt>\n  \
          panday replay <log.jsonl> [--at <seq>] [--costs] [--verbose] [--summary] [--diff <other.jsonl>]\n  \
-         panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n\n\
+         panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n  \
+         panday acp [--workspace <dir>] [--profile <name>]   (an editor spawns this)\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
@@ -530,9 +571,148 @@ pub async fn run_chat(
     Ok(text)
 }
 
+/// `panday acp` — serve the ACP bridge on stdio (M16.5).
+///
+/// The gateway runs in-process for the same reason `chat` does (ADR-012, docs/01's
+/// dev/solo composition): an editor session on a laptop should not require a hosted
+/// service, and the harness is a library precisely so it can run either way.
+pub async fn run_acp(workspace: std::path::PathBuf, profile: &str) -> Result<(), String> {
+    use panday_harness::native::{register_native, Workspace};
+    use panday_sandbox::{
+        FsPolicy, Limits, NetPolicy, Sandbox, SandboxPolicy, SandboxTier, SessionSpec,
+    };
+
+    let workspace = workspace
+        .canonicalize()
+        .map_err(|e| format!("workspace {}: {e}", workspace.display()))?;
+
+    let config = Config::from_env();
+    let usage = std::sync::Arc::new(CollectUsage::new());
+    let gateway = std::sync::Arc::new(config.build_gateway(DEFAULT_POLICY, usage)?);
+
+    // One sandbox per process, one handle per workspace: an editor opens sessions in the
+    // project it was started in, and a second workspace means a second `panday acp`.
+    #[cfg(target_os = "macos")]
+    let sandbox = std::sync::Arc::new(panday_sandbox::T2MacosSandbox::new());
+    #[cfg(target_os = "linux")]
+    let sandbox = std::sync::Arc::new(panday_sandbox::T2LinuxSandbox::new());
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    return Err("no T2 sandbox on this platform; `panday acp` needs one".into());
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let handle = sandbox
+            .create(SessionSpec {
+                tier: SandboxTier::T2OsJail,
+                policy: SandboxPolicy {
+                    fs: FsPolicy {
+                        workspace_rw: workspace.clone(),
+                        staged_ro: vec![],
+                    },
+                    net: NetPolicy::default(),
+                    limits: Limits {
+                        wall_clock_ms: 180_000,
+                        ..Default::default()
+                    },
+                    // Inherited toolchain paths only — an editor's session runs the
+                    // project's own build, and a jail with no PATH cannot.
+                    env: toolchain_env(),
+                },
+            })
+            .await
+            .map_err(|e| format!("sandbox: {e}"))?;
+
+        let ws = Workspace::new(
+            sandbox.clone() as std::sync::Arc<dyn Sandbox>,
+            handle,
+            workspace,
+        );
+
+        let profile = match profile {
+            "read_only" => panday_harness::Profile::ReadOnly,
+            "unleashed" => panday_harness::Profile::Unleashed,
+            _ => panday_harness::Profile::Dev,
+        };
+
+        acp_server::serve_stdio(acp_server::AcpDeps {
+            model: gateway,
+            model_ref: ModelRef::auto(),
+            tools: std::sync::Arc::new(move || {
+                let mut registry = panday_harness::tools::ToolRegistry::default();
+                register_native(&mut registry, ws.clone());
+                registry
+            }),
+            profile,
+            account: AccountId::new(),
+        })
+        .await
+    }
+}
+
+/// The few environment variables a project's build actually needs inside the jail.
+///
+/// Not the parent environment: docs/20 T4 forbids inheriting it, and a jail that
+/// inherits `AWS_SECRET_ACCESS_KEY` because the developer happened to export it is the
+/// exact leak the tier exists to prevent.
+fn toolchain_env() -> Vec<(String, String)> {
+    ["PATH", "HOME", "CARGO_HOME", "RUSTUP_HOME", "LANG"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_acp_with_a_workspace_and_profile() {
+        let cmd =
+            parse_args(["acp", "--workspace", "/work/repo", "--profile", "read_only"]).unwrap();
+        assert_eq!(
+            cmd,
+            Command::Acp {
+                workspace: std::path::PathBuf::from("/work/repo"),
+                profile: "read_only".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn acp_defaults_to_dev_not_unleashed() {
+        // An editor session has a human in it, and the point of the gate is that they
+        // see the question (docs/13 §profiles).
+        match parse_args(["acp"]).unwrap() {
+            Command::Acp { profile, .. } => assert_eq!(profile, "dev"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unknown_profile_is_rejected() {
+        let err = parse_args(["acp", "--profile", "yolo"]).unwrap_err();
+        assert!(err.contains("unknown profile"), "{err}");
+    }
+
+    #[test]
+    fn the_toolchain_env_never_forwards_a_secret() {
+        // docs/20 T4: a jail that inherits `AWS_SECRET_ACCESS_KEY` because the developer
+        // exported it is the leak the tier exists to prevent.
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", "should-not-be-forwarded");
+        std::env::set_var("ANTHROPIC_API_KEY", "sk-should-not-be-forwarded");
+        let env = toolchain_env();
+        assert!(
+            env.iter().all(
+                |(k, _)| ["PATH", "HOME", "CARGO_HOME", "RUSTUP_HOME", "LANG"]
+                    .contains(&k.as_str())
+            ),
+            "{env:?}"
+        );
+        assert!(
+            !format!("{env:?}").contains("should-not-be-forwarded"),
+            "{env:?}"
+        );
+    }
 
     #[test]
     fn parses_a_session_with_a_resume_point() {
