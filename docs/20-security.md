@@ -100,6 +100,6 @@ the audit trail *is* the product's data model (ADR-002).
 
 - **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench.
 - **M20.2** Origin tagging + pre_tool filter pack; secrets vault + env-injection policy.
-- **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults.
+- **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults. *(Two thirds landed elsewhere: the cache-key audit's finding is built into `CacheKey` at M11.6 — `account_id` is part of the key by construction, with a test that one tenant's prompt cannot serve another's response — and trace-scrubbing defaults are audited statically and at runtime by M21.5. What remains here is the CI lint that catches a *new* query or cache key built without a tenant scope.)*
 - **M20.4** Abuse guardrails live (velocity, anomaly alerts, kill switches); backup restore drill #1 documented.
 - **M20.5** SBOM + signed releases; dependency-update cadence with an owner.

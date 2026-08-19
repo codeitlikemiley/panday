@@ -16,6 +16,8 @@
 //! seam the ledger will plug into — usage is captured now, it is just not
 //! yet persisted.
 
+use crate::cache::{is_cacheable, CacheKey, CachedResponse, ExactCache, NoCache};
+use crate::circuit::Breakers;
 use crate::ProviderAdapter;
 use futures_util::StreamExt;
 use panday_router::classify::{classify_or_default, HeuristicClassifier};
@@ -25,6 +27,7 @@ use panday_types::model::{ChatRequest, ModelRef, StreamItem, Usage};
 use panday_types::pricing::{CostModel, NoPrices};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// What one model call cost, and who to bill.
 ///
@@ -95,6 +98,10 @@ pub struct Gateway {
     classifier: Arc<dyn Classifier>,
     /// Turns a `Usage` into money, or admits it cannot (M21.2).
     costs: Arc<dyn CostModel>,
+    /// Exact-response cache (M11.6). `NoCache` unless a TTL is configured.
+    cache: Arc<dyn ExactCache>,
+    cache_ttl: Duration,
+    breakers: Arc<Breakers>,
 }
 
 impl Gateway {
@@ -105,7 +112,21 @@ impl Gateway {
             usage: Arc::new(DiscardUsage),
             classifier: Arc::new(HeuristicClassifier),
             costs: Arc::new(NoPrices),
+            cache: Arc::new(NoCache),
+            cache_ttl: Duration::ZERO,
+            breakers: Arc::new(Breakers::default()),
         }
+    }
+
+    /// Whether the exact cache is on (docs/11 gives it a per-route TTL; no TTL
+    /// means no caching).
+    fn caching(&self) -> bool {
+        !self.cache_ttl.is_zero()
+    }
+
+    /// Circuit state, for an operator or a health endpoint.
+    pub fn circuit_state(&self, provider: &str, model: &str) -> crate::circuit::State {
+        self.breakers.state(provider, model)
     }
 
     /// Which providers this gateway can actually reach.
@@ -268,6 +289,22 @@ impl Gateway {
         req: ChatRequest,
         span: tracing::Span,
     ) -> Result<ItemStream, PandayError> {
+        // Cache first: a hit costs no routing decision, no provider call and no
+        // tokens. Eligibility is checked before the key is hashed, because
+        // hashing an agent request with tools would spend the CPU to learn we
+        // must not cache it.
+        let cache_key = (self.caching() && is_cacheable(&req)).then(|| CacheKey::of(&req));
+        if let Some(key) = &cache_key {
+            if let Some(hit) = self.cache.get(key) {
+                metrics::metrics().cache_lookups.inc(&["hit"]);
+                tracing::debug!(model = %req.model.0, "exact cache hit");
+                return Ok(Box::pin(futures_util::stream::iter(
+                    served_from_cache(hit).into_iter().map(Ok),
+                )));
+            }
+            metrics::metrics().cache_lookups.inc(&["miss"]);
+        }
+
         let chain = self.resolve_chain(&req)?;
         if let Some(head) = chain.first() {
             span.record("provider", head.provider.as_str());
@@ -296,9 +333,33 @@ impl Gateway {
                     .unwrap_or("unclassified"),
             ]);
 
+            // An open breaker is a leg that is not attempted at all — the point
+            // of the breaker is to stop spending latency on a route that is
+            // known to be failing (docs/11).
+            if !self.breakers.allow(&leg.provider, &leg.model.0) {
+                metrics::metrics()
+                    .model_calls
+                    .inc(&[&leg.provider, &leg.model.0, "circuit_open"]);
+                failed.push(FailedLeg {
+                    model: leg.model.clone(),
+                    provider: leg.provider.clone(),
+                    error: "circuit open".into(),
+                    // Retryable so the chain walks on to the next target: that is
+                    // exactly what the breaker exists to make happen.
+                    retryable: true,
+                    rate_limited: false,
+                });
+                continue;
+            }
+
             let started = std::time::Instant::now();
             match leg.adapter.chat(attempt).await {
                 Ok(stream) => {
+                    // Establishment is what the breaker judges. A mid-stream
+                    // failure is the harness's business (docs/11: the gateway
+                    // "does not re-prompt on its own"), and counting it here
+                    // would trip a breaker on a client that hung up.
+                    self.breakers.record_success(&leg.provider, &leg.model.0);
                     // Establishment latency, not stream duration: docs/11's p99
                     // budget is about the gateway's own overhead, and a long
                     // generation would drown it.
@@ -311,6 +372,7 @@ impl Gateway {
                         stream,
                         self.usage.clone(),
                         self.costs.clone(),
+                        cache_key.map(|k| (k, self.cache.clone(), self.cache_ttl)),
                         UsageRecord {
                             account,
                             request,
@@ -323,6 +385,12 @@ impl Gateway {
                 }
                 Err(e) => {
                     let retryable = e.is_retryable();
+                    // An invalid request is the caller's mistake and would fail
+                    // on every provider; counting it against the route would let
+                    // one broken client open a breaker for everyone.
+                    if retryable || matches!(e, PandayError::Provider { .. }) {
+                        self.breakers.record_failure(&leg.provider, &leg.model.0);
+                    }
                     metrics::metrics().model_errors.inc(&[
                         &leg.provider,
                         &leg.model.0,
@@ -378,20 +446,72 @@ impl Gateway {
     }
 }
 
+/// Rewrite a cached response for replay.
+///
+/// The `Usage` frame is zeroed except for the token counts a caller needs to see
+/// the shape of what it got — a cache hit spent no tokens, and reporting the
+/// original usage would bill the caller twice for one purchase. Dropping the
+/// frame instead would be worse: a client that sums usage would silently see
+/// nothing for a request that did happen.
+fn served_from_cache(hit: CachedResponse) -> Vec<StreamItem> {
+    hit.items
+        .into_iter()
+        .map(|item| match item {
+            StreamItem::Usage { usage } => StreamItem::Usage {
+                usage: Usage {
+                    // Everything that was paid for is now a cache read, of a
+                    // cache we own rather than the provider's. `input_tokens`
+                    // keeps the size so a context-window check still works;
+                    // `output_tokens` is zero because nothing was generated.
+                    input_tokens: usage.input_tokens,
+                    cache_read_tokens: usage.input_tokens,
+                    output_tokens: 0,
+                    cache_write_tokens: 0,
+                    cache_write_1h_tokens: 0,
+                },
+            },
+            other => other,
+        })
+        .collect()
+}
+
 /// Tee `Usage` items to the sink as they pass, without altering the stream.
 ///
 /// Recorded when seen rather than at end-of-stream: a caller that drops the
 /// stream early still consumed tokens the provider will bill us for, and a
 /// gateway that only records on clean completion under-bills exactly the
 /// abandoned requests.
+#[allow(clippy::type_complexity)]
 fn capture_usage(
     stream: ItemStream,
     sink: Arc<dyn UsageSink>,
     costs: Arc<dyn CostModel>,
+    store: Option<(CacheKey, Arc<dyn ExactCache>, Duration)>,
     template: UsageRecord,
 ) -> impl futures_core::Stream<Item = Result<StreamItem, PandayError>> + Send {
     let started = std::time::Instant::now();
+    // Collected only when this request is cacheable, so an agent stream does not
+    // buffer a copy of itself for nothing.
+    let mut collected: Option<Vec<StreamItem>> = store.as_ref().map(|_| Vec::new());
     stream.map(move |item| {
+        if let (Some(buffer), Ok(ok)) = (collected.as_mut(), &item) {
+            buffer.push(ok.clone());
+            // Store on `Done`, not on stream end: an abandoned stream is a
+            // partial answer, and caching it would serve a truncated response to
+            // everyone who asked the same question afterwards.
+            if matches!(ok, StreamItem::Done { .. }) {
+                if let Some((key, cache, ttl)) = &store {
+                    cache.put(
+                        key.clone(),
+                        CachedResponse {
+                            items: std::mem::take(buffer),
+                        },
+                        *ttl,
+                    );
+                }
+                collected = None;
+            }
+        }
         if let Ok(StreamItem::Usage { usage }) = &item {
             let record = UsageRecord {
                 usage: *usage,
@@ -465,6 +585,9 @@ pub struct GatewayBuilder {
     usage: Arc<dyn UsageSink>,
     classifier: Arc<dyn Classifier>,
     costs: Arc<dyn CostModel>,
+    cache: Arc<dyn ExactCache>,
+    cache_ttl: Duration,
+    breakers: Arc<Breakers>,
 }
 
 impl GatewayBuilder {
@@ -503,6 +626,23 @@ impl GatewayBuilder {
         self
     }
 
+    /// Turn the exact cache on with a TTL (M11.6, docs/11 §Caching gives it a
+    /// "TTL per route"). A zero TTL leaves it off — caching is an opt-in
+    /// behaviour change, and a gateway told nothing about TTLs has not been
+    /// asked to serve stale answers.
+    pub fn exact_cache(mut self, cache: Arc<dyn ExactCache>, ttl: Duration) -> Self {
+        self.cache = cache;
+        self.cache_ttl = ttl;
+        self
+    }
+
+    /// Tune the breakers. The default (50% of the last 20 outcomes, 5 minimum,
+    /// 10s cooldown) is what a service with no opinion should have.
+    pub fn breakers(mut self, breakers: Arc<Breakers>) -> Self {
+        self.breakers = breakers;
+        self
+    }
+
     pub fn build(self) -> Gateway {
         Gateway {
             adapters: self.adapters,
@@ -510,6 +650,9 @@ impl GatewayBuilder {
             usage: self.usage,
             classifier: self.classifier,
             costs: self.costs,
+            cache: self.cache,
+            cache_ttl: self.cache_ttl,
+            breakers: self.breakers,
         }
     }
 }

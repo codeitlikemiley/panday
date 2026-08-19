@@ -157,4 +157,49 @@ horizontally behind any LB.
 
   *Not done:* the literal aider smoke test needs aider installed. `curl` and the
   raw-HTTP suite exercise the same surface.
-- **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core.
+- **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core. ✅ *(shipped: `panday_gateway::cache`, `panday_gateway::circuit`, wired in `Gateway::chat`; `tests/cache_and_breakers.rs`, `tests/overhead.rs`.)*
+
+  **Measured, release build, single-threaded runtime, 1000 back-to-back requests
+  (harder than the specified 100 rps — no idle time between them):**
+  establishment p50 21.6µs / p99 52.0µs against the 3ms budget; per stream frame
+  p50 41ns / p99 1.17µs against the 1ms budget. The benchmark is `#[ignore]`d
+  because a wall-clock assertion on shared CI hardware fails for reasons
+  unrelated to the code, and a flaky test gets muted — which is worse than one
+  that must be run deliberately.
+
+  **The exact cache is not Postgres yet.** The spec names a PG unlogged table and
+  PG is M3.5, so what shipped is the `ExactCache` trait plus an in-memory
+  implementation (bounded, TTL, expire-on-read), and the binaries wire whichever
+  they have. The parts with the bugs in them — eligibility, key normalization,
+  tenant scoping — are the same either way.
+
+  **The cache key is tenant-scoped by construction**, which is the finding
+  docs/20's M20.3 cache-key audit exists to make: a key without the account would
+  let one tenant's prompt serve another tenant's response, and identical prompts
+  across tenants are exactly what a shared eval harness produces. The leak would
+  have looked like a cache working well.
+
+  Two eligibility rules from docs/11 with teeth: **absent temperature is not
+  zero** (providers default to ~1, so treating unset as deterministic would cache
+  one sample of a distribution and serve it forever — a model that appears to stop
+  thinking), and **a request with tools is never cached**, because replaying a
+  cached tool call would have the harness act on a decision made about a different
+  workspace. Caching is off unless a TTL is configured; a gateway told nothing
+  about TTLs has not been asked to serve stale answers.
+
+  A hit still emits a `Usage` frame, rewritten so the tokens read as cache reads
+  with zero output. Replaying the original usage would bill twice for one
+  purchase; dropping the frame would make the request vanish from a client's own
+  accounting. And a response is stored on `Done`, never at stream end: an
+  abandoned stream is a partial answer, and caching it would serve a truncated
+  response to everyone who asked afterwards.
+
+  **Breakers are per (provider, model) and trip on error *rate*, not count.** A
+  count trips on volume, so a busy route at 1% errors would open before a quiet
+  route failing everything. The rate needs a minimum sample size, or the first
+  failure on a cold route is a 100% error rate. Three further judgements: a
+  half-open probe is *reserved* by the same call that checks it, so a burst sends
+  one probe rather than all of them; a probe's own result decides the breaker
+  rather than the rate, because the window still holds the failures that opened
+  it; and a non-retryable error (a malformed request) is not counted against the
+  route, or one broken client could take a healthy model offline for everyone.

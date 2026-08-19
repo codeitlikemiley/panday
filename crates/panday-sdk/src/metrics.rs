@@ -467,6 +467,10 @@ pub struct Metrics {
     // `_per_turn` here would put a wrong denominator on a money dashboard.
     pub cost_usd: Family<Counter>,
     pub cost_usd_per_call: Family<Histogram>,
+    /// Exact-cache outcomes (M11.6). A hit rate near zero on agent traffic is
+    /// expected and documented (docs/11: "agents rarely hit it"); a hit rate near
+    /// zero on *eval* traffic means the cache is not working.
+    pub cache_lookups: Family<Counter>,
     /// Calls whose model had no configured price. A cost dashboard is only
     /// trustworthy next to this being zero — see `pricing::CostModel`.
     pub unpriced_calls: Family<Counter>,
@@ -523,6 +527,11 @@ impl Metrics {
                 "distribution of provider cost per model call",
                 &["pool"],
                 DOLLAR_BUCKETS,
+            ),
+            cache_lookups: Family::counter(
+                "panday_exact_cache_lookups_total",
+                "exact-response cache lookups by outcome",
+                &["outcome"],
             ),
             unpriced_calls: Family::counter(
                 "panday_unpriced_calls_total",
@@ -586,6 +595,7 @@ impl Metrics {
             &self.reducer_tokens_removed,
             &self.cost_usd,
             &self.cost_usd_per_call,
+            &self.cache_lookups,
             &self.unpriced_calls,
             &self.route_decisions,
             &self.route_counterfactual_usd,

@@ -5,9 +5,13 @@
 //! (openai_compat → llama-server).
 
 pub mod adapters;
+pub mod cache;
+pub mod circuit;
 pub mod gateway;
 pub mod ingress;
 
+pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};
+pub use circuit::{BreakerConfig, Breakers, State as CircuitState};
 pub use gateway::{CollectUsage, DiscardUsage, Gateway, UsageRecord, UsageSink};
 pub use ingress::{IngressRequest, IngressState};
 

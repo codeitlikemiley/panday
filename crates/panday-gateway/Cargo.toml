@@ -10,6 +10,7 @@ publish.workspace = true
 panday-types.workspace = true
 panday-sdk.workspace = true
 panday-router.workspace = true
+sha2.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 axum.workspace = true
