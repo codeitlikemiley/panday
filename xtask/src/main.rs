@@ -86,6 +86,15 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // M19.4. Reads session logs, writes training examples, and refuses anything without
+        // recorded consent.
+        "mine" => match mine(rest) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("xtask mine: {e}");
+                ExitCode::FAILURE
+            }
+        },
         "wasm-fixtures" => match wasm_fixtures() {
             Ok(code) => code,
             Err(e) => {
@@ -116,13 +125,80 @@ fn usage() {
          sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n  \
          ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n  \
          json-bench          schema-validity against a running gateway; needs a model\n  \
-         airgap [--models <dir>] [--out <dir>]  build the offline install kit (M18.7)\n"
+         airgap [--models <dir>] [--out <dir>]  build the offline install kit (M18.7)\n  \
+         mine --logs <dir> --out <file> [--consent granted]  mine training pairs (M19.4)\n"
     );
 }
 
 mod sbom;
 mod sdk;
 mod ts;
+
+/// Transcript mining (docs/19 M19.4).
+///
+/// Consent is a flag on this command rather than a lookup, and it defaults to *unknown* — which
+/// mines nothing. A pipeline that inferred consent from where a log happened to be stored would be
+/// one directory move away from a breach, and the operator asserting it here is a person who can be
+/// asked what they based it on.
+fn mine(args: &[String]) -> Result<ExitCode, String> {
+    use panday_harness::mining::{summarizer_pairs, Consent, MiningReport};
+
+    let flag = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let logs = flag("--logs").ok_or("--logs <dir> is required")?;
+    let out = flag("--out").ok_or("--out <file.jsonl> is required")?;
+    let consent = match flag("--consent").as_deref() {
+        Some("granted") => Consent::Granted,
+        Some("denied") => Consent::Denied,
+        Some(other) => return Err(format!("--consent granted|denied, got `{other}`")),
+        None => Consent::Unknown,
+    };
+
+    let scrub = |text: &str| panday_harness::mining::scrub_shapes(text);
+    let mut total = MiningReport::default();
+    let mut written = 0usize;
+    let mut file = String::new();
+
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&logs)
+        .map_err(|e| format!("read {logs}: {e}"))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        .collect();
+    paths.sort();
+
+    for path in &paths {
+        let events =
+            panday_harness::read_log(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let (examples, report) = summarizer_pairs(&events, consent, &scrub);
+        total.examples += report.examples;
+        total.skipped_no_consent += report.skipped_no_consent;
+        total.skipped_still_sensitive += report.skipped_still_sensitive;
+        total.skipped_too_short += report.skipped_too_short;
+
+        for example in examples {
+            file.push_str(&serde_json::to_string(&example).map_err(|e| e.to_string())?);
+            file.push('\n');
+            written += 1;
+        }
+    }
+
+    std::fs::write(&out, file).map_err(|e| format!("write {out}: {e}"))?;
+    println!(
+        "{} log(s) → {written} example(s) in {out}\n  \
+         skipped: {} without consent, {} still sensitive after scrubbing, {} not a reduction",
+        paths.len(),
+        total.skipped_no_consent,
+        total.skipped_still_sensitive,
+        total.skipped_too_short
+    );
+    // Nothing mined is not an error — an operator running this over logs nobody consented to should
+    // see zero and a reason, not a failure they will be tempted to work around.
+    Ok(ExitCode::SUCCESS)
+}
 
 /// The air-gap kit (docs/18 M18.7).
 ///

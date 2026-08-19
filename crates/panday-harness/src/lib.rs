@@ -24,6 +24,7 @@ pub mod json_schema;
 pub mod jsonl;
 pub mod load_skill;
 pub mod mcp_tool;
+pub mod mining;
 pub mod native;
 pub mod permissions;
 pub mod replay;

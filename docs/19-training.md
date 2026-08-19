@@ -222,7 +222,36 @@ artifacts; CI runs eval gates nightly.
   means "we did not measure" is how an eval suite rots.
 - **M19.2** Capability profiles for 3 local catalog models, generated not hand-written.
 - **M19.3** Model 1 shipped: classifier behind `Classifier` trait beats heuristic on route-bench by ≥10pt; deployed in shadow, then live.
-- **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset.
+- **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset. ✅ *(shipped: `panday_harness::mining`, `cargo xtask mine --logs <dir> --out <file>`. **The 10k-pair dataset is not here** — it needs 10k consented transcripts, and this repo has none.)*
+
+  **Consent, then scrub, then provenance — and each step defaults to refusing.** The mistakes in a
+  data pipeline are the unrecoverable kind: a customer's secret that reaches a dataset is in every
+  checkpoint trained on it, and a licence you did not have is one you cannot retroactively obtain.
+
+  **`Unknown` is a distinct state from `Denied`.** A session nobody asked about is not mined, and
+  the pipeline never infers consent from a plan, an account type, or where a log happened to be
+  stored — a directory move must not become a permission. The `--consent` flag on the miner defaults
+  to unknown, which mines nothing, so the assertion is always a person's.
+
+  **Scrubbing is layered, and the last gate drops rather than fixes.** Vault-known values first,
+  then shapes that are credentials by construction — keys by prefix or by length-and-entropy,
+  emails, IPs, home directories that name a person. Anything that still trips the detector after
+  scrubbing drops the example: a shape the scrubber did not recognise is a shape we do not
+  understand, and a dataset is worth less than a leak costs. A test asserts ordinary output survives
+  intact, because a scrubber that mangles normal text produces a corpus that teaches mangling.
+
+  **Provenance travels with every row**, including `scrubber_version`. When a scrubber bug is found
+  — and one will be — "which examples came out of the broken version" has to have an answer that is
+  not "all of them".
+
+  **The first pairs are the reducer's own judgements.** A long tool output and the reduction that
+  stood in for it is exactly the task a small summarizer should learn, and the reducer has already
+  made that call thousands of times per session. A reduction that removed nothing is skipped: a
+  model trained on copies learns to copy.
+
+  **What is missing is the data, not the pipeline.** 10k pairs needs 10k consented sessions. The
+  miner runs end to end today over a directory of logs and reports exactly why each candidate was
+  dropped — which is the part that had to exist before any transcript was worth collecting.
 - **M19.5** Model 2 shipped: reduce-bench regression zero, ≥25% cheaper semantic tier than the provider cheap-pool it replaces; GGUF in catalog.
 - **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment.
 - **M19.7** Model 3 v1: SFT stage beats base on agent-bench; go/no-go review for the GRPO spend.
