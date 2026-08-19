@@ -72,7 +72,7 @@ toml = "0.9"
 # `.plugin` archives are ed25519-signed (docs/16 §the package).
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 # Content-addressed artifact refs — docs/03 specifies sha256.
-sha2 = "0.10"
+sha2 = "0.11"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
 # Proc-macro toolchain for `#[tool]` (docs/10 M10.4). `syn`/`quote`/`proc-macro2` are
