@@ -254,4 +254,48 @@ argument.
   `Option<Reducer>` so the loop is byte-identical in both arms — otherwise the
   comparison measures the loop, and the debugging flag would change two things at
   once.
-- **M15.6** Semantic tier behind budget gate (provider cheap model); swap-in point defined for our tuned summarizer.
+- **M15.6** Semantic tier behind budget gate (provider cheap model); swap-in point defined for our tuned summarizer. ✅ *(shipped: `panday_reducer::semantic`, `panday_harness::CheapPoolSummarizer`, `SessionActor::with_pricing`/`with_semantic_tier`.)*
+
+  **A found bug, and the reason this milestone had to fix it first.**
+  `ReduceCtx.price_per_token_micros` was micro-dollars per *token*: $3/mtok is
+  0.003 of those, which in `u64` is zero. Every accounting decision keyed on it
+  therefore priced every real model as free — silently, because the arithmetic
+  still ran. It is now `price_per_mtok_micros`, the same unit as
+  `Pricing::input_per_mtok_micros`. This is exactly the ADR-007 failure the
+  accounting exists to prevent, hiding inside the accounting.
+
+  **Layer 5 is not a `Reducer`.** `reduce` is a synchronous pure function, right
+  for layers 1–4; layer 5 makes a model call, and squeezing it into that trait
+  would mean blocking on the harness's runtime mid-turn. So the one strategy that
+  needs IO lives at its own seam and the loop awaits it.
+
+  **The gate is money, not size.** Every other layer is free, so "is it big" is
+  reason enough to run. This one spends tokens, so it runs only when
+  `tokens_removed × expected_reads × marginal_price − summarizer_cost − risk`
+  clears a floor. Consequences the tests pin down: a **local model is never
+  summarized** (marginal price zero — spending cloud tokens to save free ones is
+  ADR-007's mistake with an extra API call); an **unpriced session** is not
+  assumed free either, and declines; **error output is held to a higher bar** than
+  prose at identical token counts, because a summary is a lossy re-write and
+  docs/15 puts a high information-risk penalty there — the same numbers that
+  justify summarizing progress output must not justify summarizing a stack trace.
+
+  Three failure modes it refuses: a summarizer that is **down** costs the turn
+  nothing but the structural output it already had (this is the only layer with a
+  network dependency, and a context pipeline that broke when a summarizer was
+  unreachable would be worse than not having the layer); a summary that came back
+  **larger** is discarded, because providers do echo the input when a prompt
+  confuses them; an **empty** summary is an error rather than a 100% reduction,
+  which would be the most expensive possible bug here.
+
+  `tokens_raw` keeps the *original* raw count through layer 5, so the dashboard
+  measures the whole pipeline's saving rather than crediting the summarizer with
+  the structural compressors' work.
+
+  **The swap-in point is the `Summarizer` trait**: M19.5's tuned 2–4B model
+  implements it and nothing above changes. `CheapPoolSummarizer` declares
+  `task: summarize` and leaves the model as `auto` so docs/12's policy picks the
+  pool — hard-coding a model here would bypass the one component whose job is
+  choosing one. Whether a swap was an improvement is decided by M15.5's
+  reduce-then-solve scorecard, which compares task success: a cheaper summarizer
+  that loses facts fails the gate instead of looking like a win.

@@ -34,7 +34,7 @@ fn ctx(tool: &str) -> ReduceCtx {
         tool: tool.into(),
         task: None,
         expected_reads: 1,
-        price_per_token_micros: 0,
+        price_per_mtok_micros: 0,
         aggressive: false,
     }
 }

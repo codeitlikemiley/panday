@@ -280,7 +280,7 @@ impl<R: panday_reducer::Reducer> Summarizer for ReducerSummarizer<R> {
                     tool: "compaction".into(),
                     task: Some(panday_types::model::TaskClass::Summarize),
                     expected_reads: 1,
-                    price_per_token_micros: 0,
+                    price_per_mtok_micros: 0,
                     // Background work: compaction is exactly where a tighter
                     // profile is appropriate.
                     aggressive: true,

@@ -15,8 +15,15 @@ pub struct ReduceCtx {
     pub task: Option<TaskClass>,
     /// Estimated remaining turns this result will ride along for.
     pub expected_reads: u32,
-    /// Marginal price per (fresh) input token, micro-credits.
-    pub price_per_token_micros: u64,
+    /// Marginal price of fresh input, in micro-dollars per MILLION tokens —
+    /// the same unit as `Pricing::input_per_mtok_micros`.
+    ///
+    /// It was per *token* until M15.6, which does not work: $3/mtok is 0.003
+    /// micro-dollars per token, and in `u64` that is zero. Every accounting
+    /// decision keyed on it therefore priced every real model as free, which is
+    /// exactly the ADR-007 failure the accounting exists to prevent — a silent
+    /// one, because the arithmetic still ran.
+    pub price_per_mtok_micros: u64,
     /// Profile: conservative (interactive) | aggressive (background subagents).
     pub aggressive: bool,
 }
@@ -24,12 +31,14 @@ pub struct ReduceCtx {
 pub mod accounting;
 pub mod artifact;
 pub mod reads;
+pub mod semantic;
 pub mod spill;
 pub mod structural;
 
 pub use accounting::{value_of, CacheState, Pricing, Savings, SessionSavings};
 pub use artifact::{expand, ArtifactError, ArtifactStore, LineRange, MemoryArtifactStore};
 pub use reads::{hunk_diff, ReadLedger, ReadOutcome};
+pub use semantic::{Decision, SemanticConfig, SemanticTier, SummarizeError, Summarizer};
 pub use spill::{Reduction, SpillingReducer};
 pub use structural::{detect, Shape, StructuralReducer};
 
@@ -190,7 +199,7 @@ mod tests {
             tool: "bash".into(),
             task: None,
             expected_reads: 4,
-            price_per_token_micros: 3,
+            price_per_mtok_micros: 3_000_000,
             aggressive: false,
         }
     }

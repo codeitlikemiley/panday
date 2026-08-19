@@ -198,6 +198,15 @@ pub struct SessionActor {
     compacted_upto: usize,
     /// Extension points (docs/13 §hooks). Empty by default.
     hooks: HookEngine,
+    /// What this session's tokens cost, when anyone has said (M15.6).
+    ///
+    /// `None` means "unpriced", not "free": with no price the accounting cannot
+    /// value a reduction, so the semantic tier refuses to run and the dollar
+    /// metric stays empty. Assuming a price would put an invented number on a
+    /// cost dashboard and let a summarizer spend real money on a guess.
+    pricing: Option<panday_reducer::Pricing>,
+    /// Layer 5 (docs/15). Opt-in and budget-gated; absent by default.
+    semantic: Option<panday_reducer::SemanticTier<Box<dyn panday_reducer::Summarizer>>>,
 }
 
 impl SessionActor {
@@ -235,6 +244,8 @@ impl SessionActor {
                 Vec::new(),
             ),
             compacted_upto: 0,
+            pricing: None,
+            semantic: None,
             subagents: None,
             depth: 0,
             hooks: HookEngine::new(),
@@ -245,6 +256,27 @@ impl SessionActor {
     /// contained (docs/13: "log, skip, continue").
     pub fn with_hooks(mut self, hooks: HookEngine) -> Self {
         self.hooks = hooks;
+        self
+    }
+
+    /// Tell the session what its tokens cost (M15.6).
+    ///
+    /// This is what makes the reducer's dollar accounting and the semantic tier
+    /// live: both are gated on a marginal price, and without one the reducer
+    /// reports volume only and the tier refuses to run.
+    pub fn with_pricing(mut self, pricing: panday_reducer::Pricing) -> Self {
+        self.pricing = Some(pricing);
+        self
+    }
+
+    /// Install the semantic tier (docs/15 layer 5). Requires `with_pricing`: the
+    /// tier's whole gate is "does the saving beat the summarizer's own cost", and
+    /// with no price the answer is always no.
+    pub fn with_semantic_tier(
+        mut self,
+        tier: panday_reducer::SemanticTier<Box<dyn panday_reducer::Summarizer>>,
+    ) -> Self {
+        self.semantic = Some(tier);
         self
     }
 
@@ -793,16 +825,31 @@ impl SessionActor {
         let _reduce_span = tracing::info_span!("reduce", tool = %call.name).entered();
 
         // Tool output NEVER enters context raw (ADR-007).
-        let reduced = self.reducer.reduce(
-            &outcome.raw,
-            &ReduceCtx {
-                tool: call.name.clone(),
-                task: None,
-                expected_reads: 1,
-                price_per_token_micros: 0,
-                aggressive: false,
-            },
-        );
+        let ctx = ReduceCtx {
+            tool: call.name.clone(),
+            task: None,
+            // A result rides along for the rest of the turn. One is the honest
+            // floor; the real number needs a turn-length estimate, which is
+            // M15.3's compaction planner rather than a guess here.
+            expected_reads: 1,
+            price_per_mtok_micros: self.pricing.map_or(0, |p| p.input_per_mtok_micros),
+            aggressive: false,
+        };
+        let mut reduced = self.reducer.reduce(&outcome.raw, &ctx);
+
+        // Layer 5, if configured and if the accounting says it is worth it. The
+        // decision is recorded in `strategy`, which the log carries and
+        // `panday replay` renders — a summarization that silently did not happen
+        // is otherwise indistinguishable from one that did nothing.
+        if let Some(tier) = &self.semantic {
+            let (out, decision) = tier.apply(reduced, &ctx).await;
+            tracing::debug!(
+                tool = %call.name,
+                decision = ?decision,
+                "semantic tier"
+            );
+            reduced = out;
+        }
 
         tracing::debug!(
             tool = %call.name,
@@ -815,10 +862,18 @@ impl SessionActor {
         panday_sdk::metrics::metrics().observe_reduction(
             &reduced.strategy,
             reduced.tokens_raw.saturating_sub(reduced.tokens_kept) as u64,
-            // No price in the loop yet (see `ReduceCtx.price_per_token_micros`
-            // above, still 0): the dollar figure arrives with the price table
-            // at M11.4 rather than being invented here.
-            None,
+            // Dollars only when a price was configured — `None` means unpriced,
+            // and reporting $0 for it would claim the reduction was worthless
+            // rather than unmeasured (ADR-007).
+            self.pricing.map(|p| {
+                panday_reducer::value_of(
+                    &reduced,
+                    &p,
+                    panday_reducer::CacheState::default(),
+                    outcome.is_error,
+                )
+                .net_dollars()
+            }),
         );
         self.hooks.post_tool(&call.name, &reduced);
 
