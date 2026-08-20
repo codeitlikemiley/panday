@@ -637,13 +637,17 @@ fn scorecard(write: bool) -> Result<ExitCode, String> {
 
     out.push_str("## what is not measured yet\n\n");
     out.push_str(
-        "- `agent-bench` (M19.6): 50 verifiable repo tasks. Needs T3 (M14.5).\n\
+        "- `agent-bench` (M19.6): 38 tasks, run in T2. Nightly proves every verifier fails \
+         before the reference patch and passes after it; scoring an *agent* still needs a \
+         model. Growing back to 50 belongs with mined traffic (M19.4), not invention, and T3 \
+         is M14.5.\n\
          - `json-bench` (M19.1): the suite exists (`panday_harness::json_bench`, 200 fixtures) \
          and runs with `cargo xtask json-bench` against a gateway — but it needs a model, so no \
          number appears here. CI has neither a GPU nor a GGUF, and a suite that skipped would put \
          a green tick next to 'we did not measure'.\n\
-         - Capability profiles (M18.4) ship **declared**, not measured; M19.2 measures them, \
-         and until then every profile says `(estimated)` in the system prompt.\n",
+         - Capability profiles (M18.4) ship **declared**, not measured; M19.2's generator is \
+         shipped, and until a model actually runs it every profile says `(estimated)` in the \
+         system prompt.\n",
     );
 
     print!("{out}");

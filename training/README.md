@@ -17,11 +17,14 @@ called Anthropic directly would measure a model we do not ship, in a configurati
 | `route-bench` | Rust (`panday_router::bench`) | no — it scores a classifier |
 | `json-bench` | Rust (`panday_harness::json_bench`) | yes, to produce a number |
 | `reduce-bench` | Rust (`panday_harness::eval`) | no — reduction is deterministic |
-| `agent-bench` | here, later (M19.6) | yes, plus a T3 sandbox |
+| `agent-bench` | Rust (`panday_harness::agent_bench`) | no for the corpus check (nightly, T2); yes to score an agent |
 
-The Rust suites are libraries so CI can run the two that need no model on every commit. The ones
-that need a model are run by a human with `llama-server` up, or by the nightly job against a
-configured gateway — which is why their scorecards are committed artifacts rather than CI output.
+The Rust suites are libraries so CI can run the ones that need no model on every commit
+(`route-bench`, `reduce-bench`). `agent-bench`'s corpus check — every verifier fails before the
+reference and passes after it, inside the T2 jail — is the nightly job, not the PR lane. The
+suites that need a model (`json-bench`, scoring an agent on `agent-bench`) are run by a human
+with `llama-server` up, or against a configured gateway — which is why those scorecards are
+committed artifacts rather than CI output.
 
 ## Running
 
