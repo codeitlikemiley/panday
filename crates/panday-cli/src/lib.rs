@@ -41,6 +41,10 @@ pub const DEFAULT_POLICY: &str = include_str!("../../panday-router/policy/dev.ya
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub anthropic_key: Option<String>,
+    /// Claude Code subscription OAuth, used only when `anthropic_key` is unset.
+    pub claude_oauth: Option<String>,
+    /// Grok CLI subscription OAuth (`~/.grok/auth.json`). Registers `xai`.
+    pub xai_token: Option<String>,
     pub compat_base_url: Option<String>,
     pub compat_key: Option<String>,
     pub local_base_url: String,
@@ -52,10 +56,28 @@ impl Config {
     pub fn from_env() -> Self {
         Self {
             anthropic_key: non_empty("ANTHROPIC_API_KEY"),
-            compat_base_url: non_empty("PANDAY_COMPAT_BASE_URL"),
+            claude_oauth: None,
+            xai_token: None,
+            compat_base_url: non_empty("PANDAY_BASE_URL")
+                .or_else(|| non_empty("PANDAY_COMPAT_BASE_URL")),
             compat_key: non_empty("PANDAY_COMPAT_API_KEY"),
             local_base_url: non_empty("PANDAY_LOCAL_BASE_URL")
                 .unwrap_or_else(|| Self::LOCAL_DEFAULT.to_string()),
+        }
+    }
+
+    /// Import Grok CLI / Claude Code subscription tokens. Read-only against
+    /// those CLIs' stores; never writes them.
+    pub async fn load_subscription_oauth(&mut self) {
+        if self.xai_token.is_none() {
+            self.xai_token = panday_sdk::oauth::grok_access().await;
+        }
+        if self.anthropic_key.is_none() && self.claude_oauth.is_none() {
+            if let Some(tok) = panday_sdk::oauth::claude_code() {
+                if tok.still_fresh() {
+                    self.claude_oauth = Some(tok.access);
+                }
+            }
         }
     }
 
@@ -79,10 +101,24 @@ impl Config {
                 "anthropic",
                 Arc::new(Anthropic::new(key.clone())) as Arc<dyn ProviderAdapter>,
             );
+        } else if let Some(token) = &self.claude_oauth {
+            b = b.adapter(
+                "anthropic",
+                Arc::new(Anthropic::oauth(token.clone())) as Arc<dyn ProviderAdapter>,
+            );
+        }
+        if let Some(token) = &self.xai_token {
+            b = b.adapter(
+                "xai",
+                Arc::new(OpenAiCompat::new(
+                    panday_sdk::oauth::xai_api_base(),
+                    Some(token.clone()),
+                )) as Arc<dyn ProviderAdapter>,
+            );
         }
         if let Some(base) = &self.compat_base_url {
-            // Registered under `together` to match the dev policy's pools;
-            // one adapter type, many bases (docs/11).
+            // Registered under `together` to match the shipped catalog's cheap
+            // pool. A subscription login is `xai/` or `anthropic/`, not this.
             b = b.adapter(
                 "together",
                 Arc::new(OpenAiCompat::new(base.clone(), self.compat_key.clone()))
@@ -103,13 +139,18 @@ impl Config {
     /// Human-readable summary of what is reachable, for `--help` and errors.
     pub fn describe(&self) -> String {
         let mut lines = vec![format!("  local        {}", self.local_base_url)];
-        lines.push(match &self.anthropic_key {
-            Some(_) => "  anthropic    ANTHROPIC_API_KEY set".into(),
-            None => "  anthropic    (unset: ANTHROPIC_API_KEY)".to_string(),
+        lines.push(match (&self.anthropic_key, &self.claude_oauth) {
+            (Some(_), _) => "  anthropic    ANTHROPIC_API_KEY set".into(),
+            (None, Some(_)) => "  anthropic    Claude Code subscription OAuth".into(),
+            (None, None) => "  anthropic    (unset: ANTHROPIC_API_KEY or Claude Code login)".into(),
+        });
+        lines.push(match &self.xai_token {
+            Some(_) => "  xai          Grok CLI subscription OAuth".into(),
+            None => "  xai          (unset: ~/.grok/auth.json)".into(),
         });
         lines.push(match &self.compat_base_url {
             Some(b) => format!("  together     {b}"),
-            None => "  together     (unset: PANDAY_COMPAT_BASE_URL)".to_string(),
+            None => "  together     (unset: PANDAY_BASE_URL)".to_string(),
         });
         lines.join("\n")
     }
@@ -651,11 +692,12 @@ pub fn help() -> String {
          --summary      one line: turns, tools, tokens, how it ended\n  \
          --diff <log>   diff this replay against another log's (e.g. before/after a reducer change)\n\n\
          ENVIRONMENT:\n  \
-         ANTHROPIC_API_KEY        enables the `anthropic` provider\n  \
-         PANDAY_COMPAT_BASE_URL   enables the `together` provider (any OpenAI-compatible base)\n  \
+         ANTHROPIC_API_KEY        enables `anthropic` (console key). Else Claude Code login is used.\n  \
+         PANDAY_BASE_URL          any OpenAI-compatible base (registers `together`; alias PANDAY_COMPAT_BASE_URL)\n  \
          PANDAY_COMPAT_API_KEY    its key, if the base needs one\n  \
          PANDAY_LOCAL_BASE_URL    llama-server base (default {})\n  \
-         PANDAY_MODEL_DIR         where GGUFs live (default ~/.panday/models)\n\n\
+         PANDAY_MODEL_DIR         where GGUFs live (default ~/.panday/models)\n  \
+         Grok CLI login           ~/.grok/auth.json enables `xai` (model id xai/grok-4.6)\n\n\
          Every call goes through the gateway: routed by policy, metered per call.",
         Config::LOCAL_DEFAULT
     )
@@ -773,7 +815,8 @@ pub async fn run_acp(workspace: std::path::PathBuf, profile: &str) -> Result<(),
         .canonicalize()
         .map_err(|e| format!("workspace {}: {e}", workspace.display()))?;
 
-    let config = Config::from_env();
+    let mut config = Config::from_env();
+    config.load_subscription_oauth().await;
     let usage = std::sync::Arc::new(CollectUsage::new());
     let gateway = std::sync::Arc::new(config.build_gateway(DEFAULT_POLICY, usage)?);
 
@@ -1332,7 +1375,7 @@ mod tests {
         let h = help();
         for key in [
             "ANTHROPIC_API_KEY",
-            "PANDAY_COMPAT_BASE_URL",
+            "PANDAY_BASE_URL",
             "PANDAY_COMPAT_API_KEY",
             "PANDAY_LOCAL_BASE_URL",
         ] {
@@ -1356,16 +1399,32 @@ mod tests {
     fn configured_keys_register_their_providers() {
         let cfg = Config {
             anthropic_key: Some("sk-test".into()),
+            xai_token: Some("grok-access".into()),
             compat_base_url: Some("https://api.together.xyz".into()),
             compat_key: Some("k".into()),
             local_base_url: Config::LOCAL_DEFAULT.into(),
+            ..Default::default()
         };
         let g = cfg
             .build_gateway(DEFAULT_POLICY, Arc::new(CollectUsage::new()))
             .unwrap();
         let mut p = g.providers();
         p.sort();
-        assert_eq!(p, vec!["anthropic", "local", "together"]);
+        assert_eq!(p, vec!["anthropic", "local", "together", "xai"]);
+    }
+
+    #[test]
+    fn a_grok_subscription_is_the_xai_prefix_not_together() {
+        let cfg = Config {
+            xai_token: Some("grok-access".into()),
+            local_base_url: Config::LOCAL_DEFAULT.into(),
+            ..Default::default()
+        };
+        let g = cfg
+            .build_gateway(DEFAULT_POLICY, Arc::new(CollectUsage::new()))
+            .unwrap();
+        assert!(g.providers().contains(&"xai"));
+        assert!(!g.providers().contains(&"together"));
     }
 
     #[test]
@@ -1382,6 +1441,7 @@ mod tests {
         }
         .describe();
         assert!(d.contains("ANTHROPIC_API_KEY"), "{d}");
-        assert!(d.contains("PANDAY_COMPAT_BASE_URL"), "{d}");
+        assert!(d.contains("PANDAY_BASE_URL"), "{d}");
+        assert!(d.contains("xai"), "{d}");
     }
 }

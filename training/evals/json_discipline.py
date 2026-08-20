@@ -65,10 +65,11 @@ PHRASINGS = [
 
 
 def base_url() -> str:
-    url = os.environ.get("PANDAY_BASE_URL")
+    url = os.environ.get("PANDAY_GATEWAY_URL") or os.environ.get("PANDAY_BASE_URL")
     if not url:
         raise SystemExit(
-            "PANDAY_BASE_URL is not set. This eval measures models *through the gateway*; "
+            "PANDAY_GATEWAY_URL is not set (PANDAY_BASE_URL is accepted as a fallback). "
+            "This eval measures models *through the gateway*; "
             "falling back to a provider default would measure something else entirely."
         )
     # inspect-ai's openai provider reads these; setting them here keeps the failure above as the

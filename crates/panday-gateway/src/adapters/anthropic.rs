@@ -24,6 +24,13 @@ impl Anthropic {
             client: AnthropicClient::with_base_url(base_url, api_key),
         }
     }
+
+    /// Claude Code / Claude Pro-Max subscription, not a console API key.
+    pub fn oauth(access_token: impl Into<String>) -> Self {
+        Self {
+            client: AnthropicClient::oauth(access_token),
+        }
+    }
 }
 
 #[async_trait::async_trait]

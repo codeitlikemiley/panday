@@ -58,6 +58,14 @@ models:
       cache_write_pct: 125
       cache_write_1h_pct: 200
 
+  # Subscription OAuth (Grok CLI ~/.grok/auth.json) — unpriced until we meter xAI.
+  - id: xai/grok-4.6
+    context: 256000
+    json: 0.95
+    tools: 0.95
+    vision: true
+    max_subagents: 3
+
   - id: together/qwen3.5-32b-instruct
     context: 128000
     json: 0.9

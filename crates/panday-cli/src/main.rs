@@ -145,7 +145,8 @@ async fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let config = Config::from_env();
+    let mut config = Config::from_env();
+    config.load_subscription_oauth().await;
     let usage = Arc::new(CollectUsage::new());
     let gateway = match config.build_gateway(panday_cli::DEFAULT_POLICY, usage.clone()) {
         Ok(g) => g,

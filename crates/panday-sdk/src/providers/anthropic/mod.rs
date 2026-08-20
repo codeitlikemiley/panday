@@ -166,13 +166,29 @@ impl EventTranslator {
 
 pub struct AnthropicClient {
     base_url: String,
-    api_key: String,
+    auth: AnthropicAuth,
     http: Arc<dyn HttpStreamTransport>,
+}
+
+enum AnthropicAuth {
+    /// Console API key. `x-api-key`.
+    ApiKey(String),
+    /// Claude Code / Claude Pro-Max subscription OAuth. Bearer + oauth beta.
+    OAuth(String),
 }
 
 impl AnthropicClient {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self::with_base_url("https://api.anthropic.com", api_key)
+    }
+
+    /// Claude Code's subscription token, not a console API key.
+    pub fn oauth(access_token: impl Into<String>) -> Self {
+        Self {
+            base_url: "https://api.anthropic.com".into(),
+            auth: AnthropicAuth::OAuth(access_token.into()),
+            http: Arc::new(ReqwestTransport::default()),
+        }
     }
 
     pub fn with_base_url(base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
@@ -186,7 +202,7 @@ impl AnthropicClient {
     ) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            api_key: api_key.into(),
+            auth: AnthropicAuth::ApiKey(api_key.into()),
             http,
         }
     }
@@ -195,13 +211,21 @@ impl AnthropicClient {
         format!("{}/v1/messages", self.base_url)
     }
 
-    /// Anthropic authenticates with `x-api-key`, not a bearer token, and
-    /// rejects any request without `anthropic-version`.
+    /// API keys use `x-api-key`. Subscription OAuth uses a bearer token and the
+    /// oauth beta header Claude Code sends — a key-shaped header is rejected.
     fn headers(&self) -> Vec<(String, String)> {
-        vec![
-            ("x-api-key".into(), self.api_key.clone()),
-            ("anthropic-version".into(), wire::API_VERSION.into()),
-        ]
+        let mut h = vec![("anthropic-version".into(), wire::API_VERSION.into())];
+        match &self.auth {
+            AnthropicAuth::ApiKey(key) => h.push(("x-api-key".into(), key.clone())),
+            AnthropicAuth::OAuth(token) => {
+                h.push(("authorization".into(), format!("Bearer {token}")));
+                h.push((
+                    "anthropic-beta".into(),
+                    "claude-code-20250219,oauth-2025-04-20".into(),
+                ));
+            }
+        }
+        h
     }
 }
 

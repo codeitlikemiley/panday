@@ -15,6 +15,7 @@
 pub mod gateway;
 pub mod metrics;
 pub mod middleware;
+pub mod oauth;
 pub mod providers;
 pub mod sessions;
 pub mod telemetry;

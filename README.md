@@ -26,9 +26,10 @@ Nothing below needs an account, a server, or a network connection.
 cargo build --release
 
 # 1. One-shot chat through your own gateway: routed by policy, metered per call.
-#    Set ANTHROPIC_API_KEY, or point at anything OpenAI-compatible with
-#    PANDAY_COMPAT_BASE_URL=http://127.0.0.1:8080
-./target/release/panday chat "why is this test failing?"
+#    Grok CLI login (~/.grok/auth.json) enables `xai` — no API key:
+./target/release/panday chat -m xai/grok-4.6 "why is this test failing?"
+#    Or ANTHROPIC_API_KEY / Claude Code login, or PANDAY_BASE_URL for any
+#    OpenAI-compatible server.
 
 # 2. Offline: a local model, a jailed workspace, nothing leaving the machine.
 #    Needs an OpenAI-compatible server on loopback (llama-server, mistral.rs, …).

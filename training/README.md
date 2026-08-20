@@ -30,7 +30,7 @@ committed artifacts rather than CI output.
 
 ```sh
 uv sync                              # once
-export PANDAY_BASE_URL=http://127.0.0.1:8088
+export PANDAY_GATEWAY_URL=http://127.0.0.1:8088
 export PANDAY_API_KEY=pnd_live_…     # from `just dev`
 uv run inspect eval evals/json_discipline.py --model openai/local/qwen3.5-4b
 ```

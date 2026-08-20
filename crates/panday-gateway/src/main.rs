@@ -52,17 +52,39 @@ async fn main() {
                 Arc::new(Anthropic::new(key)) as Arc<dyn ProviderAdapter>,
             );
         }
-    }
-    if let Ok(base) = std::env::var("PANDAY_COMPAT_BASE_URL") {
-        if !base.trim().is_empty() {
-            let key = std::env::var("PANDAY_COMPAT_API_KEY")
-                .ok()
-                .filter(|k| !k.trim().is_empty());
+    } else if let Some(tok) = panday_sdk::oauth::claude_code() {
+        if tok.still_fresh() {
             builder = builder.adapter(
-                "together",
-                Arc::new(OpenAiCompat::new(base, key)) as Arc<dyn ProviderAdapter>,
+                "anthropic",
+                Arc::new(Anthropic::oauth(tok.access)) as Arc<dyn ProviderAdapter>,
             );
         }
+    }
+    if let Some(token) = panday_sdk::oauth::grok_access().await {
+        builder = builder.adapter(
+            "xai",
+            Arc::new(OpenAiCompat::new(
+                panday_sdk::oauth::xai_api_base(),
+                Some(token),
+            )) as Arc<dyn ProviderAdapter>,
+        );
+    }
+    let base = std::env::var("PANDAY_BASE_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            std::env::var("PANDAY_COMPAT_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        });
+    if let Some(base) = base {
+        let key = std::env::var("PANDAY_COMPAT_API_KEY")
+            .ok()
+            .filter(|k| !k.trim().is_empty());
+        builder = builder.adapter(
+            "together",
+            Arc::new(OpenAiCompat::new(base, key)) as Arc<dyn ProviderAdapter>,
+        );
     }
     let local = std::env::var("PANDAY_LOCAL_BASE_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());

@@ -501,7 +501,7 @@ async fn run() -> Result<(), String> {
         .budget(Arc::new(LedgerBudget::new(pool.clone(), Plan::free())))
         .route_audit(Arc::new(PgRouteAudit::new(pool.clone())));
 
-    for (provider, adapter) in adapters() {
+    for (provider, adapter) in adapters().await {
         builder = builder.adapter(provider, adapter);
     }
     let gateway = Arc::new(builder.build());
@@ -562,19 +562,32 @@ async fn run() -> Result<(), String> {
 ///
 /// The local tier is always registered: it needs no credentials, and a llama-server that is not
 /// running fails at connect with a clear error rather than being invisible here.
-fn adapters() -> Vec<(&'static str, Arc<dyn ProviderAdapter>)> {
-    let mut out: Vec<(&'static str, Arc<dyn ProviderAdapter>)> = Vec::new();
+async fn adapters() -> Vec<(String, Arc<dyn ProviderAdapter>)> {
+    let mut out: Vec<(String, Arc<dyn ProviderAdapter>)> = Vec::new();
     if let Some(key) = env("ANTHROPIC_API_KEY") {
-        out.push(("anthropic", Arc::new(Anthropic::new(key))));
+        out.push(("anthropic".into(), Arc::new(Anthropic::new(key))));
+    } else if let Some(tok) = panday_sdk::oauth::claude_code() {
+        if tok.still_fresh() {
+            out.push(("anthropic".into(), Arc::new(Anthropic::oauth(tok.access))));
+        }
     }
-    if let Some(base) = env("PANDAY_COMPAT_BASE_URL") {
+    if let Some(token) = panday_sdk::oauth::grok_access().await {
         out.push((
-            "together",
+            "xai".into(),
+            Arc::new(OpenAiCompat::new(
+                panday_sdk::oauth::xai_api_base(),
+                Some(token),
+            )),
+        ));
+    }
+    if let Some(base) = env("PANDAY_BASE_URL").or_else(|| env("PANDAY_COMPAT_BASE_URL")) {
+        out.push((
+            "together".into(),
             Arc::new(OpenAiCompat::new(base, env("PANDAY_COMPAT_API_KEY"))),
         ));
     }
     let local = env("PANDAY_LOCAL_BASE_URL").unwrap_or_else(|| "http://127.0.0.1:8081".to_string());
-    out.push(("local", Arc::new(OpenAiCompat::local(local))));
+    out.push(("local".into(), Arc::new(OpenAiCompat::local(local))));
     out
 }
 

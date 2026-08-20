@@ -216,7 +216,7 @@ artifacts; CI runs eval gates nightly.
     and the 24-case version already demonstrated what that costs.
 
   **inspect-ai points at the gateway, never at a provider** (`training/evals/json_discipline.py`),
-  and refuses to start without `PANDAY_BASE_URL` rather than falling back to a provider default —
+  and refuses to start without `PANDAY_GATEWAY_URL` (or `PANDAY_BASE_URL` as a fallback) rather than falling back to a provider default —
   an eval that quietly measured something else is worse than one that did not run. Nothing in
   `training/` runs in CI beyond a syntax check, and that is stated in its README: a green tick that
   means "we did not measure" is how an eval suite rots.
