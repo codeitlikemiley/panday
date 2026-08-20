@@ -220,7 +220,7 @@ artifacts; CI runs eval gates nightly.
   an eval that quietly measured something else is worse than one that did not run. Nothing in
   `training/` runs in CI beyond a syntax check, and that is stated in its README: a green tick that
   means "we did not measure" is how an eval suite rots.
-- **M19.2** Capability profiles for 3 local catalog models, generated not hand-written. ✅ *(shipped: `panday_harness::profiling`, `cargo xtask profile --model <ref>`. **No model has been measured** — the three catalog profiles are still `declared`, and the generator says so rather than guessing.)*
+- **M19.2** Capability profiles for 3 local catalog models, generated not hand-written. ✅ *(shipped: `panday_harness::profiling`, `cargo xtask profile --model <ref>`. **`xai/grok-4.6` is `provenance: measured`** (2026-08-20, json 1.00 / tools 1.00 / usable context 64528 under a 65536 ceiling). The local catalog rows stay `declared` — no GGUF ran.)*
 
   **Every probe is a question with a checkable answer.** Asking a model to rate itself measures its
   confidence; asking it to find a fact in the middle of 30,000 tokens measures whether it can.

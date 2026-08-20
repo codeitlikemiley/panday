@@ -60,9 +60,12 @@ test was not deleted (`crates/panday-harness/tests/fix_a_failing_test.rs`).
 
 What is *not* met, and cannot be met by this repo alone:
 
-- the model is **scripted**, not live. The script chooses the plan; every tool
-  call, edit, jail and test run beneath it is real. The live leg is an
-  `#[ignore]`d test needing `ANTHROPIC_API_KEY`.
+- the model in the default suite is **scripted**, not live. The script chooses
+  the plan; every tool call, edit, jail and test run beneath it is real. The
+  live `#[ignore]`d leg ran on 2026-08-20 with Grok CLI OAuth (`xai/grok-4.6`
+  against `api.x.ai`, no Anthropic key):
+  `a_live_model_fixes_it_unattended` ok, and `panday chat -m xai/grok-4.6`
+  replied `pong`. It stays ignored in CI because CI has no subscription.
 - "in one of *your* repos" and "you reach for it by preference the next day"
   are judgements only the builder can make. They are the dogfood clause, and
   they are the point of the phase.
@@ -158,7 +161,7 @@ measured by the router's counterfactual logs, not enthusiasm.
 **Status: the infrastructure ahead of every model is shipped; the models are not.** The eval spine
 with its scorecard artifact and json-bench's 200 fixtures (M19.1 — `xai/grok-4.6` measured 200/200
 on 2026-08-20; local GGUFs still unmeasured), the capability-profile generator
-(M19.2 — no model has been measured; catalog profiles stay `declared`), the shadow-mode harness that
+(M19.2 — `xai/grok-4.6` measured 2026-08-20; local GGUF rows stay `declared`), the shadow-mode harness that
 compares a candidate classifier without letting it route (M12.5), the consent-first mining pipeline
 (M19.4 — no transcripts to mine), agent-bench as a GRPO environment (M19.6 — 41 tasks in T2, not 50
 in T3), and the signed model catalog that a tuned GGUF would enter through (M18.2). What is left is

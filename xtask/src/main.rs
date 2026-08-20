@@ -170,9 +170,12 @@ fn profile(args: &[String]) -> Result<ExitCode, String> {
             std::env::var("PANDAY_API_KEY").ok(),
         );
         let model_ref = panday_types::model::ModelRef(model.clone());
-        // The declared profile supplies only what a text probe cannot reach — vision and subagent
-        // fan-out. Everything else is measured or reported as zero.
-        let declared = panday_types::capability::CapabilityProfile::small_local();
+        // Vision and subagent fan-out cannot be measured from a text probe.
+        // Carry them from the shipped catalog when we have a row, not from
+        // `small_local` — that would mark grok-4.6 as blind with zero subagents.
+        let declared = panday_router::ModelCatalog::shipped()
+            .profile(&model_ref)
+            .unwrap_or_else(panday_types::capability::CapabilityProfile::small_local);
         panday_harness::profiling::measure(&client, &model_ref, declared, ceiling).await
     });
 
@@ -646,8 +649,8 @@ fn scorecard(write: bool) -> Result<ExitCode, String> {
          (`scorecards/json-bench-xai_grok-4.6.json`, Grok CLI OAuth through the gateway). \
          Local GGUFs are still unmeasured; CI has neither a GPU nor a GGUF, and a suite \
          that skipped would put a green tick next to 'we did not measure'.\n\
-         - Capability profiles (M18.4) are `declared` until `cargo xtask profile` has measured \
-         that model. A measured row says `provenance: measured`.\n",
+         - Capability profiles (M18.4): `xai/grok-4.6` is `provenance: measured` (2026-08-20). \
+         Local catalog rows stay `declared` until `cargo xtask profile` has run against a GGUF.\n",
     );
 
     print!("{out}");

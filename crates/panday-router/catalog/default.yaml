@@ -3,9 +3,8 @@
 # What the pool patterns in policy/*.yaml resolve to. Order within a provider is preference: a
 # glob expands in the order written here, and that order becomes the failover chain.
 #
-# `context` is the context the model is *usable* at, not the advertised number. Every profile here
-# is `declared` — somebody's estimate, honestly labelled — until the eval suite measures it
-# (docs/19 M19.2), at which point the scorecard rewrites these rows and marks them `measured`.
+# `context` is the context the model is *usable* at, not the advertised number. Profiles are
+# `declared` until the eval suite measures them (docs/19 M19.2). A measured row says so.
 #
 # Prices are micro-dollars per million tokens: 3_000_000 is $3.00/Mtok. A model with no `price` is
 # *unpriced*, which the meter reports as such; it is not free. Local models carry an explicit zero,
@@ -59,12 +58,18 @@ models:
       cache_write_1h_pct: 200
 
   # Subscription OAuth (Grok CLI ~/.grok/auth.json) — unpriced until we meter xAI.
+  # measured 2026-08-20 — max_context_tokens, json_reliability, tool_reliability
+  # (probes: 64528✓ 63520✓ 61503✓ 57469✓ 49402✓ 33268✓). Ceiling was 65536, so
+  # 64528 is the largest verified size, not the spec-sheet 256k. vision and
+  # max_subagents are carried from the previous declared row: a text probe
+  # cannot measure them.
   - id: xai/grok-4.6
-    context: 256000
-    json: 0.95
-    tools: 0.95
+    context: 64528
+    json: 1.00
+    tools: 1.00
     vision: true
     max_subagents: 3
+    provenance: measured
 
   - id: together/qwen3.5-32b-instruct
     context: 128000
