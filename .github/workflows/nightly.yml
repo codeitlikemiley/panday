@@ -52,6 +52,29 @@ jobs:
       - run: cargo nextest run -E 'binary(t2_linux_escape) or binary(t1_wasm) or binary(t0_scoping)'
       - run: cargo nextest run -E 'package(panday-harness) and binary(injection_canaries)'
 
+  # docs/19 M19.6: every agent-bench task run twice — broken and fixed — which is the property that
+  # makes the corpus a benchmark rather than thirty-eight hopeful strings. Every verifier runs inside
+  # the T2 jail, so this job needs bubblewrap for the same reason the isolation job does.
+  agent-bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with: { tool: cargo-nextest }
+      - name: install bubblewrap
+        timeout-minutes: 6
+        run: |
+          set -eux
+          sudo apt-get update -o Acquire::Retries=2
+          sudo apt-get install -y --no-install-recommends bubblewrap
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # No jail, no run: `verify_in_jail` refuses rather than executing unconfined, and this job
+      # exists to notice that rather than to skip quietly.
+      - run: command -v bwrap && python3 --version
+      - run: cargo nextest run --run-ignored all -E 'binary(agent_bench)'
+
   reduce-bench:
     runs-on: ubuntu-latest
     steps:

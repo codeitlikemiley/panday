@@ -15,8 +15,7 @@
 use panday_harness::testing::{EchoTool, ScriptedClient, ScriptedTurn};
 use panday_harness::tools::ToolRegistry;
 use panday_harness::{
-    fold, MemoryStore, PermissionEngine, Phase, Profile, SessionActor, TurnBudget,
-    TurnOutcome,
+    fold, MemoryStore, PermissionEngine, Phase, Profile, SessionActor, TurnBudget, TurnOutcome,
 };
 use panday_sandbox::t3::{drain, NodeId, Ring};
 use panday_types::model::ModelRef;

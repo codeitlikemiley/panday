@@ -283,5 +283,51 @@ artifacts; CI runs eval gates nightly.
   miner runs end to end today over a directory of logs and reports exactly why each candidate was
   dropped — which is the part that had to exist before any transcript was worth collecting.
 - **M19.5** Model 2 shipped: reduce-bench regression zero, ≥25% cheaper semantic tier than the provider cheap-pool it replaces; GGUF in catalog.
-- **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment.
+- **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment. ✅ *(shipped: `panday_harness::agent_bench` — 38 tasks, the audit, the jailed runner, and `score`. **Runs in T2, not T3**, and the corpus is 38 rather than 50 — both deliberate, below.)*
+
+  **This is the second attempt, and the first one destroyed a machine.** The original ran each
+  verifier as an ordinary child process in a temp directory. One task's subject was the bug class
+  "shell script deletes the root when a variable is unset", and its verifier ran the broken script
+  with the variable empty to prove the bug — expanding to `rm -rf /*`, which the suite then executed
+  on a developer's machine. Eighteen application bundles, the ssh-agent socket and the running
+  terminal did not survive. docs/20 has the full account.
+
+  Two rules follow, and both are structural rather than careful:
+
+  - **Verifiers run inside the T2 jail, never as a bare child process.** The tier confines writes to
+    one directory, so a runaway command costs a temp directory instead of a machine. `verify_in_jail`
+    returns `NoJail` where no T2 tier exists rather than falling back to running unconfined — a
+    benchmark that degrades to "run it directly" on an unsupported platform is the first version
+    again. A test proves the containment by having a verifier attempt to write to a neighbouring
+    directory and asserting the file is unchanged.
+  - **No task may name an absolute path or a destructive verb**, enforced by `agent_bench::audit`
+    before anything executes, again by `materialise` at the moment of writing, and a third time by
+    the repo-wide `no_destructive_fixtures` lint. The audit is tested against the original fixture,
+    constructed as data and rejected — a check nobody has seen fail is a check nobody should trust.
+
+  **The corpus is 38, not 50, and the difference is the point.** The twelve that are gone were the
+  destructive classes — root deletes, recursive chmods, `rm -rf` with an unguarded variable. A
+  benchmark of agent repair does not need a delete to be interesting; choosing those was a mistake of
+  taste before it was a mistake of engineering. The `unset-var` task still teaches the lesson — a
+  variable that may be empty — through a deploy script that prints a target, which is the same
+  mistake without the crater. Growing back to 50 belongs with mined traffic (M19.4), not with
+  invention.
+
+  **All 38 verified in both directions**, in 8 seconds, through the jail: the verifier fails before
+  the reference patch and passes after it. A task that already passes rewards nothing and inflates
+  every score; one nobody can solve subtracts from every score for reasons unrelated to the agent.
+  That check found a real defect on its first run — `silent-missing-file` was not actually broken,
+  because `cat` on a missing file exits non-zero whether or not stderr is suppressed.
+
+  **Grading is the exit code, never a diff against the reference.** An agent that fixes the bug
+  differently has fixed the bug, and grading on similarity teaches imitation instead of repair.
+
+  **This is the GRPO environment.** `materialise` is `reset()`, the attempt function is `step()`,
+  `verify_in_jail` is the reward, and none of the three knows what produced the attempt. Proven end
+  to end by scoring two agents — the reference patch (1.0) and one that changes nothing (0.0, with
+  the verifier's own words in each failure). A missing toolchain or a missing jail is skipped and
+  *named*, since folding either into the denominator would report a worse agent on a thinner machine.
+
+  **What is left is the model**, and T3 for the tasks that will eventually need a VM rather than a
+  jail (M14.5).
 - **M19.7** Model 3 v1: SFT stage beats base on agent-bench; go/no-go review for the GRPO spend.
