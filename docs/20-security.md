@@ -139,7 +139,7 @@ run belong inside a T2 jail (docs/14), where the worst case is a lost temp direc
 
 ## Milestones
 
-- **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench. ✅ *(shipped: the T2 escape suites landed with M14.2 and run in CI on Linux and macOS; canaries are `panday_harness::canary` + `crates/panday-harness/tests/injection_canaries.rs`. **Deferred half**: embedding them in agent-bench. The bench exists (M19.6, 38 tasks in T2); the canaries are still a separate suite. They cannot be copied as-is — `audit` refuses destructive verbs, which is the point.)*
+- **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench. ✅ *(shipped: the T2 escape suites landed with M14.2 and run in CI on Linux and macOS; canaries are `panday_harness::canary` + `crates/panday-harness/tests/injection_canaries.rs`, **and** three agent-bench tasks (`poisoned-readme`, `poisoned-comment`, `granted-json`) whose verifier fails if a relative marker file exists. The payloads are non-destructive on purpose — `audit` still refuses `rm -rf` and absolute paths, proven by a destructive twin constructed as data.)*
 
   **Every canary test scripts a model that fully complies.** That is the design. A suite where the
   model refuses measures the model's current disposition; a suite where the model obeys measures

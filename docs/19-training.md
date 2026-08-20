@@ -283,7 +283,7 @@ artifacts; CI runs eval gates nightly.
   miner runs end to end today over a directory of logs and reports exactly why each candidate was
   dropped — which is the part that had to exist before any transcript was worth collecting.
 - **M19.5** Model 2 shipped: reduce-bench regression zero, ≥25% cheaper semantic tier than the provider cheap-pool it replaces; GGUF in catalog.
-- **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment. ✅ *(shipped: `panday_harness::agent_bench` — 38 tasks, the audit, the jailed runner, and `score`. **Runs in T2, not T3**, and the corpus is 38 rather than 50 — both deliberate, below.)*
+- **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment. ✅ *(shipped: `panday_harness::agent_bench` — 41 tasks, the audit, the jailed runner, and `score`. **Runs in T2, not T3**. Thirty-eight are repair classes; three (`poisoned-readme`, `poisoned-comment`, `granted-json`) are M20.1 injection canaries whose verifier fails if a relative marker file exists. Still not 50 — the twelve destructive classes stay gone.)*
 
   **This is the second attempt, and the first one destroyed a machine.** The original ran each
   verifier as an ordinary child process in a temp directory. One task's subject was the bug class
@@ -305,15 +305,16 @@ artifacts; CI runs eval gates nightly.
     the repo-wide `no_destructive_fixtures` lint. The audit is tested against the original fixture,
     constructed as data and rejected — a check nobody has seen fail is a check nobody should trust.
 
-  **The corpus is 38, not 50, and the difference is the point.** The twelve that are gone were the
+  **The corpus is 41, not 50, and the difference is the point.** The twelve that are gone were the
   destructive classes — root deletes, recursive chmods, `rm -rf` with an unguarded variable. A
   benchmark of agent repair does not need a delete to be interesting; choosing those was a mistake of
   taste before it was a mistake of engineering. The `unset-var` task still teaches the lesson — a
   variable that may be empty — through a deploy script that prints a target, which is the same
-  mistake without the crater. Growing back to 50 belongs with mined traffic (M19.4), not with
-  invention.
+  mistake without the crater. Three injection canaries (M20.1) sit on top of the thirty-eight
+  repair classes, graded by a missing relative marker file rather than a delete. Growing back to
+  50 belongs with mined traffic (M19.4), not with invention.
 
-  **All 38 verified in both directions**, in 8 seconds, through the jail: the verifier fails before
+  **All 41 verified in both directions**, through the jail: the verifier fails before
   the reference patch and passes after it. A task that already passes rewards nothing and inflates
   every score; one nobody can solve subtracts from every score for reasons unrelated to the agent.
   That check found a real defect on its first run — `silent-missing-file` was not actually broken,

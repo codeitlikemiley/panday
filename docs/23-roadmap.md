@@ -159,7 +159,7 @@ measured by the router's counterfactual logs, not enthusiasm.
 with its scorecard artifact and json-bench's 200 fixtures (M19.1), the capability-profile generator
 (M19.2 — no model has been measured; catalog profiles stay `declared`), the shadow-mode harness that
 compares a candidate classifier without letting it route (M12.5), the consent-first mining pipeline
-(M19.4 — no transcripts to mine), agent-bench as a GRPO environment (M19.6 — 38 tasks in T2, not 50
+(M19.4 — no transcripts to mine), agent-bench as a GRPO environment (M19.6 — 41 tasks in T2, not 50
 in T3), and the signed model catalog that a tuned GGUF would enter through (M18.2). What is left is
 the training itself: M19.3, M19.5 and M19.7. None of them can be faked from a laptop with no corpus
 and no GPU. Doing so would produce numbers rather than evidence, which is the exact failure docs/19
