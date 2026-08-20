@@ -10,10 +10,13 @@ publish.workspace = true
 panday-types.workspace = true
 panday-sdk.workspace = true
 panday-router.workspace = true
+panday-console = { workspace = true, features = ["ssr"] }
 sha2.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 axum.workspace = true
+tower-http.workspace = true
+serde_yaml_ng.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
 futures-core.workspace = true

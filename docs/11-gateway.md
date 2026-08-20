@@ -75,6 +75,31 @@ tier allowlist, max context. Enforced here pre-flight (estimate) and
 post-flight (reconcile actual). Budget stop mid-session emits a typed
 `budget_exceeded` the harness turns into a graceful session pause, not a 500.
 
+## Operator console (Leptos islands)
+
+The solo gateway serves a real frontend at `GET /` so an operator can see what
+booted, whether subscription OAuth loaded, which models route, and try a prompt
+without curl. It is **not** the customer billing dashboard (Phase 6) and not
+Trunk CSR.
+
+**Architecture.** Leptos 0.8 **islands** on the existing Axum process
+(`panday-console`, ssr in the gateway binary, hydrate WASM in the browser):
+
+- Status, providers, catalog, OAuth flags render as HTML on the server. They
+  work with WASM disabled.
+- The playground is an `#[island]`: only that component hydrates. A form POST
+  to `/console/try` is the no-WASM fallback.
+- Split/lazy WASM (`cargo leptos --split`, `#[lazy]` islands) is the next
+  compile step once more than one island exists. Trunk is rejected: a CSR
+  blank page if WASM fails is the wrong failure mode for an operator console.
+
+**Theme.** *Forge* — warm charcoal, one ember accent, 2px radii, system fonts
+(no CDN; the air-gap kit cannot fetch Google Fonts). Numbers are mono.
+`prefers-color-scheme` is not a mid-page flip: the console is dark.
+
+**Never shown:** access tokens, refresh tokens, raw prompts in the recent-call
+list. OAuth is a boolean plus expiry class.
+
 ## Also serves: OpenAI-compatible ingress
 
 `POST /v1/chat/completions` accepting the standard dialect, mapped to IR.

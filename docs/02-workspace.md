@@ -63,6 +63,7 @@ Rules that keep a workspace this size sane:
 | ACP | agent-client-protocol | official Rust crate |
 | WASM | wasmtime | plugins tier, WASI 0.3 |
 | TUI | ratatui + crossterm | |
+| console UI | leptos 0.8 (islands + ssr/hydrate) | operator console on the gateway. Not Trunk CSR. WASM is hydrate-only for islands; status HTML is server-rendered. `wasm-bindgen` is the browser glue. |
 
 Version-pin in the workspace `[workspace.dependencies]` table; crates inherit.
 `cargo deny` in CI for licenses/advisories from day one — you are building a

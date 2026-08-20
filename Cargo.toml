@@ -10,6 +10,7 @@ members = [
     "crates/panday-harnessd",
     "crates/panday-plugins",
     "crates/panday-gateway",
+    "crates/panday-console",
     "crates/panday-platform",
     "crates/panday-local",
     "crates/panday-cli",
@@ -40,6 +41,7 @@ panday-sandbox = { path = "crates/panday-sandbox" }
 panday-harness = { path = "crates/panday-harness" }
 panday-plugins = { path = "crates/panday-plugins" }
 panday-gateway = { path = "crates/panday-gateway" }
+panday-console = { path = "crates/panday-console" }
 panday-harnessd = { path = "crates/panday-harnessd" }
 panday-macros = { path = "crates/panday-macros" }
 panday-platform = { path = "crates/panday-platform" }
@@ -52,8 +54,9 @@ futures-core = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # rustls only — docs/02: "no openssl linkage".
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["ws", "form"] }
 tower = "0.5"
+tower-http = { version = "0.6", features = ["fs"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "stream",

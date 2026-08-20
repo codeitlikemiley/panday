@@ -40,7 +40,7 @@ async fn main() {
 
     let usage = Arc::new(CollectUsage::new());
     let mut builder = Gateway::builder(Arc::new(router))
-        .usage_sink(usage)
+        .usage_sink(usage.clone() as Arc<dyn panday_gateway::UsageSink>)
         .costs(Arc::new(prices));
 
     // Same environment contract as the CLI, so one set of variables configures
@@ -93,7 +93,7 @@ async fn main() {
         Arc::new(OpenAiCompat::local(local.clone())) as Arc<dyn ProviderAdapter>,
     );
 
-    let gateway = builder.build();
+    let gateway = Arc::new(builder.build());
     println!("panday-gateway providers: {:?}", gateway.providers());
 
     // Open by default: this binary is the dev/solo shape (docs/01), where there are no accounts and
@@ -101,7 +101,7 @@ async fn main() {
     // wired by whatever runs the platform alongside it (M17.3) — an ingress that demanded a key
     // before the platform exists would make `panday-gateway` unusable on a laptop.
     let mut state = IngressState::open(
-        Arc::new(gateway),
+        Arc::clone(&gateway),
         // Accounts arrive with the platform (M17.1); the record shape is
         // already correct so the ledger can adopt it unchanged.
         panday_types::id::AccountId::new(),
@@ -122,7 +122,12 @@ async fn main() {
             }
         }
     }
-    let app = panday_gateway::ingress::router(state);
+    let console = panday_gateway::console::router(panday_gateway::console::ConsoleState {
+        gateway: Arc::clone(&gateway),
+        usage: Arc::clone(&usage),
+        listen: addr.clone(),
+    });
+    let app = panday_gateway::ingress::router(state).merge(console);
 
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -131,7 +136,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    println!("panday-gateway listening on {addr} (POST /v1/chat/completions)");
+    println!("panday-gateway listening on {addr}");
+    println!("  POST /v1/chat/completions");
+    println!("  GET  /                  operator console");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("panday-gateway: {e}");
         std::process::exit(1);

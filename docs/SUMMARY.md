@@ -13,7 +13,7 @@
 # Component Specs
 
 - [SDK](10-sdk.md)
-- [Gateway](11-gateway.md)
+- [Gateway](11-gateway.md) (operator console at `GET /`)
 - [Model Router](12-router.md)
 - [Harness](13-harness.md)
 - [Sandbox](14-sandbox.md)

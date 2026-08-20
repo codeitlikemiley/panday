@@ -67,6 +67,13 @@ deny:
     cargo deny check
 
 # Evals that need a model. Run with `llama-server` up, or against `just serve`.
+# Hydrate WASM for the operator console islands (docs/11). Served from target/site/pkg.
+console-wasm:
+    mkdir -p target/site/pkg
+    cargo build -p panday-console --target wasm32-unknown-unknown --no-default-features --features hydrate --release
+    wasm-bindgen --target web --out-dir target/site/pkg --out-name panday_console \
+      target/wasm32-unknown-unknown/release/panday_console.wasm
+
 bench model="local/qwen3.5-4b" url="http://127.0.0.1:8088":
     # Not part of `just check`: CI has no model, and a suite that skips is worse than one that is
     # absent — a green tick meaning "we did not measure" is how an eval suite rots.

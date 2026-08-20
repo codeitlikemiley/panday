@@ -7,6 +7,7 @@
 pub mod adapters;
 pub mod cache;
 pub mod circuit;
+pub mod console;
 pub mod gateway;
 pub mod ingress;
 pub mod openapi;

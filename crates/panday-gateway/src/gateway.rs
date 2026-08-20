@@ -82,6 +82,12 @@ impl CollectUsage {
     pub fn take(&self) -> Vec<UsageRecord> {
         std::mem::take(&mut self.records.lock().unwrap())
     }
+
+    /// Peek without draining. The console reads this; `take` stays for tests
+    /// that assert "exactly these calls and then nothing".
+    pub fn recent(&self) -> Vec<UsageRecord> {
+        self.records.lock().unwrap().clone()
+    }
 }
 
 #[async_trait::async_trait]

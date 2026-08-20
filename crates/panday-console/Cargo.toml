@@ -1,0 +1,41 @@
+[package]
+name = "panday-console"
+description = "Operator console for panday-gateway. Spec: docs/11 §Operator console."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { version = "0.8.20", default-features = false, features = ["islands"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = { version = "0.2.126", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+    "Headers",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Window",
+    "console",
+] }
+
+[features]
+# Native/workspace builds SSR. WASM hydrate is a separate target:
+# `cargo build -p panday-console --target wasm32-unknown-unknown --no-default-features --features hydrate`
+default = ["ssr"]
+ssr = ["leptos/ssr", "leptos/islands"]
+hydrate = [
+    "leptos/hydrate",
+    "leptos/islands",
+    "dep:wasm-bindgen",
+    "dep:console_error_panic_hook",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+]
