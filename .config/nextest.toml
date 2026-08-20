@@ -39,3 +39,19 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 [[profile.ci.overrides]]
 filter = 'test(bad_signatures_fail_to_compile_with_a_useful_message)'
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# The two T1 hook tests whose subject *is* the 10ms budget (docs/16). Everything else in that file
+# now asserts behaviour under a generous deadline, because a wall-clock assertion on a runner
+# executing 900 other tests measures the runner — twice now, a guest that does nothing but return a
+# verdict was reported over budget because the OS did not schedule it inside the window.
+#
+# These two keep the real budget, since loosening it would delete their meaning, and get retries
+# instead: a timing measurement that fails once under contention and passes on a quiet core is a
+# flake, and the honest tool for a flake is a retry with the flakiness reported.
+[[profile.default.overrides]]
+filter = 'test(a_hook_that_spins_is_stopped_by_its_ten_millisecond_budget) or test(the_budget_covers_the_hooks_code_and_not_our_linking)'
+retries = 2
+
+[[profile.ci.overrides]]
+filter = 'test(a_hook_that_spins_is_stopped_by_its_ten_millisecond_budget) or test(the_budget_covers_the_hooks_code_and_not_our_linking)'
+retries = 3
