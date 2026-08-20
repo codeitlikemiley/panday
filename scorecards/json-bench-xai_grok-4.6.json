@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "suite": "json-bench",
+  "subject": "xai/grok-4.6",
+  "at": "2026-08-20",
+  "cases": 200,
+  "passed": 200,
+  "metrics": {
+    "call_failure_rate": 0.0,
+    "not_json_rate": 0.0,
+    "schema_validity": 1.0,
+    "wrong_shape_rate": 0.0
+  },
+  "failures": [],
+  "failures_omitted": 0,
+  "provenance": {}
+}

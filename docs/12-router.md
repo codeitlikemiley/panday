@@ -209,10 +209,11 @@ not know the model, which reads as "no claim", not as "no capabilities".
   anything that wants to block on it.
 
   Current numbers: heuristic classifier **94%** (47/50), **zero** confidently wrong, three
-  misses caught by the confidence gate; all three policy files lint clean. The section listing
-  what is *not* measured yet (agent-bench, json-bench, capability profiles) is part of the
-  artifact on purpose — a scorecard that only shows what passed reads as coverage it does not
-  have.
+  misses caught by the confidence gate; all three policy files lint clean. json-bench has a
+  measured card for `xai/grok-4.6` (200/200, 2026-08-20); scoring an *agent* on agent-bench
+  and capability profiles for the local catalog are still unmeasured. The weekly scorecard
+  lists those gaps on purpose — a report that only shows what passed reads as coverage it
+  does not have.
 - **M12.5** ONNX classifier slot behind `Classifier` trait; shadow-mode comparison report (heuristic vs learned) over 1k replayed sessions. ✅ *(shipped as the harness: `panday_router::shadow`, `crates/panday-router/tests/shadow.rs`. **Scoped deliberately** — the ONNX runtime lands with M19.3.)*
 
   The `Classifier` trait was already the slot; a learned model implements it and

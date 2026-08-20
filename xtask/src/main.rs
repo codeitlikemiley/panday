@@ -642,9 +642,10 @@ fn scorecard(write: bool) -> Result<ExitCode, String> {
          verifier fails before the reference patch and passes after it; scoring an *agent* \
          still needs a model. Growing back to 50 belongs with mined traffic (M19.4), not \
          invention, and T3 is M14.5.\n\
-         - `json-bench` (M19.1): 200 fixtures via `cargo xtask json-bench`. A measured card \
-         is committed under scorecards/ when a live model has been run; CI has neither a GPU \
-         nor a GGUF, and a suite that skipped would put a green tick next to 'we did not measure'.\n\
+         - `json-bench` (M19.1): `xai/grok-4.6` measured 200/200 on 2026-08-20 \
+         (`scorecards/json-bench-xai_grok-4.6.json`, Grok CLI OAuth through the gateway). \
+         Local GGUFs are still unmeasured; CI has neither a GPU nor a GGUF, and a suite \
+         that skipped would put a green tick next to 'we did not measure'.\n\
          - Capability profiles (M18.4) are `declared` until `cargo xtask profile` has measured \
          that model. A measured row says `provenance: measured`.\n",
     );

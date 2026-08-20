@@ -169,7 +169,7 @@ artifacts; CI runs eval gates nightly.
 
 ## Milestones
 
-- **M19.1** Eval spine: inspect-ai through the gateway; route-bench + json-bench with 200 fixtures each; scorecard artifact format. ✅ *(shipped: `panday_types::scorecard` + `proto/scorecard.schema.json`, `panday_harness::json_bench` (200 fixtures) and `panday_harness::json_schema`, `cargo xtask json-bench` / `just bench`, `training/evals/json_discipline.py`, route-bench grown to 50 and emitting the same artifact. **Two clauses left open** — see below.)*
+- **M19.1** Eval spine: inspect-ai through the gateway; route-bench + json-bench with 200 fixtures each; scorecard artifact format. ✅ *(shipped: `panday_types::scorecard` + `proto/scorecard.schema.json`, `panday_harness::json_bench` (200 fixtures) and `panday_harness::json_schema`, `cargo xtask json-bench` / `just bench`, `training/evals/json_discipline.py`, route-bench grown to 50 and emitting the same artifact. **json-bench has a measured card** (`scorecards/json-bench-xai_grok-4.6.json`, 200/200 on `xai/grok-4.6` via Grok CLI OAuth through the gateway, 2026-08-20). **One clause left open** — route-bench at 200, below.)*
 
   **The scorecard is JSON, and markdown is a rendering of it.** A gate is only a gate if something
   can read it without a human, and a gate that parses a table out of prose breaks the first time
@@ -205,15 +205,15 @@ artifacts; CI runs eval gates nightly.
   (47/50), zero confidently wrong** on the harder corpus. A suite you pass is not evidence until it
   is a suite that could have failed.
 
-  **Left open, deliberately, and both need hardware this repo does not have:**
+  **json-bench, measured:** `xai/grok-4.6` through the live gateway (Grok CLI subscription OAuth
+  against `api.x.ai`, not a proxy) scored **200/200** (`schema_validity` 1.0, `not_json_rate` 0,
+  `wrong_shape_rate` 0, `call_failure_rate` 0) on 2026-08-20. That is a frontier model on a corpus
+  sized for a 4B local; it is not a substitute for measuring a GGUF after quantize (docs/19
+  §gates). The artifact is `scorecards/json-bench-xai_grok-4.6.json`.
 
-  - *A measured number for json-bench.* The suite runs end to end against a gateway; nothing has
-    run it against a real model, so no scorecard is committed. `cargo xtask json-bench --write`
-    produces one, and it records the quantization it measured at (docs/19 §gates: quantize → then
-    eval).
-  - *route-bench at 200 fixtures.* It is at 50. The remaining 150 should come from mined traffic
-    (M19.4), not from invention: a corpus of made-up prompts at that size measures our imagination,
-    and the 24-case version already demonstrated what that costs.
+  **Left open:** *route-bench at 200 fixtures.* It is at 50. The remaining 150 should come from
+  mined traffic (M19.4), not from invention: a corpus of made-up prompts at that size measures
+  our imagination, and the 24-case version already demonstrated what that costs.
 
   **inspect-ai points at the gateway, never at a provider** (`training/evals/json_discipline.py`),
   and refuses to start without `PANDAY_GATEWAY_URL` (or `PANDAY_BASE_URL` as a fallback) rather than falling back to a provider default —

@@ -156,7 +156,8 @@ traffic at equal-or-better evals and lower cost than the pool it displaced —
 measured by the router's counterfactual logs, not enthusiasm.
 
 **Status: the infrastructure ahead of every model is shipped; the models are not.** The eval spine
-with its scorecard artifact and json-bench's 200 fixtures (M19.1), the capability-profile generator
+with its scorecard artifact and json-bench's 200 fixtures (M19.1 — `xai/grok-4.6` measured 200/200
+on 2026-08-20; local GGUFs still unmeasured), the capability-profile generator
 (M19.2 — no model has been measured; catalog profiles stay `declared`), the shadow-mode harness that
 compares a candidate classifier without letting it route (M12.5), the consent-first mining pipeline
 (M19.4 — no transcripts to mine), agent-bench as a GRPO environment (M19.6 — 41 tasks in T2, not 50
