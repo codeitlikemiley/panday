@@ -340,6 +340,50 @@ async fn the_bash_tool_cannot_reach_the_network_from_inside_the_loop() {
     );
 }
 
+/// Pick a live backend the same way the CLI does (docs/11): an Anthropic key,
+/// or any OpenAI-compatible base via `PANDAY_COMPAT_BASE_URL`.
+///
+/// The second path is how this machine dogsfoods without an Anthropic key —
+/// OpenCodex on loopback already holds the xAI OAuth session and speaks Chat
+/// Completions. We do **not** copy that OAuth flow into panday; we point the
+/// existing `openai_compat` adapter at the proxy. The `together/` prefix is
+/// the adapter slot the CLI already registers; OpenCodex sees the rest of the
+/// id (`xai/grok-4.6`). Override with `PANDAY_COMPAT_MODEL`.
+fn live_backend() -> (String, Arc<dyn panday_gateway::ProviderAdapter>, ModelRef) {
+    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !key.trim().is_empty() {
+            return (
+                "anthropic".into(),
+                Arc::new(panday_gateway::adapters::anthropic::Anthropic::new(key))
+                    as Arc<dyn panday_gateway::ProviderAdapter>,
+                ModelRef::auto(),
+            );
+        }
+    }
+    if let Ok(base) = std::env::var("PANDAY_COMPAT_BASE_URL") {
+        if !base.trim().is_empty() {
+            let key = std::env::var("PANDAY_COMPAT_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty());
+            let model = std::env::var("PANDAY_COMPAT_MODEL")
+                .ok()
+                .filter(|m| !m.trim().is_empty())
+                .unwrap_or_else(|| "together/xai/grok-4.6".into());
+            return (
+                "together".into(),
+                Arc::new(panday_gateway::adapters::openai_compat::OpenAiCompat::new(
+                    base, key,
+                )) as Arc<dyn panday_gateway::ProviderAdapter>,
+                ModelRef(model),
+            );
+        }
+    }
+    panic!(
+        "live leg needs ANTHROPIC_API_KEY, or PANDAY_COMPAT_BASE_URL \
+         (and optionally PANDAY_COMPAT_MODEL, default together/xai/grok-4.6)"
+    );
+}
+
 /// The live-model leg of M13.2's acceptance.
 ///
 /// Ignored by default: it needs a real provider, and docs/02 requires the
@@ -347,13 +391,15 @@ async fn the_bash_tool_cannot_reach_the_network_from_inside_the_loop() {
 ///
 /// ```text
 /// ANTHROPIC_API_KEY=... cargo test -p panday-harness --test fix_a_failing_test -- --ignored
+///
+/// # or, any OpenAI-compatible proxy already holding a login (OpenCodex, llama-server, …):
+/// PANDAY_COMPAT_BASE_URL=http://127.0.0.1:8080 \
+///   cargo test -p panday-harness --test fix_a_failing_test -- --ignored
 /// ```
 #[tokio::test]
 #[ignore = "needs a live model; see the doc comment"]
 async fn a_live_model_fixes_it_unattended() {
-    let Ok(key) = std::env::var("ANTHROPIC_API_KEY") else {
-        panic!("set ANTHROPIC_API_KEY to run the live leg of M13.2");
-    };
+    let (prefix, adapter, model) = live_backend();
 
     let repo = staged_repo();
     let Some((_sandbox, ws)) = jailed_workspace(repo.path()).await else {
@@ -369,18 +415,14 @@ async fn a_live_model_fixes_it_unattended() {
         panday_router::PolicyRouter::from_yaml(include_str!("../../panday-router/policy/dev.yaml"))
             .unwrap(),
     ))
-    .adapter(
-        "anthropic",
-        Arc::new(panday_gateway::adapters::anthropic::Anthropic::new(key))
-            as Arc<dyn panday_gateway::ProviderAdapter>,
-    )
+    .adapter(&prefix, adapter)
     .build();
 
     let store = Arc::new(MemoryStore::new());
     let mut actor = SessionActor::new(
         SessionId::new(),
         AccountId::new(),
-        ModelRef::auto(),
+        model,
         store.clone(),
         Arc::new(gateway),
         registry,
