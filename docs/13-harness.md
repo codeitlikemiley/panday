@@ -201,11 +201,17 @@ Hook misbehavior (timeout, panic) is contained: log, skip, continue.
   The model is scripted, per docs/02 ("the harness suite runs without network
   using the fake client"): the script chooses the *plan*, everything beneath
   it is real. Whether a **live** model chooses those steps is the remaining
-  leg, kept as an `#[ignore]`d test that needs `ANTHROPIC_API_KEY`:
+  leg, kept as an `#[ignore]`d test so CI stays offline. It prefers Grok CLI
+  subscription OAuth (`xai/grok-4.6` against `api.x.ai`), then an Anthropic
+  key, then Claude Code OAuth:
 
   ```text
-  ANTHROPIC_API_KEY=… cargo test -p panday-harness --test fix_a_failing_test -- --ignored
+  cargo test -p panday-harness --test fix_a_failing_test -- --ignored
   ```
+
+  Proven on 2026-08-20 with Grok CLI OAuth (`a_live_model_fixes_it_unattended`
+  ok in 27s, no `ANTHROPIC_API_KEY`). `panday chat -m xai/grok-4.6` replied
+  `pong` on the same path.
 
   `web_fetch` (needs the egress proxy, M14.2) and `spawn_subagent` (M13.6) are
   deliberately absent rather than stubbed — a tool the model can call but that
