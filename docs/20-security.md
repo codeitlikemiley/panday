@@ -96,6 +96,47 @@ backup drills, vendor list). Phase 4+: SOC2 Type I→II when enterprise deals
 demand; the event-sourced architecture makes evidence collection cheap —
 the audit trail *is* the product's data model (ADR-002).
 
+## Destructive commands in our own tree (an incident, and the lint it produced)
+
+While authoring the agent benchmark (docs/19 M19.6), a fixture was written whose "broken" program
+was `rm -rf "$DIR/"*` — the bug class being *unguarded variable in a recursive delete* — and whose
+verifier ran that program with `DIR` unset to prove the bug existed. With `DIR` empty the shell
+expands it to `rm -rf /*`. The suite executed it on the developer's machine. macOS's own protections
+stopped most of it; roughly eighteen application bundles, the ssh-agent socket, and the running
+terminal were destroyed before it did.
+
+Three things failed at once:
+
+1. A destructive string existed in the tree.
+2. Something executed it.
+3. Nothing between the two objected.
+
+Only the first is cheaply lintable, and it is also the earliest — so
+`crates/panday-sandbox/tests/no_destructive_fixtures.rs` fails `cargo test` the moment such a string
+appears, before anyone runs the suite that would execute it.
+
+**The rule is narrow on purpose.** `rm -rf /tmp/panday-test-abc` is how every test here cleans up;
+flagging it would produce twenty exemption markers in a week and a lint nobody reads. What is
+forbidden is the set of forms that are never legitimate in a fixture: a target that is the root or
+`/*`, a target that is an unguarded **variable** (which may be empty and therefore *be* the root), a
+recursive permission or ownership change from the root, a filesystem format, a block-device
+overwrite, a fork bomb.
+
+**`${VAR:?}` is accepted, and that is deliberate.** The guarded expansion aborts when the variable is
+unset *or* empty, so the empty case can never reach `rm`. A lint that rejected the fix alongside the
+bug would teach people to reach for an exemption instead of for correctness — both of this repo's
+own scripts were corrected this way rather than exempted.
+
+**The exemption is per file, needs a reason, and is greppable** — the same shape as the tenancy lint
+(T5). Eight files carry it, all of them holding these strings as *data*: the filter denylist itself,
+the permission rule patterns, the injection canaries, and the tests that assert those get vetoed. In
+every one, the string reaches a pure function or a scripted model, never a shell.
+
+**What the lint does not do** is prove nothing executes a fixture. That would need taint analysis
+across the crate boundary — the incident had the strings in one file and the process spawn in
+another. The durable answer for that half is the one the project already ships: fixtures that must be
+run belong inside a T2 jail (docs/14), where the worst case is a lost temp directory.
+
 ## Milestones
 
 - **M20.1** Escape suite v1 (T2) in CI; injection canary fixtures in agent-bench. ✅ *(shipped: the T2 escape suites landed with M14.2 and run in CI on Linux and macOS; canaries are `panday_harness::canary` + `crates/panday-harness/tests/injection_canaries.rs`. **Deferred half**: embedding them in agent-bench, which does not exist until M19.6.)*

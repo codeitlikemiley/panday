@@ -14,6 +14,8 @@
 # Linux only, and needs docker. It is not run in CI: building a bootable image is minutes of I/O and
 # nothing in CI can boot the result. The person with the KVM host runs it, and the hash is what
 # everyone else checks.
+# dangerous-strings: data-only — `mkfs.ext4` below targets a regular file this script just created
+# with `dd`, never a block device; the lint's pattern cannot tell the two apart.
 set -euo pipefail
 
 TOOLCHAIN="${1:-rust}"
@@ -43,7 +45,9 @@ esac
 
 mkdir -p "$OUT_DIR"
 WORK="$(mktemp -d)"
-trap 'sudo umount "$WORK/mnt" 2>/dev/null || true; rm -rf "$WORK"' EXIT
+# `${WORK:?}` rather than `$WORK`: an empty variable must abort, not expand to nothing and leave
+# `rm -rf` pointed at the root.
+trap 'sudo umount "${WORK:?}/mnt" 2>/dev/null || true; rm -rf "${WORK:?}"' EXIT
 
 echo "== 1. assemble the filesystem from $BASE"
 # `init` is the guest agent: pid 1 in a microVM with no init system. It is built statically so the

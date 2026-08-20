@@ -1,5 +1,8 @@
 //! The permission engine (docs/13 §permissions). Decisions are events, so
 //! grants are auditable and replayable like everything else.
+//!
+//! dangerous-strings: data-only — these are permission *rule* patterns matched against a rendered
+//! call. The engine returns Allow/Ask/Deny; it never executes anything.
 
 use crate::tools::{SideEffects, ToolReq};
 use panday_types::event::PermDecision;

@@ -19,6 +19,9 @@ set -euo pipefail
 # rehearsing for. Set PANDAY_DRILL_LOCAL=1 to use the binaries on PATH instead.
 DRILL_IMAGE="${DRILL_IMAGE:-postgres:17-alpine}"
 DRILL_NETWORK="${DRILL_NETWORK:-panday-dev_default}"
+# `${DUMP_DIR:?}` at every use site below. An unset *or empty* variable then aborts the script
+# instead of expanding to nothing — which is what turns an unguarded recursive delete of a variable
+# into a recursive delete of the filesystem root.
 DUMP_DIR="${DUMP_DIR:-$(mktemp -d -t panday-backup-XXXXXX)}"
 DUMP_NAME="drill.dump"
 
@@ -95,7 +98,7 @@ else
   echo "   balances agree with entries"
 fi
 
-rm -rf "$DUMP_DIR"
+rm -rf "${DUMP_DIR:?}"
 if [ "$fail" != "0" ]; then
   echo
   echo "DRILL FAILED — the backup does not restore to the same numbers." >&2

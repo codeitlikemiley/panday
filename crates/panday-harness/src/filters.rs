@@ -20,6 +20,9 @@
 //! Each rule therefore states what it catches and what it does not, and the tests
 //! include the evasions that get through — so nobody reads this file as a
 //! boundary.
+//!
+//! dangerous-strings: data-only — this file *is* the denylist. Every pattern here is compared
+//! against a proposed tool call and vetoed; nothing in this crate hands them to a shell.
 
 use crate::hooks::{Hook, PreTool};
 use panday_types::Json;

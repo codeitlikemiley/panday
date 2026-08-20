@@ -18,6 +18,9 @@
 //!
 //! These fixtures are also the seed for agent-bench's injection cases (M19.6): the payloads are
 //! written to be runnable against a real agent in a sandbox, not just against the harness.
+//!
+//! dangerous-strings: data-only — injection payloads. They reach a scripted model and a filter's
+//! `pre_tool`, both pure functions, and the tool behind them is an `EchoTool`. No shell is involved.
 
 /// What the payload is trying to make the agent do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

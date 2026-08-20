@@ -4,6 +4,9 @@
 //! The component is `tests/fixtures/demo_hook.wasm`, built from `fixtures/demo-hook`
 //! by `cargo xtask wasm-fixtures`: a real policy hook that vetoes `rm -rf /`,
 //! rewrites a `curl`, and spins forever when asked to.
+//!
+//! dangerous-strings: data-only — the command is the argument a wasm hook inspects and rejects.
+//! The host never runs it.
 
 use panday_sandbox::t1_hook::{redact, HookCall, Verdict};
 use panday_sandbox::t1_wasm::{T1Error, T1Limits, T1Runtime};

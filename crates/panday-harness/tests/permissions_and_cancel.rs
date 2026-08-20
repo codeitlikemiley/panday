@@ -8,6 +8,9 @@
 //! over the same events. The cancellation test is the real thing — it starts
 //! a genuinely sleeping `bash` inside a real jail and checks the process is
 //! gone.
+//!
+//! dangerous-strings: data-only — command strings are arguments to the permission engine, which
+//! returns a decision. The tools are `EchoTool`s and nothing reaches a shell.
 
 use panday_harness::permissions::{render_call, Rule};
 use panday_harness::testing::{EchoTool, ScriptedClient, ScriptedTurn};

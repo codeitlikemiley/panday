@@ -1,5 +1,8 @@
 //! M16.4 in the loop: a plugin tool the loop cannot tell from a native one, and a
 //! plugin hook whose budget breach is skipped and logged (docs/16).
+//!
+//! dangerous-strings: data-only — the command is what a plugin hook is asked to veto; it is never
+//! executed.
 
 use panday_harness::hooks::{CollectFailures, HookEngine, PreTool};
 use panday_harness::testing::{ScriptedClient, ScriptedTurn};

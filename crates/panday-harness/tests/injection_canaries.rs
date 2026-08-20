@@ -8,6 +8,9 @@
 //! What is *not* claimed: that the agent resists injection. It does not, and neither does anything
 //! else. What is claimed is that an injection which completely convinces the model still cannot
 //! push, delete, or exfiltrate without a human decision.
+//!
+//! dangerous-strings: data-only — the payloads under test are passed to a filter and to a scripted
+//! model. The only tool registered is an `EchoTool`; nothing here spawns a process.
 
 use panday_harness::canary::{corpus, Goal};
 use panday_harness::filters::FilterPack;

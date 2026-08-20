@@ -5,6 +5,9 @@
 //! These are the three deterministic layers of that — provenance the model can see,
 //! filters that hold when the model does not, and a vault that keeps the thing worth
 //! stealing out of reach.
+//!
+//! dangerous-strings: data-only — the strings are inputs to filters and hooks, asserted to be
+//! vetoed. No process is spawned in this file.
 
 use panday_harness::context::ContextBuilder;
 use panday_harness::filters::{Filter, FilterPack, PipeToShell, WriteOutsideWorkspace};
