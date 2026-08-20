@@ -8,6 +8,13 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
+**Where numbered work stands (2026-08-20):** 89 milestones, 83 shipped, 3 partial
+(M22.3 host, M22.4 KVM timing, M22.5 air-gapped install), 3 not started (M19.3 /
+M19.5 / M19.7 training). Laptop-provable leftovers are closed: subscription
+OAuth, live M13.2, json-bench 200/200 on `xai/grok-4.6`, that model's catalog
+row `provenance: measured`, M20.1 canaries in agent-bench (41 tasks). What
+remains is named in each phase's status, not guessed.
+
 ## Phase 0 — Spine (~weeks 1–4)
 
 The vocabulary and the door. `panday-types` events + model IR (✅ seeded in
@@ -89,7 +96,7 @@ invisible:
 
 | Clause | State |
 |---|---|
-| installs the CLI | Binaries build for four targets in `release.yml`; the README's "Try it" is the stranger's path. No package-manager recipe yet, and no signed release (M20.5). |
+| installs the CLI | Binaries build for four targets in `release.yml`; SBOM + the `sign` job shipped (M20.5). The README's "Try it" is the stranger's path. No package-manager recipe yet. |
 | connects their editor via ACP | `panday acp` (M16.5), verified against the official crate's own client over a real ACP conversation. **Zed itself is unverified** — CI cannot run an editor, so that is one manual check by whoever has it installed. |
 | ports an existing SKILL.md unmodified | Covered by a fixture in the published shape (`allowed-tools`, `license`, nested `metadata`, `references/`) that loads with no edits (M16.1, test at `crates/panday-harness/tests/skills_in_context.rs`). |
 | completes a task offline on a laptop | `panday local` (M18.1) with the SQLite store (M18.3), against an OpenAI-compatible server on loopback. The suite uses a fake one because CI has no GGUF; the llama-server leg is `#[ignore]`d and runnable by anyone with one. |

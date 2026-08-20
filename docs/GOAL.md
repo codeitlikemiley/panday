@@ -1,13 +1,20 @@
-# Autonomous goal — finish panday's remaining work
+# Autonomous goal — remaining work is blocked
 
-Paste this file into `/goal`. Do not stop to ask the user. Do not wait for
-Anthropic API keys. Subscription OAuth is already on this machine.
+Laptop-provable leftover clauses closed on 2026-08-20 (`32fbbf2` on
+`codeitlikemiley/panday`). Do not re-measure json-bench, re-paste the grok
+profile, or re-add the canaries to look busy. Do not invent training or p95
+numbers.
+
+If you are handed `/goal`, the remaining work is the blocked table below.
+Stop and say so unless the user has provided a host, KVM, Stripe, a corpus,
+or a GGUF.
 
 ```
-/goal Finish every remaining panday milestone that can be proven from this laptop, using Grok CLI OAuth (~/.grok/auth.json → xai/grok-4.6 against api.x.ai) and/or Claude Code OAuth (Keychain / ~/.claude/.credentials.json). Keep going until the last completable acceptance criterion holds. Do not message the user except when the goal is actually done or a milestone is physically impossible from this machine.
+/goal Remaining panday numbered work is blocked on hardware, a third party,
+or training data. Do not close M19.3/5/7, M22.3–22.5, Stripe HTTP, route-bench
+200, or local GGUF profiles without the thing they name. Do not invent rates.
+Message the user with the blocked list rather than filling the gap.
 ```
-
-The rest of this file is the contract the agent must follow.
 
 ## Identity of the model plane
 
@@ -35,39 +42,35 @@ The rest of this file is the contract the agent must follow.
 - One milestone per commit. `docs/` updated in the same commit when code diverges.
 - Never fake a measurement. If hardware is missing, ship the code, name the missing clause, leave the number unstated.
 
-## What "done" means
+## Closed on this laptop (2026-08-20)
 
-A milestone is done when its **stated acceptance criteria** hold, not when something compiles.
-Phases exit on their criteria (`docs/23`). Do not start phase N+1 to avoid finishing N, except
-that remaining numbered work is already past Phase 1–4 infrastructure.
+| Item | Evidence |
+|---|---|
+| Subscription OAuth | `panday_sdk::oauth`; `panday chat -m xai/grok-4.6` → `pong` |
+| Phase 1 live fixture | `a_live_model_fixes_it_unattended` ok, 27s, no Anthropic key |
+| json-bench (M19.1 leftover) | `scorecards/json-bench-xai_grok-4.6.json` — 200/200 |
+| capability profile (M19.2 leftover) | catalog `xai/grok-4.6` is `provenance: measured` |
+| M20.1 canaries in agent-bench | 41 tasks; `poisoned-readme` / `poisoned-comment` / `granted-json` |
 
-Prove live behaviour with Grok (`xai/grok-4.6`) or Claude Code OAuth. Run the tests yourself.
-Do not ask the user to run them.
+## Remaining numbered work (blocked)
 
-## Remaining numbered work
-
-| Item | Do this | Do not do this |
+| Item | Needs | Do not |
 |---|---|---|
-| Phase 1 live / dogfood | `cargo test -p panday-harness --test fix_a_failing_test -- --ignored`. Then `panday chat -m xai/grok-4.6` on a real prompt in this repo. Record the result in docs/13 / docs/23. | Ask for `ANTHROPIC_API_KEY`. |
-| json-bench number (M19.1 leftover) | Run `just bench` (or `cargo xtask json-bench --write`) against a live gateway whose `xai` adapter is the Grok OAuth session. Commit the scorecard. | Invent a rate. |
-| capability profiles (M19.2 leftover) | `cargo xtask profile --model xai/grok-4.6` (and Claude if OAuth works). Paste measured entries. | Guess numbers. |
-| M20.1 deferred: canaries in agent-bench | A handful of tasks. Payloads must survive `agent_bench::audit` (no `rm -rf`, no absolute paths). Verifier checks a benign marker file was **not** created. | Copy `canary.rs` payloads as-is. |
-| M19.3 Model 1 | Encoder classifier behind `Classifier`, shadow first. Train set is **not** the 50 route-bench prompts. Ask before adding `ort`/`candle`/`tract`. Gate: ≥10pt over the 94% heuristic on route-bench, never confidently wrong, **after** the model exists. | Fake the 10pt. Train on the eval. |
-| M19.5 / M19.7 | Only after M19.3 and a real corpus. docs/19 go/no-go before GRPO spend. | Start GRPO to look busy. |
-| M22.3 host | If no `STAGING_DEPLOY_HOST`, the workflow's no-op is the honest state. Do not rent a VM with the user's money. | Claim production is live. |
-| M22.4 / M14.5–14.6 timing | Code is shipped. Do not invent p95 numbers. | |
-| M22.5 air-gap | Kit builder is shipped. Do not pretend an air-gapped machine was used. | |
-| Stripe (M17.4 leftover) | Do not add a Stripe crate or call Stripe without a key the user already set. | |
+| Phase 1 exit | The builder using it on a real repo | Treat the fixture loop as the exit. |
+| Phase 2 exit | Zed + a real local GGUF | Claim the stranger path is fully proven. |
+| route-bench 200 (M19.1 leftover) | Mined traffic (M19.4) | Invent 150 prompts. |
+| Local GGUF profiles (M19.2 leftover) | A GGUF on this machine | Guess numbers. Paste grok's row onto a local model. |
+| M19.3 Model 1 | Train set ≠ the 50 route-bench prompts; GPU. ≥10pt over 94% heuristic, never confidently wrong, after the model exists. Ask before `ort`/`candle`/`tract`. | Fake the 10pt. Train on the eval. |
+| M19.4 10k-pair dataset | Consented transcripts | Mine without `--consent`. |
+| M19.5 / M19.7 | After M19.3 and a real corpus. docs/19 go/no-go before GRPO. | Start GRPO to look busy. |
+| M19.6 50 tasks in T3 | Mined traffic + KVM | Restore the twelve destructive classes. |
+| M22.3 host | `STAGING_DEPLOY_HOST` (and friends). Workflow no-op is the honest state. | Rent a VM unasked. Claim production is live. |
+| M22.4 / M14.5–14.6 timing | KVM nodes | Invent p95s. |
+| M22.5 air-gap | A machine with no network, following only `INSTALL.md` | Pretend the kit was installed air-gapped. |
+| Stripe (M17.4 leftover) | A live key the user already set | Add a Stripe crate and call Stripe without one. |
+| Phase 6 | Phases 3–5 saying so | Dashboard / marketplace as filler. |
 
-Grow agent-bench only from mined traffic (M19.4). The twelve destructive classes are not coming back.
-
-## Loop
-
-1. Pick the next row that is actually doable from this laptop.
-2. Implement it. Run the gate: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace` (or the package under test if the suite hangs on this volume — then still run the affected tests).
-3. Commit `--no-verify`, message names the milestone. Push HTTPS as `codeitlikemiley` (`gh auth switch --user codeitlikemiley`, then `git -c credential.helper='!gh auth git-credential' push https://github.com/codeitlikemiley/panday.git HEAD:main`, switch back to `hexuria`).
-4. Repeat until no doable row remains.
-5. Then, and only then, stop and list: what shipped, what is blocked on hardware/Stripe/a host, and the evidence for each.
+Grow agent-bench only from mined traffic. The twelve destructive classes are not coming back.
 
 ## Out of scope
 

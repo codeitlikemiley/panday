@@ -247,10 +247,12 @@ artifacts; CI runs eval gates nightly.
   decisions. A person pastes it, and the diff is the review — with the probe results in a comment
   above the numbers.
 
-  **What is missing is a model.** The generator is driven in the suite by fakes that fail in specific
-  ways — a short real context behind a large advertised one, a model that answers prose where JSON
-  was asked for, one that emits well-formed calls with the wrong arguments — because a generator that
-  cannot report a bad model as bad is not worth running against a good one.
+  **What is missing is a local model.** `xai/grok-4.6` was measured on 2026-08-20 and pasted into
+  the catalog as `provenance: measured`. The three local catalog rows stay `declared` because no
+  GGUF ran. The generator's suite is still driven by fakes that fail in specific ways — a short
+  real context behind a large advertised one, a model that answers prose where JSON was asked for,
+  one that emits well-formed calls with the wrong arguments — because a generator that cannot
+  report a bad model as bad is not worth running against a good one.
 - **M19.3** Model 1 shipped: classifier behind `Classifier` trait beats heuristic on route-bench by ≥10pt; deployed in shadow, then live.
 - **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset. ✅ *(shipped: `panday_harness::mining`, `cargo xtask mine --logs <dir> --out <file>`. **The 10k-pair dataset is not here** — it needs 10k consented transcripts, and this repo has none.)*
 

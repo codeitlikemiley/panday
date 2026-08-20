@@ -23,12 +23,13 @@ the code implements. They were written first and they win by default.
 
 Read these in order before writing any code in a new session:
 
-1. `docs/README.md` — what the repo is, how it is meant to be used
-2. `docs/00-vision.md` — what we are building and in what order
-3. `docs/01-architecture.md` — the system in four diagrams and ten sentences
-4. `docs/04-decisions.md` — the ADRs; why each contested choice went that way
-5. `docs/23-roadmap.md` — the honest phase sequencing
-6. Then the component spec for whatever you are building
+1. `handover.md` — current HEAD, what is blocked, the incident rules
+2. `docs/README.md` — what the repo is, how it is meant to be used
+3. `docs/00-vision.md` — what we are building and in what order
+4. `docs/01-architecture.md` — the system in four diagrams and ten sentences
+5. `docs/04-decisions.md` — the ADRs; why each contested choice went that way
+6. `docs/23-roadmap.md` — the honest phase sequencing
+7. Then the component spec for whatever you are building
    (`docs/02`, `docs/03`, `docs/1x-*.md`)
 
 `docs/SUMMARY.md` is the mdBook index if you need the full map.
@@ -68,8 +69,9 @@ the exit had no milestone number. When you find such a gap, add the milestone
 (as M0.1 was added to `docs/23`) rather than leaving the work invisible.
 
 Also note the roadmap's phase lists are **selective**, not exhaustive — they
-name representative milestones. Most of the 88 milestones across the specs
+name representative milestones. Most of the 89 milestones across the specs
 appear in no phase at all, so "not in a phase list" does not mean "not needed".
+`handover.md` is the current count and the blocked list.
 
 Related standing traps from the same pre-mortem, worth re-reading before any
 design decision: the gateway is the engine room, not the product; no training

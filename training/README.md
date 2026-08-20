@@ -23,8 +23,9 @@ The Rust suites are libraries so CI can run the ones that need no model on every
 (`route-bench`, `reduce-bench`). `agent-bench`'s corpus check — every verifier fails before the
 reference and passes after it, inside the T2 jail — is the nightly job, not the PR lane. The
 suites that need a model (`json-bench`, scoring an agent on `agent-bench`) are run by a human
-with `llama-server` up, or against a configured gateway — which is why those scorecards are
-committed artifacts rather than CI output.
+against a configured gateway — which is why those scorecards are committed artifacts rather
+than CI output. json-bench has one: `scorecards/json-bench-xai_grok-4.6.json` (200/200 on
+2026-08-20 via Grok CLI OAuth). Local GGUFs are still unmeasured.
 
 ## Running
 

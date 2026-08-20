@@ -66,9 +66,11 @@ grant them per tool (`docs/16` §MCP host).
 ## Status
 
 **Every milestone that does not need hardware or a third party is shipped.**
-Phases 0–2 are complete; phase 3 is built except for the parts that need a Stripe
-account and somewhere to deploy; phase 4 is complete except T3, which needs KVM;
-phase 5's infrastructure is in place and its models are not.
+Phases 0–2's numbered work is complete (Phase 1's *exit* still wants you to use
+the agent on a real repo; Phase 2's still wants Zed and a GGUF). Phase 3 is
+built except Stripe and a host; phase 4 except T3 on KVM; phase 5's
+infrastructure is in place and its models are not. Live traffic on this laptop
+uses Grok CLI OAuth (`xai/grok-4.6` against `api.x.ai`), not a proxy.
 
 `docs/23-roadmap.md` carries the honest sequencing and a per-phase status. Every
 shipped milestone is marked ✅ in its own spec together with what was learned

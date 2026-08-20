@@ -30,3 +30,4 @@
 - [Deployment](22-deployment.md)
 - [Roadmap](23-roadmap.md)
 - [Build vs Adopt](24-build-vs-adopt.md)
+- [Remaining work (for `/goal`)](GOAL.md)

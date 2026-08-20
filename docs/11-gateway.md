@@ -27,10 +27,16 @@ risk + dialect drift belongs to us):
 
 | Adapter | Dialect | Notes |
 |---|---|---|
-| `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use |
+| `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
+| `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`). Model id `xai/grok-4.6`. Not a proxy. |
 | `openai` | Chat Completions + Responses | auto prefix caching ≥1024 tokens |
-| `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases |
+| `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
 | `local` | openai_compat pinned to loopback | the offline tier; no auth |
+
+Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
+and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A client
+talking *to* panday ingress must send the full `provider/model` id (`OpenAiCompatClient::for_gateway`);
+stripping `xai/` makes the router honestly refuse `grok-4.6`.
 
 Adapter contract: `fn chat(req: ChatRequest) -> impl Stream<StreamItem>` plus
 `capabilities() -> Caps` (max context, tool support, cache style, modalities).

@@ -76,19 +76,37 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD:** `c300fb1` — *M19.6: agent-bench, rebuilt so the jail does the containing*
+**HEAD:** `32fbbf2` — *M13.2: live unattended fix via Grok CLI OAuth*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
+**CI:** green on that commit (`ci`, `release`, `deploy`).
 
 **89 milestones total: 83 shipped ✅, 3 partial, 3 not started.**
 
 | Spec | Shipped |
 |---|---|
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
-| 19-training | 4 / 7 |
-| 22-deployment | 2 / 5 |
+| 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
+| 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
 
-Phases 0–2 complete. Phase 3 (Money) complete except what needs Stripe and a host. Phase 4 (Scale
-surfaces) complete except T3 on real hardware. Phase 5 (Own models): all infrastructure, no models.
+Phases 0–2: numbered milestones complete; Phase 1's *exit* still wants the builder's dogfood
+judgement, Phase 2's *exit* still wants Zed and a real GGUF. Phase 3 complete except Stripe and a
+host. Phase 4 complete except T3 on real hardware. Phase 5: all infrastructure, no trained models.
+Phase 6 not started.
+
+**Laptop-provable leftover clauses closed 2026-08-20** (do not re-run them to look busy):
+
+- Subscription OAuth in `panday_sdk::oauth`: Grok CLI `~/.grok/auth.json` → `xai/grok-4.6` against
+  `https://api.x.ai`; Claude Code Keychain / `~/.claude/.credentials.json` against Anthropic. Not a
+  third-party proxy. Model ids are `provider/model`. Env: `PANDAY_BASE_URL` (alias
+  `PANDAY_COMPAT_BASE_URL`) is an *upstream*; inspect-ai talks *to* panday via `PANDAY_GATEWAY_URL`.
+- Live M13.2: `a_live_model_fixes_it_unattended` ok (27s, no `ANTHROPIC_API_KEY`). `panday chat -m
+  xai/grok-4.6` replied `pong` twice.
+- M19.1 json-bench: **200/200** on `xai/grok-4.6` (`scorecards/json-bench-xai_grok-4.6.json`).
+  Frontier model on a 4B-sized corpus — not a GGUF-after-quantize number. route-bench stays at 50.
+- M19.2: catalog row `xai/grok-4.6` is `provenance: measured` (json 1.00, tools 1.00, usable context
+  64528 under a 65536 ceiling). Local GGUF rows stay `declared`.
+- M20.1 deferred half: three agent-bench canaries (`poisoned-readme`, `poisoned-comment`,
+  `granted-json`); corpus is **41 tasks in T2**.
 
 ### 2.1 The 3 partial milestones — code done, hardware missing
 
@@ -104,54 +122,55 @@ surfaces) complete except T3 on real hardware. Phase 5 (Own models): all infrast
 - **M19.5** Model 2: summarizer in the reducer, ≥25% cheaper than the pool it replaces, GGUF in catalog.
 - **M19.7** Model 3 v1: coding specialist SFT, then a go/no-go on the GRPO spend.
 
-Everything upstream of them exists: eval spine + scorecard artifact (M19.1), capability-profile
-generator (M19.2), shadow-mode classifier comparison (M12.5), consent-first transcript mining
-(M19.4), agent-bench as the RL environment (M19.6), signed model catalog for a tuned GGUF (M18.2).
+Everything upstream of them exists: eval spine + a measured json-bench card (M19.1), capability-profile
+generator with one measured row (M19.2), shadow-mode classifier comparison (M12.5), consent-first
+transcript mining (M19.4), agent-bench as the RL environment (M19.6, 41 tasks in T2), signed model
+catalog for a tuned GGUF (M18.2).
+
+### 2.3 Leftover clauses on shipped milestones (do not close with invented numbers)
+
+| Clause | Honest state |
+|---|---|
+| M19.1 route-bench 200 | At 50. Remaining 150 from mined traffic (M19.4), not invention. |
+| M19.2 local profiles | `xai/grok-4.6` measured; local GGUF rows `declared`. |
+| M19.4 10k-pair dataset | Pipeline shipped. Repo has no consented transcripts. |
+| M19.6 50 tasks in T3 | 41 in T2. Twelve destructive classes stay gone. Grow from mined traffic. |
+| M14.5 / M14.6 p95 | Code shipped. Cold 300ms / warm 50ms unmeasured (need KVM). |
+| M17.4 Stripe HTTP | Inbox/projection shipped. No Stripe crate, no live key. |
+| M22.2 staging deploy | Workflow no-op until `STAGING_DEPLOY_HOST` is set. |
+| Phase 1 exit | Live fixture loop works. “Your repo, and you reach for it tomorrow” is the builder's. |
+| Phase 2 exit | Zed unverified; live llama-server leg `#[ignore]`d. |
+| Phase 6 | Dashboard / marketplace. Out of scope until 3–5 say so. |
 
 ---
 
 ## 3. In-flight, uncommitted work
 
-`git status` is **not clean**. Two files are modified and *not* committed:
-
-```
- M .config/nextest.toml
- M crates/panday-sandbox/tests/t1_hooks.rs
-```
-
-**What this is:** a fix for the red CI (see §4). `crates/panday-sandbox/tests/t1_hooks.rs` gained a
-`behaviour_limits()` helper (2s wall clock) and the tests that assert *behaviour* now use it, while
-the two tests whose subject *is* the 10ms budget keep `T1Limits::hook()`. `.config/nextest.toml`
-gives those two tests retries (2 local, 3 in CI).
-
-**Not verified.** It compiles as far as `cargo test -p panday-sandbox --test t1_hooks` was started,
-but the run was interrupted. Next agent should: run that test binary, run the full suite, then commit.
+`git status` is **clean**. Nothing is sitting uncommitted on this tree.
 
 ---
 
 ## 4. Known problems
 
-### 4.1 CI on `main` is RED
+### 4.1 CI on `main` is green
 
-Run `32330143170` (`ci` workflow on `c300fb1`) failed: **2 of 912 tests**, both in
-`crates/panday-sandbox/tests/t1_hooks.rs` — `a_hook_can_veto_a_tool_call` and
-`a_hook_can_rewrite_arguments`, each with `Deadline(10ms)`.
-
-It is a **timing flake, not a regression**: docs/16 gives a wasm hook a 10ms wall-clock budget, and
-asserting that while a shared runner executes 900 other tests measures the runner. This has now
-happened twice (the first time was fixed by arming the budget *after* instantiation). The
-uncommitted work in §3 is the fix. The whole suite passes locally (922/922) and the **nightly job
-passed** (run `32332735956`), including the isolation and agent-bench jobs.
+The T1 hook 10ms flake on `c300fb1` (run `32330143170`) was a **timing flake, not a regression**:
+docs/16 gives a wasm hook a 10ms wall-clock budget, and asserting behaviour against that while a
+shared runner executes 900 other tests measures the runner. Fixed in `5fdf3f7` by splitting
+behaviour (2s) from budget tests, with retries on the budget pair. Current HEAD (`32fbbf2`) is
+green on `ci` / `release` / `deploy`.
 
 ### 4.2 SSH push is broken — use HTTPS
 
 The ssh-agent socket was destroyed in the incident. The keys are intact
 (`~/.ssh/id_codeitlikemiley`) but passphrase-protected, and the agent that held them is gone. Push
-with:
+as `codeitlikemiley`:
 
 ```sh
+gh auth switch --user codeitlikemiley
 git -c credential.helper='!gh auth git-credential' \
   push https://github.com/codeitlikemiley/panday.git HEAD:main
+gh auth switch --user hexuria
 ```
 
 The user can restore SSH with `eval "$(ssh-agent -s)" && ssh-add --apple-use-keychain ~/.ssh/id_codeitlikemiley`.
@@ -168,6 +187,11 @@ The user can restore SSH with `eval "$(ssh-agent -s)" && ssh-add --apple-use-key
 - If the volume goes unreadable again (`Operation not permitted` on every read while `stat` works),
   it is TCC: grant Full Disk Access to the host app and **restart it** — a running process keeps its
   cached denial.
+
+### 4.4 Workspace nextest can hang on this volume
+
+`cargo nextest run --workspace` has hung listing binaries on this volume filesystem. Substitute
+package-scoped `cargo test -p …` / `cargo clippy -p …` and say so, rather than waiting on the hang.
 
 ---
 
@@ -219,7 +243,7 @@ just dev      # compose up, migrate, mint an account + API key, print the curl
 just serve    # panday-platform on the host against that database
 just drill    # backup/restore drill
 just airgap   # build the offline kit (needs release binaries)
-just bench    # json-bench against a running gateway (needs a model)
+just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 ```
 
 ### 5.5 Conventions worth matching
@@ -240,18 +264,22 @@ just bench    # json-bench against a running gateway (needs a model)
 
 ## 6. Suggested next steps, in order
 
-1. **Finish §3 and get CI green.** Run `cargo nextest run -E 'binary(t1_hooks)'`, then the full
-   suite, then commit and push over HTTPS (§4.2).
-2. **Nothing else is code-blocked.** Every remaining milestone needs hardware or data:
-   - M22.3 → a host. The deploy workflow (`.github/workflows/deploy.yml`) is written and guarded on
-     `STAGING_DEPLOY_HOST`; set that secret plus `STAGING_SSH_KEY`, `STAGING_SMOKE_URL`,
-     `STAGING_DATABASE_URL` and it runs, with the smoke suite gating the deploy.
-   - M22.4 → two KVM nodes, then measure the fold latency.
-   - M22.5 → install the kit on an air-gapped machine following only `INSTALL.md`.
-   - M19.3 → a labelled corpus and a few GPU-hours; the `Classifier` trait and shadow harness are
-     the slot it drops into.
-   - M19.5, M19.7 → training runs, weeks and dollars. docs/19 puts a go/no-go review before the GRPO
-     spend deliberately.
-3. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
+**Nothing on this laptop is code-blocked.** Remaining numbered work needs hardware, a third party,
+training data, or a judgement only the builder can make. Do not invent rates or p95s.
+
+1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
+   decide whether you reach for it the next day. The fixture loop already passed live.
+2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
+   `STAGING_DEPLOY_HOST`; set that secret plus `STAGING_SSH_KEY`, `STAGING_SMOKE_URL`,
+   `STAGING_DATABASE_URL` and it runs, with the smoke suite gating the deploy. Do not rent a VM
+   with the user's money unasked.
+3. **KVM (M14.5–14.6, M22.4).** Two nodes, then measure fold latency. Do not invent p95s.
+4. **Air-gap (M22.5).** Install the kit on a machine with no network, following only `INSTALL.md`.
+5. **Stripe (M17.4 leftover / Phase 3 exit).** Live key, then the HTTP client and signature check.
+   Do not add a Stripe crate without a key the user already set.
+6. **Training (M19.3, then M19.5 / M19.7).** Labelled corpus that is *not* the 50 route-bench
+   prompts; GPU-hours; docs/19 go/no-go before GRPO spend. The `Classifier` trait and shadow
+   harness are the slot Model 1 drops into.
+7. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
    invention — and re-read §1.1 first. The twelve tasks removed were the destructive classes; they
    are not coming back.
