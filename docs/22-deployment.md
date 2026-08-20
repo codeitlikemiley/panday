@@ -137,4 +137,31 @@ as versioned bundles. Support boundary documented per bundle version.
   running instance. Nothing has been pointed at a production host, and pretending otherwise would be
   the one claim in this repo that a reader could not check.
 - **M22.4** T3 pool on KVM nodes with warm snapshots; chaos test: kill a pool node mid-exec, session resumes elsewhere.
-- **M22.5** On-prem bundle v1 installed air-gapped following only its own README.
+- **M22.5** On-prem bundle v1 installed air-gapped following only its own README. **Partial** *(shipped: `xtask::airgap` with the kit's offline claim enforced at build time and asserted in the suite. **The air-gapped machine is still missing** — nothing has installed this behind a locked door.)*
+
+  M22.5's bar is "installs following only its own README". Two halves, and only one of them needs
+  hardware.
+
+  **The contents are checkable, so they are checked.** The installer must reach no network — every
+  `curl`, `wget`, `brew`, `apt`, `pip`, `npm`, `scp`, `ssh` and friend is forbidden, verified in the
+  suite *and* by the builder itself, which refuses to write a kit whose installer contains one. The
+  cheapest moment to catch a `curl` creeping in is before the tarball reaches somebody with no
+  network to use it on.
+
+  **The README is checked against the box.** Every component in `KIT_LAYOUT` must appear in the
+  README, and the README must ask for nothing from the network — because it is the only
+  documentation the reader has, and a path in it that the kit does not ship is a dead end behind a
+  locked door. The layout list is the same one the builder creates directories from, so a component
+  added to the kit cannot be missing from its own documentation.
+
+  **Documentation drift is a test failure.** The README names `PANDAY_ENTITLEMENT_KEY` and
+  `--entitlement`, and the suite asserts those are the names the binary actually reads (M17.6) —
+  a customer who cannot activate their licence behind an air gap also cannot ask.
+
+  **The installer's own properties**: `set -eu` so a half-install cannot report success on a machine
+  nobody can ssh into; `cp` rather than `ln -s`, because a USB stick that gets unplugged is not a
+  storage backend; and every destination under `$PREFIX`, `$MODEL_DIR` or `$HOME`, so it never needs
+  `sudo` it did not warn about.
+
+  **What remains** is the air: this machine has a network, so nothing here proves the install
+  *succeeds* without one. What is proven is that it never asks for one.

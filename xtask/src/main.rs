@@ -139,6 +139,7 @@ fn usage() {
     );
 }
 
+mod airgap;
 mod sbom;
 mod sdk;
 mod ts;
@@ -298,9 +299,22 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
         ));
     }
 
+    // Self-check before anything is written. A kit is worth exactly its offline claim, and the
+    // cheapest moment to catch a network command creeping into the installer is before the tarball
+    // reaches somebody who has no network to use it on.
+    if let Some(command) = airgap::reaches_network(airgap::INSTALL_SH) {
+        return Err(format!(
+            "the installer contains `{command}`, which an air-gapped machine cannot run"
+        ));
+    }
+
     let _ = std::fs::remove_dir_all(&out);
-    std::fs::create_dir_all(out.join("bin")).map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(out.join("models")).map_err(|e| e.to_string())?;
+    // The directories come from the one layout list the README is also checked against, so a
+    // component added to the kit cannot be missing from its own documentation.
+    for entry in airgap::KIT_LAYOUT.iter().filter(|e| e.ends_with('/')) {
+        std::fs::create_dir_all(out.join(entry.trim_end_matches('/')))
+            .map_err(|e| e.to_string())?;
+    }
 
     for binary in binaries {
         std::fs::copy(release.join(binary), out.join("bin").join(binary))
@@ -309,7 +323,6 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
 
     // The policy and the catalog: a machine with no internet still routes and still knows what its
     // models are.
-    std::fs::create_dir_all(out.join("config")).map_err(|e| e.to_string())?;
     for (name, source) in [
         (
             "local.yaml",
@@ -344,9 +357,9 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
         }
     }
 
-    std::fs::write(out.join("INSTALL.md"), install_readme(&model_files))
+    std::fs::write(out.join("INSTALL.md"), airgap::install_readme(&model_files))
         .map_err(|e| e.to_string())?;
-    std::fs::write(out.join("install.sh"), INSTALL_SH).map_err(|e| e.to_string())?;
+    std::fs::write(out.join("install.sh"), airgap::INSTALL_SH).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -369,107 +382,6 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
         out.display()
     );
     Ok(ExitCode::SUCCESS)
-}
-
-const INSTALL_SH: &str = r#"#!/usr/bin/env sh
-# Panday air-gap installer (docs/18 M18.7). No network, by design.
-set -eu
-
-PREFIX="${PREFIX:-$HOME/.local}"
-MODEL_DIR="${PANDAY_MODEL_DIR:-$HOME/.panday/models}"
-HERE="$(cd "$(dirname "$0")" && pwd)"
-
-mkdir -p "$PREFIX/bin" "$MODEL_DIR" "$HOME/.panday"
-cp "$HERE"/bin/* "$PREFIX/bin/"
-cp "$HERE"/config/* "$HOME/.panday/"
-
-# Copied rather than linked: a USB stick that gets unplugged is not a storage backend.
-if [ -d "$HERE/models" ] && [ -n "$(ls -A "$HERE/models" 2>/dev/null)" ]; then
-  cp "$HERE"/models/*.gguf "$MODEL_DIR/"
-fi
-
-echo "installed to $PREFIX/bin"
-echo "models in    $MODEL_DIR"
-echo
-echo "Check it works, with nothing plugged in:"
-echo "  $PREFIX/bin/panday-local --serve $MODEL_DIR/<model>.gguf --workspace . 'say hello'"
-"#;
-
-fn install_readme(models: &[String]) -> String {
-    let model_list = if models.is_empty() {
-        "*(this kit ships no models — the machine will need one before `panday local` can answer)*"
-            .to_string()
-    } else {
-        models
-            .iter()
-            .map(|m| format!("- `{m}`"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    format!(
-        r#"# Panday — air-gapped install
-
-Everything needed to run Panday on a machine with no internet connection. Nothing in here reaches
-the network: not the installer, not the first run, not the agent (ADR-011).
-
-## What is in the box
-
-```
-bin/       panday, panday-local, panday-gateway, panday-platform
-config/    local.yaml (routing), catalog.yaml (models)
-models/    the GGUFs this kit was built with
-INSTALL.md this file
-install.sh copies the above into place
-```
-
-Models included:
-
-{model_list}
-
-## Install
-
-```sh
-./install.sh                 # into ~/.local/bin and ~/.panday/models
-PREFIX=/opt/panday ./install.sh   # or somewhere else
-```
-
-The installer copies rather than links, because a USB stick that gets unplugged is not a storage
-backend.
-
-## Verify it, offline
-
-```sh
-panday-local --serve ~/.panday/models/<model>.gguf --workspace . "say hello"
-```
-
-`panday local` refuses any base URL that is not loopback, so if the machine later gains a network,
-the offline tier still cannot reach it.
-
-## Licensing
-
-An entitlement token is a file (docs/17 M17.6). Copy it and its `.sig` onto the machine and run:
-
-```sh
-PANDAY_ENTITLEMENT_KEY=<the public key you were given>   panday-local --entitlement ~/.panday/licence.json --workspace . "…"
-```
-
-Verification is local: no activation, no call home, no revocation check. When it expires the
-software keeps working at the community tier rather than stopping — a renewal is a new file.
-
-## Updating
-
-Bring a newer kit and run `install.sh` again. The event logs under `.panday/` are append-only and
-are not touched by an install (ADR-002).
-
-## What this kit does not include
-
-- **A cloud account.** None is needed; the offline tier works without one.
-- **A model catalog signature.** `catalog.yaml` here is the routing catalog. The *signed model
-  index* (`panday models`) is for machines that can download; on an air-gapped box the models are
-  already in `models/`.
-"#
-    )
 }
 
 /// `json-bench` against a running gateway (docs/19 M19.1).
