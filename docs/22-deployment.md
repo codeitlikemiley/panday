@@ -136,7 +136,36 @@ as versioned bundles. Support boundary documented per bundle version.
   an advisory lock, the drill restores to identical numbers, and the smoke suite passes against a
   running instance. Nothing has been pointed at a production host, and pretending otherwise would be
   the one claim in this repo that a reader could not check.
-- **M22.4** T3 pool on KVM nodes with warm snapshots; chaos test: kill a pool node mid-exec, session resumes elsewhere.
+- **M22.4** T3 pool on KVM nodes with warm snapshots; chaos test: kill a pool node mid-exec, session resumes elsewhere. **Partial** *(shipped: `panday_sandbox::t3::nodes` — the consistent-hash ring, `drain`, and the failover suite in `crates/panday-harness/tests/node_failover.rs`. **The KVM nodes are missing**, so the timing half of the chaos test is not measured.)*
+
+  **Failover needs no migration, and the test says so by doing none.** A second node rebuilds the
+  session by calling `resume()` over the same log — nothing is copied, no handoff is coordinated, no
+  state is drained, because the log *is* the state (ADR-002). That is why killing a node mid-session
+  is a latency event rather than a data-loss event.
+
+  **`resume()` is not optional, and the suite proves it.** A fresh actor that skips it starts
+  numbering at seq 1 and collides with the log it inherited — `SeqConflict(1)`, which is exactly what
+  a naive failover would hit in production the first time it happened.
+
+  **A mid-flight session folds to mid-flight.** Kill a node while a permission decision is
+  outstanding and the fold reports `Gating` with the call still parked and *not* counted as
+  dispatched. The failure this guards against is a resumed node inventing an outcome for a call
+  nobody answered.
+
+  **Consistent hashing, for the reason it exists.** Adding a fourth node to three moves roughly a
+  quarter of sessions rather than all of them, and a node's death moves only *its* sessions — a
+  drain that reshuffled healthy ones would turn one node's failure into every session's cold start.
+  Both are asserted, and so is the invariant a load balancer depends on: while any node is alive, no
+  session is homeless.
+
+  **A distribution test caught a real bug in the hash.** Plain FNV-1a over sequential session ids
+  varies almost entirely in the low bits, so 1,000 sessions landed 200/100/500/200 across four nodes
+  and adding a fifth moved *zero* keys — a ring with none of the properties a ring is for. The fmix64
+  finalizer spreads those differences across all 64 bits. Worth recording because the test that
+  caught it exists only to catch it: every other assertion passed while the ring was useless.
+
+  **What needs real nodes** is the timing: how long a fold takes on a cold cache, and whether the
+  load balancer notices a death before the client does.
 - **M22.5** On-prem bundle v1 installed air-gapped following only its own README. **Partial** *(shipped: `xtask::airgap` with the kit's offline claim enforced at build time and asserted in the suite. **The air-gapped machine is still missing** — nothing has installed this behind a locked door.)*
 
   M22.5's bar is "installs following only its own README". Two halves, and only one of them needs

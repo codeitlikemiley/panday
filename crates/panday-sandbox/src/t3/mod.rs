@@ -18,6 +18,7 @@
 
 pub mod api;
 pub mod jailer;
+pub mod nodes;
 pub mod pool;
 
 use crate::{ExecSpec, ExecStream, Sandbox, SandboxError, SandboxHandle, SessionSpec, SnapshotRef};
@@ -28,6 +29,7 @@ pub use api::{
     MemBackend, NetworkInterface, SnapshotType, VmState,
 };
 pub use jailer::{kvm_available, Caps, JailerConfig};
+pub use nodes::{drain, NodeId, Reassignment, Ring};
 pub use pool::{PoolError, PoolStats, PooledVm, VmBackend, WarmPool};
 
 /// Where the golden images live.
