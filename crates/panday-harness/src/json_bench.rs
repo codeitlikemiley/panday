@@ -25,6 +25,13 @@ use panday_types::model::{
 };
 use panday_types::scorecard::Scorecard;
 use serde_json::Value;
+use std::time::Duration;
+
+/// Reasoning models (grok-4.6) will think until the provider cap if this is
+/// omitted; every corpus answer is a small JSON object.
+const MAX_OUTPUT_TOKENS: u32 = 512;
+/// One hung stream must not stall the other 199 cases.
+const CASE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// One ask: a schema, and a prompt that should produce something matching it.
 #[derive(Debug, Clone)]
@@ -92,11 +99,23 @@ pub async fn run(
     let mut wrong_shape = 0u32;
     let mut call_failed = 0u32;
 
-    for case in cases {
+    for (i, case) in cases.iter().enumerate() {
         let outcome = match ask(client, model, case).await {
             Ok(text) => judge(case, &text),
             Err(e) => Outcome::CallFailed(e.to_string()),
         };
+        eprintln!(
+            "json-bench {}/{} {}: {}",
+            i + 1,
+            cases.len(),
+            case.name,
+            match &outcome {
+                Outcome::Valid => "valid",
+                Outcome::WrongShape(_) => "wrong shape",
+                Outcome::NotJson => "not JSON",
+                Outcome::CallFailed(_) => "call failed",
+            }
+        );
         match outcome {
             Outcome::Valid => card.record(&case.name, true, ""),
             Outcome::WrongShape(detail) => {
@@ -152,6 +171,7 @@ async fn ask(
         // sampling noise as well as the model.
         sampling: Sampling {
             temperature: Some(0.0),
+            max_tokens: Some(MAX_OUTPUT_TOKENS),
             ..Default::default()
         },
         cache: Default::default(),
@@ -165,14 +185,24 @@ async fn ask(
         },
     };
 
-    let mut stream = client.chat(request).await?;
-    let mut text = String::new();
-    while let Some(item) = stream.next().await {
-        if let StreamItem::Delta { text: delta } = item? {
-            text.push_str(&delta);
+    let collect = async {
+        let mut stream = client.chat(request).await?;
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Delta { text: delta } = item? {
+                text.push_str(&delta);
+            }
         }
+        Ok(text)
+    };
+    match tokio::time::timeout(CASE_TIMEOUT, collect).await {
+        Ok(result) => result,
+        Err(_) => Err(PandayError::Provider {
+            upstream: "json-bench".into(),
+            message: format!("timed out after {}s", CASE_TIMEOUT.as_secs()),
+            retryable: true,
+        }),
     }
-    Ok(text)
 }
 
 /// The corpus.

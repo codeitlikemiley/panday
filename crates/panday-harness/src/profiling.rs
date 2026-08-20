@@ -204,6 +204,9 @@ async fn ask(
         sampling: Sampling {
             // A profile that moved between runs would measure sampling noise as capability.
             temperature: Some(0.0),
+            // Needle and tool-JSON answers are short; omitting this lets a
+            // reasoning model think until the provider cap.
+            max_tokens: Some(256),
             ..Default::default()
         },
         cache: Default::default(),
@@ -217,14 +220,24 @@ async fn ask(
         },
     };
 
-    let mut stream = client.chat(request).await?;
-    let mut text = String::new();
-    while let Some(item) = stream.next().await {
-        if let StreamItem::Delta { text: delta } = item? {
-            text.push_str(&delta);
+    let collect = async {
+        let mut stream = client.chat(request).await?;
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Delta { text: delta } = item? {
+                text.push_str(&delta);
+            }
         }
+        Ok(text)
+    };
+    match tokio::time::timeout(std::time::Duration::from_secs(90), collect).await {
+        Ok(result) => result,
+        Err(_) => Err(PandayError::Provider {
+            upstream: "profile".into(),
+            message: "timed out after 90s".into(),
+            retryable: true,
+        }),
     }
-    Ok(text)
 }
 
 /// The catalog entry's YAML fields, for pasting into `catalog/default.yaml`.

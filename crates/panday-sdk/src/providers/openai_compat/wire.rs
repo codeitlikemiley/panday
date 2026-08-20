@@ -124,10 +124,24 @@ impl WireRequest {
     /// Map the IR request into the dialect. `stream` is forced on: this
     /// adapter only implements the streaming path (M11.1).
     pub fn from_ir(req: &ChatRequest) -> Self {
-        // "provider/model" -> "model"; a bare name passes through unchanged.
-        let model = match req.model.split() {
-            Some((_, name)) => name.to_string(),
-            None => req.model.0.clone(),
+        Self::from_ir_with_model(req, true)
+    }
+
+    /// When talking *to* a panday gateway, the model id is a `provider/model`
+    /// route, not an upstream name. Stripping would send `grok-4.6` and the
+    /// router would honestly say no pool admits it.
+    pub fn from_ir_keep_ref(req: &ChatRequest) -> Self {
+        Self::from_ir_with_model(req, false)
+    }
+
+    fn from_ir_with_model(req: &ChatRequest, strip_provider: bool) -> Self {
+        let model = if strip_provider {
+            match req.model.split() {
+                Some((_, name)) => name.to_string(),
+                None => req.model.0.clone(),
+            }
+        } else {
+            req.model.0.clone()
         };
 
         WireRequest {
@@ -287,6 +301,14 @@ mod tests {
         );
         // A bare name (llama-server often ignores it entirely) passes through.
         assert_eq!(WireRequest::from_ir(&req("qwen3.5-4b")).model, "qwen3.5-4b");
+    }
+
+    #[test]
+    fn keep_ref_preserves_the_provider_prefix() {
+        assert_eq!(
+            WireRequest::from_ir_keep_ref(&req("xai/grok-4.6")).model,
+            "xai/grok-4.6"
+        );
     }
 
     #[test]

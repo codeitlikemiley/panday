@@ -123,6 +123,25 @@ fn the_prompt_asks_for_the_schema_it_will_be_judged_against() {
 /// Replies with a fixed string, whatever it is asked.
 struct Fixed(&'static str);
 
+/// Records the request so we can assert sampling, then replies with JSON.
+struct Records(std::sync::Mutex<Option<ChatRequest>>);
+
+#[async_trait::async_trait]
+impl ModelClient for Records {
+    async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
+        *self.0.lock().unwrap() = Some(req);
+        let items: Vec<Result<StreamItem, PandayError>> = vec![
+            Ok(StreamItem::Delta {
+                text: r#"{"name":"panday-gateway","language":"Rust"}"#.into(),
+            }),
+            Ok(StreamItem::Done {
+                reason: StopReason::EndTurn,
+            }),
+        ];
+        Ok(Box::pin(futures_util::stream::iter(items)))
+    }
+}
+
 #[async_trait::async_trait]
 impl ModelClient for Fixed {
     async fn chat(&self, _req: ChatRequest) -> Result<ItemStream, PandayError> {
@@ -210,4 +229,22 @@ async fn a_perfect_answer_for_one_shape_scores_that_shape() {
     assert_eq!(card.metrics["schema_validity"], 0.5);
     // And the artifact says which shape failed, not just how many.
     assert!(card.failures.iter().all(|f| f.case.starts_with("numbers/")));
+}
+
+#[tokio::test]
+async fn each_case_caps_output_tokens() {
+    // Reasoning models think until the provider cap when this is unset; the
+    // first live grok-4.6 run sat on one stream for minutes.
+    let client = Records(std::sync::Mutex::new(None));
+    let _ = json_bench::run(
+        &client,
+        &ModelRef("xai/grok-4.6".into()),
+        "xai/grok-4.6",
+        "2026-08-20T00:00:00Z",
+        &json_bench::corpus()[..1],
+    )
+    .await;
+    let req = client.0.lock().unwrap().clone().expect("issued a request");
+    assert_eq!(req.sampling.max_tokens, Some(512));
+    assert_eq!(req.sampling.temperature, Some(0.0));
 }

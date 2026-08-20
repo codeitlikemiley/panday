@@ -165,7 +165,7 @@ fn profile(args: &[String]) -> Result<ExitCode, String> {
 
     let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     let measured = runtime.block_on(async {
-        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::new(
+        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::for_gateway(
             &base_url,
             std::env::var("PANDAY_API_KEY").ok(),
         );
@@ -411,7 +411,7 @@ fn json_bench(args: &[String]) -> Result<ExitCode, String> {
     let card = runtime.block_on(async {
         // The gateway speaks the same dialect it accepts, so the eval reaches it with the same
         // client any customer would use (docs/11 M11.5) — no private path.
-        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::new(
+        let client = panday_sdk::providers::openai_compat::OpenAiCompatClient::for_gateway(
             &base_url,
             std::env::var("PANDAY_API_KEY").ok(),
         );
@@ -637,17 +637,16 @@ fn scorecard(write: bool) -> Result<ExitCode, String> {
 
     out.push_str("## what is not measured yet\n\n");
     out.push_str(
-        "- `agent-bench` (M19.6): 38 tasks, run in T2. Nightly proves every verifier fails \
-         before the reference patch and passes after it; scoring an *agent* still needs a \
-         model. Growing back to 50 belongs with mined traffic (M19.4), not invention, and T3 \
-         is M14.5.\n\
-         - `json-bench` (M19.1): the suite exists (`panday_harness::json_bench`, 200 fixtures) \
-         and runs with `cargo xtask json-bench` against a gateway — but it needs a model, so no \
-         number appears here. CI has neither a GPU nor a GGUF, and a suite that skipped would put \
-         a green tick next to 'we did not measure'.\n\
-         - Capability profiles (M18.4) ship **declared**, not measured; M19.2's generator is \
-         shipped, and until a model actually runs it every profile says `(estimated)` in the \
-         system prompt.\n",
+        "- `agent-bench` (M19.6): 41 tasks in T2, including three injection canaries (M20.1) \
+         whose reward is that a relative marker file was not created. Nightly proves every \
+         verifier fails before the reference patch and passes after it; scoring an *agent* \
+         still needs a model. Growing back to 50 belongs with mined traffic (M19.4), not \
+         invention, and T3 is M14.5.\n\
+         - `json-bench` (M19.1): 200 fixtures via `cargo xtask json-bench`. A measured card \
+         is committed under scorecards/ when a live model has been run; CI has neither a GPU \
+         nor a GGUF, and a suite that skipped would put a green tick next to 'we did not measure'.\n\
+         - Capability profiles (M18.4) are `declared` until `cargo xtask profile` has measured \
+         that model. A measured row says `provenance: measured`.\n",
     );
 
     print!("{out}");

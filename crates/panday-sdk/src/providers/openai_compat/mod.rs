@@ -164,6 +164,10 @@ pub struct OpenAiCompatClient {
     /// `None` for the `local` tier: loopback llama-server takes no auth.
     api_key: Option<String>,
     http: Arc<dyn HttpStreamTransport>,
+    /// When true, `provider/model` is sent intact — this client is talking to
+    /// a panday gateway, which routes on the prefix. Upstream adapters leave
+    /// this false so Together/xAI/llama-server see a bare model name.
+    keep_model_ref: bool,
 }
 
 impl OpenAiCompatClient {
@@ -187,7 +191,15 @@ impl OpenAiCompatClient {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key,
             http,
+            keep_model_ref: false,
         }
+    }
+
+    /// Client for *our* OpenAI-compat ingress: the model field is a route.
+    pub fn for_gateway(base_url: impl Into<String>, api_key: Option<String>) -> Self {
+        let mut c = Self::new(base_url, api_key);
+        c.keep_model_ref = true;
+        c
     }
 
     fn endpoint(&self) -> String {
@@ -208,7 +220,12 @@ impl OpenAiCompatClient {
 #[async_trait::async_trait]
 impl ModelClient for OpenAiCompatClient {
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
-        let body = serde_json::to_vec(&wire::WireRequest::from_ir(&req))
+        let wire = if self.keep_model_ref {
+            wire::WireRequest::from_ir_keep_ref(&req)
+        } else {
+            wire::WireRequest::from_ir(&req)
+        };
+        let body = serde_json::to_vec(&wire)
             .map_err(|e| PandayError::Protocol(format!("openai_compat: encode request: {e}")))?;
 
         let bytes = self
@@ -645,6 +662,23 @@ data: [DONE]
                 reason: StopReason::EndTurn
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn for_gateway_sends_the_full_model_ref() {
+        // Ingress routes on `provider/model`. Stripping would send `grok-4.6`
+        // and the pool would honestly refuse it.
+        let http = MockTransport::streaming(vec![TEXT_STREAM]);
+        let mut adapter =
+            OpenAiCompatClient::with_transport("http://127.0.0.1:8088", None, http.clone());
+        adapter.keep_model_ref = true;
+        let req = {
+            let mut r = a_request();
+            r.model = panday_types::model::ModelRef("xai/grok-4.6".into());
+            r
+        };
+        let _ = adapter.chat(req).await;
+        assert_eq!(http.seen().body["model"], "xai/grok-4.6");
     }
 
     #[tokio::test]
