@@ -445,6 +445,8 @@ pub struct FailedLeg {
     /// Tracked separately from `retryable` so an all-rate-limited chain can
     /// preserve the back-off signal instead of reporting an outage.
     pub rate_limited: bool,
+    /// Smallest `Retry-After` seen on a 429. Zero when the header was absent.
+    pub retry_after_ms: u64,
 }
 
 #[async_trait::async_trait]
@@ -590,6 +592,7 @@ impl Gateway {
                     // exactly what the breaker exists to make happen.
                     retryable: true,
                     rate_limited: false,
+                    retry_after_ms: 0,
                 });
                 continue;
             }
@@ -655,6 +658,10 @@ impl Gateway {
                         error: e.to_string(),
                         retryable,
                         rate_limited: matches!(e, PandayError::RateLimited { .. }),
+                        retry_after_ms: match &e {
+                            PandayError::RateLimited { retry_after_ms } => *retry_after_ms,
+                            _ => 0,
+                        },
                     });
 
                     // A non-retryable failure is the caller's problem, not the
@@ -684,7 +691,17 @@ impl Gateway {
         self.routes.record(audit).await;
 
         if !failed.is_empty() && failed.iter().all(|f| f.rate_limited) {
-            return Err(PandayError::RateLimited { retry_after_ms: 0 });
+            // Legs whose upstream omitted `Retry-After` carry 0, which means
+            // "unknown" and not "retry now" — mixing them into the minimum
+            // would erase the one leg that did state a wait (docs/25 M25.3).
+            return Err(PandayError::RateLimited {
+                retry_after_ms: failed
+                    .iter()
+                    .map(|f| f.retry_after_ms)
+                    .filter(|ms| *ms > 0)
+                    .min()
+                    .unwrap_or(0),
+            });
         }
 
         Err(PandayError::ModelUnavailable {
@@ -1002,6 +1019,40 @@ mod tests {
         }
     }
 
+    /// Always 429s. `retry_after_ms` of 0 models an upstream that sent no
+    /// `Retry-After` header at all (docs/25 M25.3).
+    struct RateLimitedAdapter {
+        name: &'static str,
+        retry_after_ms: u64,
+    }
+
+    impl RateLimitedAdapter {
+        fn new(name: &'static str, retry_after_ms: u64) -> Arc<Self> {
+            Arc::new(Self {
+                name,
+                retry_after_ms,
+            })
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ProviderAdapter for RateLimitedAdapter {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn capabilities(&self, _m: &str) -> AdapterCaps {
+            AdapterCaps {
+                cache_style: CacheStyle::None,
+                ..Default::default()
+            }
+        }
+        async fn chat(&self, _req: ChatRequest) -> Result<ItemStream, PandayError> {
+            Err(PandayError::RateLimited {
+                retry_after_ms: self.retry_after_ms,
+            })
+        }
+    }
+
     fn router() -> Arc<dyn Router> {
         Arc::new(PolicyRouter::from_yaml(DEV_POLICY).expect("dev policy must be valid"))
     }
@@ -1079,6 +1130,27 @@ mod tests {
 
         drain(&g, req("local/qwen3.5-4b")).await;
         assert_eq!(local.seen().as_deref(), Some("local/qwen3.5-4b"));
+    }
+
+    #[tokio::test]
+    async fn an_all_429_chain_reports_the_soonest_stated_wait() {
+        // The workhorse pool walks four providers. Two state a wait, two send
+        // no header at all — and 0 means "unknown", so it must not win the
+        // minimum and hand the caller a "retry now" nobody said (docs/25 M25.3).
+        let g = Gateway::builder(router())
+            .adapter("anthropic", RateLimitedAdapter::new("anthropic", 0))
+            .adapter("openai", RateLimitedAdapter::new("openai", 45_000))
+            .adapter("xai", RateLimitedAdapter::new("xai", 0))
+            .adapter("gemini", RateLimitedAdapter::new("gemini", 12_000))
+            .build();
+
+        match g.chat(req("auto")).await.err().expect("every leg 429s") {
+            PandayError::RateLimited { retry_after_ms } => assert_eq!(
+                retry_after_ms, 12_000,
+                "soonest *known* wait, not the unknown sentinel"
+            ),
+            other => panic!("expected RateLimited, got {other}"),
+        }
     }
 
     #[tokio::test]

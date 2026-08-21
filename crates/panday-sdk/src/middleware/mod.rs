@@ -34,6 +34,13 @@ use std::time::Duration;
 // Retry
 // ---------------------------------------------------------------------------
 
+/// Longest server-stated `Retry-After` we will sleep inside a request.
+///
+/// The value comes off the wire (docs/25 M25.3) and nothing upstream bounds it.
+/// Beyond this, a retry is not a retry — it is a hang — so the error is
+/// returned instead, carrying the upstream's number for whoever can act on it.
+pub const MAX_HONOURED_RETRY_AFTER: Duration = Duration::from_secs(60);
+
 /// Bounded exponential backoff with jitter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -116,12 +123,23 @@ impl<C: ModelClient> ModelClient for Retry<C> {
                         return Err(e);
                     }
                     attempt += 1;
-                    let wait = match &e {
-                        // Honour a server-stated delay over our own curve.
+                    // Honour a server-stated delay over our own curve — but
+                    // only up to a ceiling. `Retry-After` is upstream-controlled
+                    // and unbounded, and this sleep sits *outside* the timeout
+                    // layer, so an absurd value would park the caller's future
+                    // with no deadline. Past the ceiling, waiting costs more
+                    // than failing over: hand the error back with the
+                    // upstream's number intact and let the chain decide.
+                    let stated = match &e {
                         PandayError::RateLimited { retry_after_ms } if *retry_after_ms > 0 => {
-                            Duration::from_millis(*retry_after_ms)
+                            Some(Duration::from_millis(*retry_after_ms))
                         }
-                        _ => self.policy.backoff(attempt, seed),
+                        _ => None,
+                    };
+                    let wait = match stated {
+                        Some(d) if d > MAX_HONOURED_RETRY_AFTER => return Err(e),
+                        Some(d) => d,
+                        None => self.policy.backoff(attempt, seed),
                     };
                     tokio::time::sleep(wait).await;
                 }
@@ -417,6 +435,42 @@ mod tests {
         assert!(
             start.elapsed() >= Duration::from_millis(30_000),
             "must honour the server's stated delay, not our 1ms curve"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_absurd_retry_after_fails_over_instead_of_parking_the_caller() {
+        // `Retry-After` is upstream-controlled and this sleep is outside the
+        // timeout layer, so an unbounded value would be a hang, not a retry.
+        let p = RetryPolicy {
+            max_retries: 3,
+            initial_backoff: Duration::from_millis(1),
+            max_backoff: Duration::from_millis(1),
+        };
+        let absurd_ms = MAX_HONOURED_RETRY_AFTER.as_millis() as u64 + 1_000;
+        let (inner, attempts) = flaky(u32::MAX, || PandayError::RateLimited {
+            retry_after_ms: 999_999_999_000,
+        });
+
+        let start = tokio::time::Instant::now();
+        let err = inner
+            .with_retry(p)
+            .chat(a_request())
+            .await
+            .err()
+            .expect("gives up rather than sleeping");
+
+        match err {
+            PandayError::RateLimited { retry_after_ms } => assert_eq!(
+                retry_after_ms, 999_999_999_000,
+                "the upstream's number survives for whoever can act on it"
+            ),
+            other => panic!("expected RateLimited, got {other}"),
+        }
+        assert_eq!(attempts.load(Ordering::SeqCst), 1, "no second attempt");
+        assert!(
+            start.elapsed() < Duration::from_millis(absurd_ms),
+            "must not sleep the stated delay"
         );
     }
 }

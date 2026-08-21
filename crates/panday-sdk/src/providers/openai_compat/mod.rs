@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use super::models::{self, RemoteModel};
 use super::sse;
-use super::transport::{self, HttpStreamTransport, ReqwestTransport};
+use super::transport::{self, HttpStreamTransport, ReqwestTransport, SseResponse};
 use wire::WireChunk;
 
 /// The sentinel that ends an OpenAI-compatible stream.
@@ -236,12 +236,22 @@ impl ModelClient for OpenAiCompatClient {
         let body = serde_json::to_vec(&wire)
             .map_err(|e| PandayError::Protocol(format!("openai_compat: encode request: {e}")))?;
 
-        let bytes = self
+        let SseResponse { body, headers } = self
             .http
             .post_sse(&self.endpoint(), &self.headers(), body)
             .await?;
+        // Kept here so they are not dropped (docs/25 M25.3). Overlay onto
+        // operator remaining % is M25.7.
+        let remaining = headers.ratelimit_remaining();
+        if remaining.requests.is_some() || remaining.tokens.is_some() {
+            tracing::debug!(
+                remaining_requests = ?remaining.requests,
+                remaining_tokens = ?remaining.tokens,
+                "upstream ratelimit remaining"
+            );
+        }
 
-        Ok(Box::pin(into_items(bytes)))
+        Ok(Box::pin(into_items(body)))
     }
 }
 
@@ -531,7 +541,7 @@ data: [DONE]
 
     use futures_util::StreamExt;
     use std::sync::Mutex;
-    use transport::ByteStream;
+    use transport::SseResponse;
 
     /// Replays recorded bytes and records what was sent, so tests can assert
     /// on the request as well as the response.
@@ -581,7 +591,7 @@ data: [DONE]
             url: &str,
             headers: &[(String, String)],
             body: Vec<u8>,
-        ) -> Result<ByteStream, PandayError> {
+        ) -> Result<SseResponse, PandayError> {
             *self.seen.lock().unwrap() = Some(SeenRequest {
                 url: url.to_string(),
                 api_key: headers
@@ -601,7 +611,10 @@ data: [DONE]
             }
             let chunks: Vec<Result<Vec<u8>, PandayError>> =
                 self.chunks.iter().cloned().map(Ok).collect();
-            Ok(Box::pin(futures_util::stream::iter(chunks)))
+            Ok(SseResponse {
+                headers: Default::default(),
+                body: Box::pin(futures_util::stream::iter(chunks)),
+            })
         }
     }
 

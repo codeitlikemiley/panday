@@ -69,7 +69,7 @@ pub fn connect(base_url: impl Into<String>, api_key: Option<String>) -> Box<dyn 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::transport::ByteStream;
+    use crate::providers::transport::SseResponse;
     use futures_util::StreamExt;
     use panday_types::id::{AccountId, RequestId};
     use panday_types::model::{
@@ -89,14 +89,17 @@ mod tests {
             url: &str,
             headers: &[(String, String)],
             _body: Vec<u8>,
-        ) -> Result<ByteStream, PandayError> {
+        ) -> Result<SseResponse, PandayError> {
             let key = headers
                 .iter()
                 .find(|(k, _)| k == "authorization")
                 .map(|(_, v)| v.trim_start_matches("Bearer ").to_string());
             *self.seen.lock().unwrap() = Some((url.to_string(), key));
             let chunks: Vec<Result<Vec<u8>, PandayError>> = vec![Ok(self.body.clone())];
-            Ok(Box::pin(futures_util::stream::iter(chunks)))
+            Ok(SseResponse {
+                headers: Default::default(),
+                body: Box::pin(futures_util::stream::iter(chunks)),
+            })
         }
     }
 

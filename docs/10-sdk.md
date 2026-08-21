@@ -137,7 +137,14 @@ One `enum PandayError` with stable `code` strings mirroring the wire:
 `rate_limited { retry_after }`, `budget_exceeded { balance }`,
 `entitlement_denied { plan, needed }`, `model_unavailable { tried: Vec<_> }`,
 `permission_denied`, `provider { upstream, retryable }`. Retryability is a
-method, not a guess.
+method, not a guess. A 429's `Retry-After` fills `retry_after_ms` (docs/25
+M25.3); missing stays 0 rather than inventing a delay, and 0 therefore reads as
+"unknown" everywhere downstream, never as "retry now". `Retry` honours a stated
+wait over its own curve up to `MAX_HONOURED_RETRY_AFTER` (60s) — beyond that it
+returns the error instead of sleeping, since that sleep is outside the timeout
+layer and the value is upstream-controlled. Success responses keep ratelimit
+remaining headers on the transport (`SseResponse.headers`); overlay onto
+operator remaining % is M25.7.
 
 ## Milestones
 

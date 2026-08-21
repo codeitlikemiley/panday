@@ -8,7 +8,7 @@ pub mod wire;
 
 use super::models::{self, RemoteModel};
 use super::sse;
-use super::transport::{self, HttpStreamTransport, ReqwestTransport};
+use super::transport::{self, HttpStreamTransport, ReqwestTransport, SseResponse};
 use crate::{ItemStream, ModelClient, PandayError};
 use panday_types::id::CallId;
 use panday_types::model::{ChatRequest, StopReason, StreamItem};
@@ -257,11 +257,19 @@ impl ModelClient for AnthropicClient {
         let body = serde_json::to_vec(&wire::WireRequest::from_ir(&req))
             .map_err(|e| PandayError::Protocol(format!("anthropic: encode request: {e}")))?;
 
-        let bytes = self
+        let SseResponse { body, headers } = self
             .http
             .post_sse(&self.endpoint(), &self.headers(), body)
             .await?;
-        Ok(Box::pin(into_items(bytes)))
+        let remaining = headers.ratelimit_remaining();
+        if remaining.requests.is_some() || remaining.tokens.is_some() {
+            tracing::debug!(
+                remaining_requests = ?remaining.requests,
+                remaining_tokens = ?remaining.tokens,
+                "upstream ratelimit remaining"
+            );
+        }
+        Ok(Box::pin(into_items(body)))
     }
 }
 
