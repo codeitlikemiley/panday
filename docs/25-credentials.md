@@ -56,8 +56,8 @@ CLI's store, not panday's limit. The proxy can:
    (two accounts pasted into one `auth.json`).
 2. Read extra files listed in `PANDAY_GROK_AUTH` (colon-separated paths) plus
    the default `~/.grok/auth.json`. Missing or empty files are skipped.
-3. Hold those access tokens in memory (the sealed vault in `panday_sdk::vault`
-   can already store two `provider=xai` secrets; pick-at-request-time is M25.9).
+3. Hold those access tokens in a live pool (and persist new ones to the sealed
+   vault when `~/.panday` is writable).
 4. Rotate: same model `xai/grok-4.6`, credential A 429 → credential B.
 
 `panday-gateway` registers a **live pool** per provider (`xai`, `anthropic`,
@@ -87,13 +87,11 @@ Inner loop is credentials; outer loop is still the model chain. Every credential
 for Grok 429s → `RateLimited` (retryable) → the chain walks to Claude. A 400 does
 not walk keys (same rule as model failover, docs/11). Never rotate mid-stream.
 
-Sticky when `session_id` is present: Anthropic prompt cache is per API key
-(ADR-008). Independent requests (no session) round-robin, then `most_remaining`
-once ceilings exist. Breakers are `(credential_id, model)`, not `(provider, model)`.
-
-`UsageRecord` carries `credential_id` (the label, never the secret). Per-key totals
-live in the vault/console. Prometheus stays bounded: `provider` + `outcome`, not
-one series per key (docs/21).
+**On this experiment branch:** rotation is `failover` (always start at member 0)
+or `round_robin` (each new request starts one member further). Set at
+`GET /accounts` or `PANDAY_ROTATE`. Sticky-per-`session_id` (M25.5),
+per-credential breakers, and `UsageRecord.credential_id` are **not** shipped
+here — breakers are still `(provider, model)`.
 
 ## Remaining % (two numbers)
 
@@ -152,9 +150,13 @@ A one-credential gateway must keep today's failover behaviour.
   (today it is always 0). Success path exposes ratelimit headers.
 
 - **M25.4** `PooledAdapter`: inner loop over credentials. Key A 429 → key B 200;
-  both 429 → `RateLimited` so the model chain walks; 400 does not walk keys.
-  **Partial (this experiment branch):** xAI OAuth from files only, in-order walk,
-  no vault, no sticky `session_id`. Mock-proven; not live two-account dogfood.
+  both 429 → `RateLimited` so the model chain walks; 400 does not walk keys. ✅
+  *(this experiment: `panday_gateway::adapters::pool` — live `CredHub` for
+  `xai` / `anthropic` / `openai` / `gemini`. Failover or round-robin.
+  `GET /accounts` imports Grok CLI, pastes `auth.json`, adds API keys, revokes.
+  Env: `PANDAY_*_API_KEYS` comma-separated, `PANDAY_GROK_AUTH` extra files,
+  `PANDAY_ROTATE`. Vault rows load at boot when `~/.panday` exists. Mock-proven;
+  not live two-account dogfood. Sticky session is M25.5.)*
 
 - **M25.5** Per-credential breakers + sticky `session_id`.
 
@@ -169,6 +171,10 @@ A one-credential gateway must keep today's failover behaviour.
 
 - **M25.9** Gateway boot loads the vault. Env keys become rows if the vault is
   empty (back-compat). OAuth import is "insert if absent", not "the only cred".
+  **Partial (this experiment):** `CredHub::seed_from_process` loads Grok/Claude
+  OAuth, `*_API_KEY` + `PANDAY_*_API_KEYS`, then vault rows (skip duplicate
+  last4). The console can add more without restart. `panday creds` CLI is the
+  other worktree.
 
 - **M25.10** Codex importer proven against the openai adapter, or a note that it
   does not work and skip.

@@ -100,6 +100,9 @@ Trunk CSR.
   prices, measured context, and pool preference — not the inventory. A new
   Anthropic/OpenAI/xAI model appears when that API lists it; it does not wait
   on a catalog edit.
+- `GET /accounts` is HTML forms (no WASM): import Grok CLI, paste `auth.json`,
+  add OpenAI/xAI/Anthropic/Gemini API keys, revoke, pick failover vs
+  round-robin. Last4 only — never the secret.
 - The playground is an `#[island]`: only that component hydrates. A form POST
   to `/console/try` is the no-WASM fallback.
 - Split/lazy WASM (`cargo leptos --split`, `#[lazy]` islands) is the next
@@ -139,7 +142,7 @@ Wire fields some upstreams 400 on are stripped on the way out, not rejected inbo
 
 ### Pointing agents at a running gateway
 
-Default listen is `127.0.0.1:8080` (`PANDAY_GATEWAY_ADDR`). Examples below use `8088` because this laptop's 8080 is already taken. Subscription OAuth is read from Grok CLI and Claude Code at boot; `GEMINI_API_KEY` on the *gateway* process registers the Gemini *outbound* adapter. That key is independent of the dummy key a client sends *to* us.
+Default listen is `127.0.0.1:8080` (`PANDAY_GATEWAY_ADDR`). Examples below use `8088` because this laptop's 8080 is already taken. Subscription OAuth is read from Grok CLI and Claude Code at boot; extra Grok files are `PANDAY_GROK_AUTH`; extra API keys are `PANDAY_OPENAI_API_KEYS` (and xai/anthropic/gemini). Manage them in the browser at `GET /accounts`. `GEMINI_API_KEY` on the *gateway* process is outbound Google, independent of the dummy key a client sends *to* us.
 
 **Curl (OpenAI):**
 
