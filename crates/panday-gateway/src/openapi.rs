@@ -59,7 +59,7 @@ pub fn document() -> Value {
                         },
                         "401": { "$ref": "#/components/responses/Error" },
                         "402": { "$ref": "#/components/responses/Error" },
-                        "429": { "$ref": "#/components/responses/Error" },
+                        "429": { "$ref": "#/components/responses/RateLimited" },
                         "503": { "$ref": "#/components/responses/Error" },
                     },
                 },
@@ -97,6 +97,8 @@ pub fn document() -> Value {
                     "responses": {
                         "200": { "description": "A message, or Anthropic SSE when stream is true." },
                         "401": { "$ref": "#/components/responses/Error" },
+                        "402": { "$ref": "#/components/responses/Error" },
+                        "429": { "$ref": "#/components/responses/RateLimited" },
                     },
                 },
             },
@@ -111,7 +113,10 @@ pub fn document() -> Value {
                 "post": {
                     "operationId": "generateContent",
                     "summary": "Gemini generateContent / streamGenerateContent. Tail is `{model}:generateContent`.",
-                    "responses": { "200": { "description": "GenerateContentResponse or SSE." } },
+                    "responses": {
+                        "200": { "description": "GenerateContentResponse or SSE." },
+                        "429": { "$ref": "#/components/responses/RateLimited" },
+                    },
                 },
             },
         },
@@ -122,13 +127,30 @@ pub fn document() -> Value {
                 "description": "An API key: `pnd_live_…` or `pnd_test_…` (docs/17). Every refusal \
     is a 401 with the same body — missing, malformed, unknown and revoked are not distinguished.",
             }},
-            "responses": { "Error": {
-                "description": "The standard error envelope, so a client that only understands \
+            "responses": {
+                "Error": {
+                    "description": "The standard error envelope, so a client that only understands \
     OpenAI's shape can read our failures too.",
-                "content": { "application/json": { "schema": {
-                    "$ref": "#/components/schemas/ErrorResponse"
-                }}},
-            }},
+                    "content": { "application/json": { "schema": {
+                        "$ref": "#/components/schemas/ErrorResponse"
+                    }}},
+                },
+                // Its own component rather than a `headers` block on `Error`:
+                // that one is shared with 401/402/503, none of which carry a
+                // wait (docs/11 M11.7).
+                "RateLimited": {
+                    "description": "Rate limited. Carries `Retry-After` when an upstream stated a \
+    wait; the header is absent — never zero — when none did.",
+                    "headers": { "Retry-After": {
+                        "description": "Delay-seconds (RFC 9110 §10.2.3), rounded up. Absent when \
+    no upstream stated a wait: 0 would mean \"retry now\".",
+                        "schema": { "type": "integer", "minimum": 1 },
+                    }},
+                    "content": { "application/json": { "schema": {
+                        "$ref": "#/components/schemas/ErrorResponse"
+                    }}},
+                },
+            },
             "schemas": schemas(),
         },
     })

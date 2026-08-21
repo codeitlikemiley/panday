@@ -182,17 +182,44 @@ fn gemini_error(e: PandayError) -> Response {
         PandayError::ModelUnavailable { .. } => axum::http::StatusCode::NOT_FOUND,
         _ => axum::http::StatusCode::BAD_GATEWAY,
     };
+    let mut error = json!({
+        "code": status.as_u16(),
+        "message": e.to_string(),
+        "status": rpc_code(status),
+    });
+    // This envelope is `google.rpc.Status`, and it is the one dialect of the
+    // three with a conventional machine-readable slot for the wait: google-genai
+    // clients read `RetryInfo` out of `error.details` (docs/11 M11.7). Same
+    // ceiled seconds as the header, so the two can never disagree.
+    if let Some(secs) = e.retry_after_secs() {
+        error["details"] = json!([{
+            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+            "retryDelay": format!("{secs}s"),
+        }]);
+    }
     (
         status,
-        Json(json!({
-            "error": {
-                "code": status.as_u16(),
-                "message": e.to_string(),
-                "status": status.canonical_reason().unwrap_or("UNKNOWN"),
-            }
-        })),
+        crate::ingress::retry_after_headers(&e),
+        Json(json!({ "error": error })),
     )
         .into_response()
+}
+
+/// `error.status` in a `google.rpc.Status` is the `google.rpc.Code` **name**,
+/// not an HTTP reason phrase. `canonical_reason()` put "Too Many Requests"
+/// there, which no google-genai client matches on.
+fn rpc_code(status: axum::http::StatusCode) -> &'static str {
+    match status.as_u16() {
+        400 => "INVALID_ARGUMENT",
+        401 => "UNAUTHENTICATED",
+        403 => "PERMISSION_DENIED",
+        404 => "NOT_FOUND",
+        429 => "RESOURCE_EXHAUSTED",
+        500 => "INTERNAL",
+        502 | 503 => "UNAVAILABLE",
+        504 => "DEADLINE_EXCEEDED",
+        _ => "UNKNOWN",
+    }
 }
 
 fn finish_reason(reason: StopReason) -> &'static str {
@@ -284,7 +311,62 @@ async fn stream_gemini(stream: ItemStream) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_tail;
+    use super::{gemini_error, parse_tail, rpc_code};
+    use panday_sdk::PandayError;
+
+    async fn body_of(e: PandayError) -> (Option<String>, serde_json::Value) {
+        let resp = gemini_error(e);
+        let retry_after = resp
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .map(|v| v.to_str().unwrap().to_string());
+        let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .expect("body");
+        (retry_after, serde_json::from_slice(&bytes).expect("json"))
+    }
+
+    #[tokio::test]
+    async fn a_rate_limit_carries_retry_info_and_the_rpc_code_name() {
+        // `google.rpc.Status.status` is a Code name; google-genai clients match
+        // on it, and `canonical_reason()` was putting "Too Many Requests" there.
+        let (retry_after, v) = body_of(PandayError::RateLimited {
+            retry_after_ms: 23_000,
+        })
+        .await;
+        assert_eq!(retry_after.as_deref(), Some("23"));
+        assert_eq!(v["error"]["status"], "RESOURCE_EXHAUSTED");
+        assert_eq!(v["error"]["code"], 429);
+        assert_eq!(
+            v["error"]["details"][0]["@type"],
+            "type.googleapis.com/google.rpc.RetryInfo"
+        );
+        // Same ceiled seconds as the header, so the two cannot disagree.
+        assert_eq!(v["error"]["details"][0]["retryDelay"], "23s");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_wait_adds_neither_header_nor_details() {
+        let (retry_after, v) = body_of(PandayError::RateLimited { retry_after_ms: 0 }).await;
+        assert_eq!(retry_after, None);
+        assert_eq!(v["error"]["status"], "RESOURCE_EXHAUSTED");
+        assert!(
+            v["error"].get("details").is_none(),
+            "an absent wait must not become an empty or zero RetryInfo: {v}"
+        );
+    }
+
+    #[test]
+    fn rpc_codes_are_names_not_reason_phrases() {
+        use axum::http::StatusCode;
+        assert_eq!(
+            rpc_code(StatusCode::TOO_MANY_REQUESTS),
+            "RESOURCE_EXHAUSTED"
+        );
+        assert_eq!(rpc_code(StatusCode::BAD_REQUEST), "INVALID_ARGUMENT");
+        assert_eq!(rpc_code(StatusCode::NOT_FOUND), "NOT_FOUND");
+        assert_eq!(rpc_code(StatusCode::BAD_GATEWAY), "UNAVAILABLE");
+    }
 
     #[test]
     fn generate_content_path_is_gemini_prefixed() {

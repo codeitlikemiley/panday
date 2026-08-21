@@ -50,7 +50,10 @@ pub type ItemStream =
 /// Stable error vocabulary mirroring the wire codes (docs/10 §Errors).
 #[derive(Debug, thiserror::Error)]
 pub enum PandayError {
-    #[error("rate limited; retry after {retry_after_ms}ms")]
+    // 0 means no upstream stated a wait (docs/25 M25.3), so saying "retry after
+    // 0ms" would put the exact hammer instruction on the wire that the whole
+    // Retry-After path exists to prevent.
+    #[error("rate limited{}", retry_after_suffix(*retry_after_ms))]
     RateLimited { retry_after_ms: u64 },
     #[error("budget exceeded; balance {balance_micros} credit-micros")]
     BudgetExceeded { balance_micros: i64 },
@@ -72,7 +75,37 @@ pub enum PandayError {
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// The tail of a `RateLimited` message. Silence beats a fabricated zero.
+fn retry_after_suffix(retry_after_ms: u64) -> String {
+    if retry_after_ms == 0 {
+        "; no retry delay stated upstream".to_string()
+    } else {
+        format!("; retry after {retry_after_ms}ms")
+    }
+}
+
 impl PandayError {
+    /// The wait a client should honour, in whole seconds, or `None` when no
+    /// upstream stated one.
+    ///
+    /// `Retry-After` is delay-**seconds** (RFC 9110 §10.2.3) while we carry
+    /// milliseconds, and the rounding direction is not a detail: too late only
+    /// costs latency, too early costs another 429 — and several providers
+    /// extend the penalty window when you retry inside it. So this rounds up,
+    /// and a sub-second wait becomes 1 rather than 0.
+    ///
+    /// Deliberately unclamped. `MAX_HONOURED_RETRY_AFTER` bounds how long *we*
+    /// will sleep; it says nothing about the upstream's window, and republishing
+    /// a shortened number would schedule a retry storm at the moment it expires.
+    pub fn retry_after_secs(&self) -> Option<u64> {
+        match self {
+            PandayError::RateLimited { retry_after_ms } if *retry_after_ms > 0 => {
+                Some(retry_after_ms.div_ceil(1000))
+            }
+            _ => None,
+        }
+    }
+
     /// Retryability is a method, not a guess.
     pub fn is_retryable(&self) -> bool {
         matches!(

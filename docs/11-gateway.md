@@ -396,3 +396,58 @@ in-process, not a product surface. The gateway is stateless apart from cache
   rather than the rate, because the window still holds the failures that opened
   it; and a non-retryable error (a malformed request) is not counted against the
   route, or one broken client could take a healthy model offline for everyone.
+
+- **M11.7** Every ingress tells a rate-limited client when to come back. `Retry-After`
+  on all three dialects; `RetryInfo` in the Gemini envelope. ✅ *(shipped:
+  `PandayError::retry_after_secs`, `ingress::retry_after_headers`, wired into
+  `ingress::error_response`, `messages::anthropic_error` and `gemini_api::gemini_error`.)*
+
+  M25.3 taught the gateway what the wait *is* — the soonest stated `Retry-After`
+  across a credential pool and across a model chain. It stopped at the type
+  boundary: the value was computed and then dropped, and every 429 left here as a
+  bare status. Panday's own `RateLimiter` was no better — it has always computed
+  the rest of its window as a retry hint, with a comment saying a client that
+  honours it stops hammering, and then thrown that away too.
+
+  **There were three error mappers, not one.** `ingress::error_response` serves
+  the OpenAI dialect, `messages::anthropic_error` serves `/v1/messages`, and
+  `gemini_api::gemini_error` serves `/v1beta`. They share no code and had already
+  drifted — `ModelUnavailable` is 503 in the first and 404 in the other two, and
+  only the OpenAI one handles `PermissionDenied`. Fixing the funnel we happened to
+  look at first would have left Claude Code, the route this project dogfoods,
+  getting the same bare 429 as before. `Retry-After` is RFC 9110, not a dialect
+  feature, so the header comes from one shared helper all three call. The
+  divergence in *status* mapping is left alone here; it is a separate defect and
+  wants its own commit.
+
+  **Absence is the signal for "unknown".** `retry_after_ms` of 0 means no upstream
+  stated a wait (docs/25 M25.3), so the header is omitted rather than sent as
+  `Retry-After: 0` — which says "retry now", the one instruction the header exists
+  to prevent. The same rule made a liar of the error *message*: the `Display` for
+  `RateLimited` interpolated the raw milliseconds, so an unknown wait rendered on
+  the wire as "retry after 0ms". It now says the upstream stated none.
+
+  **Rounding is up, and the value is unclamped.** `Retry-After` is delay-seconds
+  while we hold milliseconds; truncating sends the client back inside the window,
+  and providers commonly extend the penalty for a retry that arrives early. Too
+  late costs latency, too early costs another 429, so `div_ceil` is the only safe
+  direction and a sub-second wait becomes 1 rather than 0. `MAX_HONOURED_RETRY_AFTER`
+  is deliberately *not* applied: it bounds how long this process will sleep, not
+  how long the upstream's window is, and republishing a shortened number would
+  schedule a retry storm at the instant our own cap expired. An honest 3600 is
+  ignored by openai-python and the Anthropic SDK in favour of their own curve,
+  which is the correct outcome; a clamped 60 would not be.
+
+  **Gemini gets a body field, the other two do not.** Its envelope *is*
+  `google.rpc.Status`, which has a conventional slot: google-genai clients read
+  `RetryInfo` out of `error.details`. The same ceiled seconds fill it, so the
+  header and the body cannot disagree. Fixed alongside it: `error.status` was
+  being filled with `canonical_reason()` — "Too Many Requests" — when the field is
+  a `google.rpc.Code` **name**. It is `RESOURCE_EXHAUSTED` now, and no client was
+  matching on the reason phrase.
+
+  **Streaming needs nothing.** All four `RateLimited` producers fire before any
+  byte leaves, so a `stream: true` request that is rate-limited gets a real HTTP
+  429 with headers, not an SSE error frame. A mid-stream rate limit is not
+  reachable today; if one ever becomes reachable it has no header to sit in, and
+  that is the milestone that will have to answer it.

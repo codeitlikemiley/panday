@@ -156,7 +156,10 @@ A one-credential gateway must keep today's failover behaviour.
   only up to `MAX_HONOURED_RETRY_AFTER` (60s); past that it returns the error
   with the upstream's number intact rather than parking the caller, because that
   sleep sits outside the timeout layer. Overlay onto operator remaining % is
-  M25.7.)*
+  M25.7; telling a **client** the wait — `Retry-After` on all three ingresses —
+  is docs/11 M11.7. An already-elapsed HTTP-date parses to 0 and is therefore
+  indistinguishable from "no header", which is the intended reading: an expired
+  deadline does mean "you may retry now".)*
 
 - **M25.4** `PooledAdapter`: inner loop over credentials. Key A 429 → key B 200;
   both 429 → `RateLimited` so the model chain walks; 400 does not walk keys. ✅
