@@ -1,12 +1,15 @@
 //! Mounts the Leptos operator console on the gateway process (docs/11).
 
+use crate::adapters::pool::{CredHub, Rotate};
+use crate::creds::{persist_revoke, persist_secret};
 use crate::gateway::{CollectUsage, Gateway};
 use axum::extract::{Form, State};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use panday_console::snapshot::{CallRow, Cred, ModelRow, PoolRow, Snapshot};
+use panday_console::snapshot::{AccountRow, CallRow, Cred, ModelRow, PoolRow, Snapshot};
 use panday_sdk::oauth::Token;
+use panday_sdk::vault::Kind;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,6 +19,7 @@ pub struct ConsoleState {
     pub gateway: Arc<Gateway>,
     pub usage: Arc<CollectUsage>,
     pub listen: String,
+    pub hub: CredHub,
 }
 
 pub fn router(state: ConsoleState) -> Router {
@@ -23,9 +27,15 @@ pub fn router(state: ConsoleState) -> Router {
         .route("/", get(page))
         .route("/models", get(page))
         .route("/playground", get(page))
+        .route("/accounts", get(page))
         .route("/console/forge.css", get(css))
         .route("/console/try", post(try_prompt))
         .route("/console/snapshot", get(snapshot_json))
+        .route("/console/accounts/import-grok", post(import_grok))
+        .route("/console/accounts/paste-grok", post(paste_grok))
+        .route("/console/accounts/api", post(add_api))
+        .route("/console/accounts/revoke", post(revoke_account))
+        .route("/console/accounts/rotate", post(set_rotate))
         .with_state(state);
 
     if let Some(pkg) = pkg_dir() {
@@ -129,8 +139,97 @@ fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+fn accounts_redirect() -> Redirect {
+    Redirect::to("/accounts")
+}
+
+async fn import_grok(State(state): State<ConsoleState>) -> Redirect {
+    let tokens = panday_sdk::oauth::grok_access_all().await;
+    for (i, token) in tokens.into_iter().enumerate() {
+        let label = format!("grok-cli-{}", i + 1);
+        if let Ok(meta) = state.hub.add_secret("xai", "oauth", &label, &token) {
+            let _ = persist_secret("xai", Kind::Oauth, &meta.label, &token).await;
+        }
+    }
+    accounts_redirect()
+}
+
+#[derive(Deserialize)]
+struct PasteGrok {
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    json: String,
+}
+
+async fn paste_grok(State(state): State<ConsoleState>, Form(form): Form<PasteGrok>) -> Redirect {
+    let toks = panday_sdk::oauth::grok_cli_all_from_json(&form.json);
+    for (i, tok) in toks.into_iter().enumerate() {
+        let label = if form.label.trim().is_empty() {
+            format!("pasted-{}", i + 1)
+        } else if i == 0 {
+            form.label.trim().to_string()
+        } else {
+            format!("{}-{}", form.label.trim(), i + 1)
+        };
+        if let Ok(meta) = state.hub.add_secret("xai", "oauth", &label, &tok.access) {
+            let _ = persist_secret("xai", Kind::Oauth, &meta.label, &tok.access).await;
+        }
+    }
+    accounts_redirect()
+}
+
+#[derive(Deserialize)]
+struct AddApi {
+    provider: String,
+    #[serde(default)]
+    label: String,
+    key: String,
+}
+
+async fn add_api(State(state): State<ConsoleState>, Form(form): Form<AddApi>) -> Redirect {
+    let provider = form.provider.trim();
+    if let Ok(meta) = state
+        .hub
+        .add_secret(provider, "api_key", form.label.trim(), form.key.trim())
+    {
+        let _ = persist_secret(provider, Kind::ApiKey, &meta.label, form.key.trim()).await;
+    }
+    accounts_redirect()
+}
+
+#[derive(Deserialize)]
+struct RevokeForm {
+    id: String,
+}
+
+async fn revoke_account(
+    State(state): State<ConsoleState>,
+    Form(form): Form<RevokeForm>,
+) -> Redirect {
+    let meta = state.hub.accounts().into_iter().find(|m| m.id == form.id);
+    if let Some(m) = meta {
+        persist_revoke(&m.provider, &m.last4).await;
+        let _ = state.hub.remove(&form.id);
+    }
+    accounts_redirect()
+}
+
+#[derive(Deserialize)]
+struct RotateForm {
+    policy: String,
+}
+
+async fn set_rotate(State(state): State<ConsoleState>, Form(form): Form<RotateForm>) -> Redirect {
+    if let Some(p) = Rotate::parse(&form.policy) {
+        state.hub.set_rotate(p);
+    }
+    accounts_redirect()
+}
+
 async fn snapshot(state: &ConsoleState) -> Snapshot {
-    let grok = panday_sdk::oauth::grok_cli();
+    let grok_toks = panday_sdk::oauth::grok_cli_all();
+    let grok = grok_toks.into_iter().next();
     let claude = panday_sdk::oauth::claude_code();
     let catalog = panday_router::ModelCatalog::shipped();
     let providers: Vec<String> = state
@@ -146,6 +245,19 @@ async fn snapshot(state: &ConsoleState) -> Snapshot {
         providers,
         grok: cred(grok.as_ref()),
         claude: cred(claude.as_ref()),
+        accounts: state
+            .hub
+            .accounts()
+            .into_iter()
+            .map(|m| AccountRow {
+                id: m.id,
+                provider: m.provider,
+                kind: m.kind,
+                label: m.label,
+                last4: m.last4,
+            })
+            .collect(),
+        rotate: state.hub.rotate().as_str().into(),
         models: overlay_live(&live, &catalog),
         pools: pools_for_live(pools_from_dev(), &live_ids),
         recent: state

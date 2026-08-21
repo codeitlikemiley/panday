@@ -8,6 +8,7 @@ pub mod adapters;
 pub mod cache;
 pub mod circuit;
 pub mod console;
+pub mod creds;
 pub mod gateway;
 pub mod gemini_api;
 pub mod ingress;

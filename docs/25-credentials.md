@@ -60,11 +60,14 @@ CLI's store, not panday's limit. The proxy can:
    can already store two `provider=xai` secrets; pick-at-request-time is M25.9).
 4. Rotate: same model `xai/grok-4.6`, credential A 429 → credential B.
 
-`panday-gateway` registers **one** `"xai"` adapter. Zero tokens → no adapter.
-One token → today's single `OpenAiCompat`. Two or more → a `PooledAdapter` that
-walks members in order on the same request. A 400 does not walk keys. If every
-member 429s the pool returns `RateLimited` so the model chain can still fail
-over to Claude.
+`panday-gateway` registers a **live pool** per provider (`xai`, `anthropic`,
+`openai`, `gemini`). Members are Grok/Claude OAuth tokens and API keys (one
+`ANTHROPIC_API_KEY` or several in `PANDAY_ANTHROPIC_API_KEYS`, same for
+`OPENAI` / `XAI` / `GEMINI`). The operator console at `GET /accounts` can
+import Grok CLI, paste a second `auth.json`, paste API keys, revoke, and pick
+**failover** (always try the first key) or **round-robin** (spread requests).
+A 400 does not walk keys. If every member 429s the pool returns `RateLimited`
+so the model chain can still fail over to Claude.
 
 A second SuperGrok login is a copy of another machine's `auth.json`, not a
 second Grok CLI install. Stale tokens are refreshed in memory when a refresh

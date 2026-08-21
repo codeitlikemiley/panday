@@ -27,21 +27,22 @@ risk + dialect drift belongs to us):
 
 | Adapter | Dialect | Notes |
 |---|---|---|
-| `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
-| `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`, extra files in `PANDAY_GROK_AUTH`). Model id `xai/grok-4.6`. Not a proxy. Two+ tokens register one `PooledAdapter` as `"xai"` (docs/25). |
-| `openai` | Chat Completions | `OPENAI_API_KEY`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
-| `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY`. Optional `GEMINI_BASE_URL`. Model ids `gemini/gemini-2.5-flash` |
+| `anthropic` | Messages API | `ANTHROPIC_API_KEY` and/or `PANDAY_ANTHROPIC_API_KEYS` (comma-separated), plus Claude Code OAuth. Rotated in one pool (docs/25). |
+| `xai` | openai_compat → `https://api.x.ai` | Grok CLI OAuth (`~/.grok/auth.json`, `PANDAY_GROK_AUTH`) and/or `XAI_API_KEY` / `PANDAY_XAI_API_KEYS`. Console: `GET /accounts`. |
+| `openai` | Chat Completions | `OPENAI_API_KEY` and/or `PANDAY_OPENAI_API_KEYS`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
+| `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY` and/or `PANDAY_GEMINI_API_KEYS`. Optional `GEMINI_BASE_URL`. |
 | `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
 | `local` | openai_compat pinned to loopback | the offline tier; no auth. Registered only when that URL answers (default `http://127.0.0.1:8081`, or `PANDAY_LOCAL_BASE_URL`) |
 
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
 and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A pool of
 several keys or subscriptions is `docs/25-credentials.md` — put them in with `panday creds`
-(stdin or `--from-grok` / `--from-claude` / `--from-codex`). `panday-gateway` wraps two or more
-still-fresh (or in-memory-refreshed) Grok tokens in one `PooledAdapter` registered as `"xai"`;
-a single token keeps the historical one-adapter boot. Extra `auth.json` copies are
-`PANDAY_GROK_AUTH` (colon-separated). This is N tokens in files/memory, not N Grok CLI
-installs. Not live two-account dogfood; vault-backed pick-at-request-time is M25.9. A client
+(stdin or `--from-grok` / `--from-claude` / `--from-codex`). `GET /accounts` on the operator
+console imports Grok CLI logins, accepts a pasted `auth.json`, and accepts extra OpenAI /
+xAI / Anthropic / Gemini API keys. `PANDAY_ROTATE=failover|round_robin` (same control on
+that page). Extra `auth.json` copies are `PANDAY_GROK_AUTH` (colon-separated); extra API
+keys are `PANDAY_OPENAI_API_KEYS` (comma-separated) and friends. This is N tokens in
+memory, not N CLI installs. A client
 talking *to* panday ingress must send the full `provider/model` id
 (`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router honestly refuse
 `grok-4.6`.

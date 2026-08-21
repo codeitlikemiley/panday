@@ -8,9 +8,22 @@ pub struct Snapshot {
     pub providers: Vec<String>,
     pub grok: Cred,
     pub claude: Cred,
+    /// Outbound credentials currently loaded (last4 only, never the secret).
+    pub accounts: Vec<AccountRow>,
+    /// `failover` or `round_robin`.
+    pub rotate: String,
     pub models: Vec<ModelRow>,
     pub pools: Vec<PoolRow>,
     pub recent: Vec<CallRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AccountRow {
+    pub id: String,
+    pub provider: String,
+    pub kind: String,
+    pub label: String,
+    pub last4: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
