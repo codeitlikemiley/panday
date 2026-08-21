@@ -398,7 +398,7 @@ fn parse_creds<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command,
     match action.as_str() {
         "help" | "--help" | "-h" => Ok(Command::Help),
         "list" => {
-            for arg in it {
+            if let Some(arg) = it.next() {
                 match arg.as_str() {
                     "--help" | "-h" => return Ok(Command::Help),
                     other if other.starts_with('-') => {
@@ -411,7 +411,7 @@ fn parse_creds<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command,
         }
         "revoke" => {
             let mut id = None;
-            while let Some(arg) = it.next() {
+            for arg in it {
                 match arg.as_str() {
                     "--help" | "-h" => return Ok(Command::Help),
                     other if other.starts_with('-') => {
