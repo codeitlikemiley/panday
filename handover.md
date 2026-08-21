@@ -170,8 +170,10 @@ both **draft on purpose** under the rule in §1.2:
 |---|---|---|---|
 | [#12](https://github.com/codeitlikemiley/panday/pull/12) | `m25.3-headers` | M25.3 | Draft. All six CI jobs green on head `71b9082`, `mergeStateStatus: CLEAN`. |
 | [#13](https://github.com/codeitlikemiley/panday/pull/13) | `m11.7-retry-after-egress` | M11.7 | Draft, based on `m25.3-headers` — GitHub retargets it to `main` when #12 merges. |
+| [#15](https://github.com/codeitlikemiley/panday/pull/15) | `m11.8-one-error-mapper` | M11.8 | Draft, based on `m11.7-retry-after-egress`. Green on `f2bc801`. |
 
-**Merge #12 first**, or #13's diff will read as if it contains M25.3's changes too.
+**Merge in order: #12 → #13 → #15.** Each retargets to `main` as its base lands; out of order, a
+diff reads as if it contains its parent's changes too.
 
 - **#12 / M25.3** — the transport stops dropping response headers. `post_sse` returns
   `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was
@@ -185,9 +187,21 @@ both **draft on purpose** under the rule in §1.2:
   `RateLimiter` had been discarding its own window remainder the same way. Note for anyone touching
   error handling: **there are three independent error mappers** — `ingress::error_response`,
   `messages::anthropic_error`, `gemini_api::gemini_error` — that share no code and have already
-  drifted (`ModelUnavailable` is 503 in the first, 404 in the other two; only the first handles
-  `PermissionDenied`). Fixing one is not fixing the ingress. That status drift is **still open** and
-  wants its own commit.
+  drifted. Fixing one is not fixing the ingress — a change to `error_response` alone reaches neither
+  Claude Code nor Antigravity.
+- **#15 / M11.8** — closes that drift. Status was 503/404/404 for `ModelUnavailable`, 403/502/502 for
+  `PermissionDenied`, 402/402/502 for a budget refusal. The `PermissionDenied` row was the dangerous
+  one: 403 is terminal and 502 is retryable, so a client with ordinary backoff would hammer a refusal
+  it can never satisfy — on the two routes agents actually use. Status now comes from one
+  `ingress::status_for`; envelopes stay per-dialect. Two table-driven tests hold the line, and both
+  fail against #13, which is what makes them a guard rather than decoration.
+
+  **Still open, and now the interesting one:** `ModelUnavailable` conflates two failures — an
+  exhausted chain (503 is right) and a rule with no usable target, which includes a caller pinning a
+  model this deployment will never serve. 503 tells that caller to come back later about a request
+  that can only ever fail; all three upstream APIs would answer 404. Splitting the variant touches
+  the error vocabulary in `docs/10` and the generated clients, so it is a milestone, not a rider.
+  Written up under docs/11 M11.8.
 
 ---
 
@@ -315,8 +329,8 @@ but M25.5 onward needs none of that. Do not invent rates or p95s for the blocked
    **M25.8** `most_remaining` selector, **M25.9** finish vault-as-boot-source, **M25.10** prove Codex
    import against the OpenAI adapter *or* write the note saying it does not work. M25.11 (hosted
    Postgres ciphertext) and M25.12 (Keychain-wrapped KEK — needs `keyring`, so §1.2 applies) are
-   skip-unless-asked. There is also an open defect with no milestone: the three error mappers
-   disagree on status codes (§3).
+   skip-unless-asked. There is also one open question with no milestone number yet: `ModelUnavailable`
+   answers 503 for a model this deployment will never serve, where 404 is the honest answer (§3).
 1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
 2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
