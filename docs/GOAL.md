@@ -30,9 +30,10 @@ Message the user with the blocked list rather than filling the gap.
 - **Inbound, the gateway is the compatible front door.** Claude Code, Grok Build, and
   Antigravity CLI (`agy`) point at `panday-gateway` (`docs/11` §Pointing agents). That is
   not "use OpenCodex as upstream".
-- **Upstream credential pool** (several Grok/Claude/Codex subscriptions or API keys,
-  remaining %, funnel) is `docs/25`. Not tenant BYOK. Not `pnd_` keys. M25.1 is the sealed
-  vault; do not wire the gateway until M25.9.
+- **Upstream credential pool** is `docs/25`. Not tenant BYOK. Not `pnd_` keys.
+  M25.1 vault and M25.2 `panday creds` are on this branch. The gateway still
+  boots one env/OAuth cred per provider until M25.9 (or the
+  `experiment/rotate-grok-oauth` branch, which wires live pools + `GET /accounts`).
 - **Env:** `PANDAY_BASE_URL` is an optional OpenAI-compatible *upstream* (llama-server, Together).
   `PANDAY_COMPAT_BASE_URL` is a deprecated alias. Inspect-ai talks *to* panday via
   `PANDAY_GATEWAY_URL`. Claude Code uses `ANTHROPIC_BASE_URL` (no `/v1`, plus `--bare`).
