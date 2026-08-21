@@ -273,6 +273,10 @@ fn anthropic_error(e: PandayError) -> Response {
     };
     (
         status,
+        // Anthropic's own API sends `retry-after` on a 429, and this is the
+        // route Claude Code talks to — dropping it here is the one place it
+        // would be felt most (docs/11 M11.7).
+        crate::ingress::retry_after_headers(&e),
         Json(json!({
             "type": "error",
             "error": { "type": ty, "message": e.to_string() }
@@ -423,4 +427,37 @@ async fn stream_anthropic(stream: ItemStream, model: String) -> Response {
 
 fn event(name: &str, data: &Value) -> String {
     format!("event: {name}\ndata: {data}\n\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::anthropic_error;
+    use panday_sdk::PandayError;
+
+    #[test]
+    fn a_rate_limit_tells_claude_code_when_to_come_back() {
+        // This is the route Claude Code talks to (ANTHROPIC_BASE_URL), and
+        // Anthropic's own API sends `retry-after` on a 429 — a client that
+        // handles the real API must get the same signal here (docs/11 M11.7).
+        let resp = anthropic_error(PandayError::RateLimited {
+            retry_after_ms: 45_000,
+        });
+        assert_eq!(resp.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::RETRY_AFTER)
+                .map(|v| v.to_str().unwrap()),
+            Some("45")
+        );
+    }
+
+    #[test]
+    fn an_unknown_wait_sends_no_header() {
+        let resp = anthropic_error(PandayError::RateLimited { retry_after_ms: 0 });
+        assert_eq!(resp.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+        assert!(resp
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .is_none());
+    }
 }

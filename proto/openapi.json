@@ -57,7 +57,7 @@
             "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error"
+            "$ref": "#/components/responses/RateLimited"
           },
           "503": {
             "$ref": "#/components/responses/Error"
@@ -115,6 +115,12 @@
           },
           "401": {
             "$ref": "#/components/responses/Error"
+          },
+          "402": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -137,6 +143,9 @@
         "responses": {
           "200": {
             "description": "GenerateContentResponse or SSE."
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -153,6 +162,25 @@
     "responses": {
       "Error": {
         "description": "The standard error envelope, so a client that only understands OpenAI's shape can read our failures too.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limited. Carries `Retry-After` when an upstream stated a wait; the header is absent — never zero — when none did.",
+        "headers": {
+          "Retry-After": {
+            "description": "Delay-seconds (RFC 9110 §10.2.3), rounded up. Absent when no upstream stated a wait: 0 would mean \"retry now\".",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
