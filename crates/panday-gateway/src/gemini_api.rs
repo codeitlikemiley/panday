@@ -159,7 +159,7 @@ pub async fn generate(
     let (mut model, stream) = parse_tail(&tail);
     // Antigravity names Gemini models. If this process has no Gemini adapter
     // (no GEMINI_API_KEY), route with `auto` so Grok/Claude OAuth still serve.
-    if model.starts_with("gemini/") && !state.gateway.providers().iter().any(|p| *p == "gemini") {
+    if model.starts_with("gemini/") && !state.gateway.providers().contains(&"gemini") {
         model = "auto".into();
     }
     let mut ir = req.into_ir(caller.account, model.clone());
