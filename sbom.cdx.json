@@ -55,6 +55,25 @@
     },
     {
       "type": "library",
+      "name": "aead",
+      "version": "0.5.2",
+      "purl": "pkg:cargo/aead@0.5.2",
+      "bom-ref": "aead@0.5.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Traits for Authenticated Encryption with Associated Data (AEAD) algorithms,\nsuch as AES-GCM as ChaCha20Poly1305, which provide a high-level API\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "agent-client-protocol",
       "version": "2.0.0",
       "purl": "pkg:cargo/agent-client-protocol@2.0.0",
@@ -188,6 +207,25 @@
     },
     {
       "type": "library",
+      "name": "any_spawner",
+      "version": "0.3.0",
+      "purl": "pkg:cargo/any_spawner@0.3.0",
+      "bom-ref": "any_spawner@0.3.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Spawn asynchronous tasks in an executor-independent way.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "anyhow",
       "version": "1.0.104",
       "purl": "pkg:cargo/anyhow@1.0.104",
@@ -274,6 +312,25 @@
         }
       ],
       "description": "Async synchronization primitives",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "async-once-cell",
+      "version": "0.5.4",
+      "purl": "pkg:cargo/async-once-cell@0.5.4",
+      "bom-ref": "async-once-cell@0.5.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Async single assignment cells and lazy values.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -397,6 +454,44 @@
     },
     {
       "type": "library",
+      "name": "attribute-derive",
+      "version": "0.10.5",
+      "purl": "pkg:cargo/attribute-derive@0.10.5",
+      "bom-ref": "attribute-derive@0.10.5",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Clap like parsing for attributes in proc-macros",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "attribute-derive-macro",
+      "version": "0.10.5",
+      "purl": "pkg:cargo/attribute-derive-macro@0.10.5",
+      "bom-ref": "attribute-derive-macro@0.10.5",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Clap for proc macro attributes",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "autocfg",
       "version": "1.5.1",
       "purl": "pkg:cargo/autocfg@1.5.1",
@@ -445,6 +540,25 @@
         }
       ],
       "description": "Core types and traits for axum",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "base16",
+      "version": "0.2.1",
+      "purl": "pkg:cargo/base16@0.2.1",
+      "bom-ref": "base16@0.2.1",
+      "licenses": [
+        {
+          "expression": "CC0-1.0"
+        }
+      ],
+      "description": "base16 (hex) encoding and decoding",
       "externalReferences": [
         {
           "type": "distribution",
@@ -644,6 +758,25 @@
     },
     {
       "type": "library",
+      "name": "camino",
+      "version": "1.2.5",
+      "purl": "pkg:cargo/camino@1.2.5",
+      "bom-ref": "camino@1.2.5",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "UTF-8 paths",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "cap-fs-ext",
       "version": "4.0.2",
       "purl": "pkg:cargo/cap-fs-ext@4.0.2",
@@ -777,6 +910,44 @@
     },
     {
       "type": "library",
+      "name": "chacha20",
+      "version": "0.9.1",
+      "purl": "pkg:cargo/chacha20@0.9.1",
+      "bom-ref": "chacha20@0.9.1",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "description": "The ChaCha20 stream cipher (RFC 8439) implemented in pure Rust using traits\nfrom the RustCrypto `cipher` crate, with optional architecture-specific\nhardware acceleration (AVX2, SSE2). Additionally provides the ChaCha8, ChaCha12,\nXChaCha20, XChaCha12 and XChaCha8 stream ciphers, and also optional\nrand_core-compatible RNGs based on those ciphers.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "chacha20poly1305",
+      "version": "0.10.1",
+      "purl": "pkg:cargo/chacha20poly1305@0.10.1",
+      "bom-ref": "chacha20poly1305@0.10.1",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "description": "Pure Rust implementation of the ChaCha20Poly1305 Authenticated Encryption\nwith Additional Data Cipher (RFC 8439) with optional architecture-specific\nhardware acceleration. Also contains implementations of the XChaCha20Poly1305\nextended nonce variant of ChaCha20Poly1305, and the reduced-round\nChaCha8Poly1305 and ChaCha12Poly1305 lightweight variants.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "chrono",
       "version": "0.4.45",
       "purl": "pkg:cargo/chrono@0.4.45",
@@ -787,6 +958,25 @@
         }
       ],
       "description": "Date and time library for Rust",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cipher",
+      "version": "0.4.4",
+      "purl": "pkg:cargo/cipher@0.4.4",
+      "bom-ref": "cipher@0.4.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Traits for describing block ciphers and stream ciphers",
       "externalReferences": [
         {
           "type": "distribution",
@@ -834,6 +1024,44 @@
     },
     {
       "type": "library",
+      "name": "codee",
+      "version": "0.3.5",
+      "purl": "pkg:cargo/codee@0.3.5",
+      "bom-ref": "codee@0.3.5",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Easy and flexible way of encoding and decoding data into either strings or bytes",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "collection_literals",
+      "version": "1.0.3",
+      "purl": "pkg:cargo/collection_literals@1.0.3",
+      "bom-ref": "collection_literals@1.0.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Easy-to-use macros for initializing any collection",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "concurrent-queue",
       "version": "2.5.0",
       "purl": "pkg:cargo/concurrent-queue@2.5.0",
@@ -844,6 +1072,44 @@
         }
       ],
       "description": "Concurrent multi-producer multi-consumer queue",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "config",
+      "version": "0.15.25",
+      "purl": "pkg:cargo/config@0.15.25",
+      "bom-ref": "config@0.15.25",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Layered configuration system for Rust applications.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "console_error_panic_hook",
+      "version": "0.1.7",
+      "purl": "pkg:cargo/console_error_panic_hook@0.1.7",
+      "bom-ref": "console_error_panic_hook@0.1.7",
+      "licenses": [
+        {
+          "expression": "Apache-2.0/MIT"
+        }
+      ],
+      "description": "A panic hook for `wasm32-unknown-unknown` that logs panics to `console.error`",
       "externalReferences": [
         {
           "type": "distribution",
@@ -872,6 +1138,82 @@
     },
     {
       "type": "library",
+      "name": "const-str",
+      "version": "1.1.0",
+      "purl": "pkg:cargo/const-str@1.1.0",
+      "bom-ref": "const-str@1.1.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "compile-time string operations",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "const_format",
+      "version": "0.2.36",
+      "purl": "pkg:cargo/const_format@0.2.36",
+      "bom-ref": "const_format@0.2.36",
+      "licenses": [
+        {
+          "expression": "Zlib"
+        }
+      ],
+      "description": "Compile-time string formatting",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "const_format_proc_macros",
+      "version": "0.2.34",
+      "purl": "pkg:cargo/const_format_proc_macros@0.2.34",
+      "bom-ref": "const_format_proc_macros@0.2.34",
+      "licenses": [
+        {
+          "expression": "Zlib"
+        }
+      ],
+      "description": "Implementation detail of the `const_format` crate",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "const_str_slice_concat",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/const_str_slice_concat@0.1.0",
+      "bom-ref": "const_str_slice_concat@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Utilities for const concatenation of string slices.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "convert_case",
       "version": "0.10.0",
       "purl": "pkg:cargo/convert_case@0.10.0",
@@ -882,6 +1224,63 @@
         }
       ],
       "description": "Convert strings into any case",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "convert_case",
+      "version": "0.11.0",
+      "purl": "pkg:cargo/convert_case@0.11.0",
+      "bom-ref": "convert_case@0.11.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Convert strings into any case",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "convert_case",
+      "version": "0.6.0",
+      "purl": "pkg:cargo/convert_case@0.6.0",
+      "bom-ref": "convert_case@0.6.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Convert strings into any case",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "convert_case_extras",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/convert_case_extras@0.2.0",
+      "bom-ref": "convert_case_extras@0.2.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Extra features for convert_case",
       "externalReferences": [
         {
           "type": "distribution",
@@ -1613,6 +2012,25 @@
     },
     {
       "type": "library",
+      "name": "derive-where",
+      "version": "1.6.1",
+      "purl": "pkg:cargo/derive-where@1.6.1",
+      "bom-ref": "derive-where@1.6.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Deriving with custom trait bounds",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "derive_more",
       "version": "2.1.1",
       "purl": "pkg:cargo/derive_more@2.1.1",
@@ -1765,6 +2183,25 @@
     },
     {
       "type": "library",
+      "name": "drain_filter_polyfill",
+      "version": "0.1.3",
+      "purl": "pkg:cargo/drain_filter_polyfill@0.1.3",
+      "bom-ref": "drain_filter_polyfill@0.1.3",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "current nightly implementation of Vec::drain_filter, copypasted out for use on stable",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "dyn-clone",
       "version": "1.0.20",
       "purl": "pkg:cargo/dyn-clone@1.0.20",
@@ -1841,6 +2278,25 @@
     },
     {
       "type": "library",
+      "name": "either_of",
+      "version": "0.1.9",
+      "purl": "pkg:cargo/either_of@0.1.9",
+      "bom-ref": "either_of@0.1.9",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Utilities for working with enumerated types that contain one of 2..n other types.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "embedded-io",
       "version": "0.4.0",
       "purl": "pkg:cargo/embedded-io@0.4.0",
@@ -1908,6 +2364,25 @@
         }
       ],
       "description": "Traits for key comparison in maps.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "erased",
+      "version": "0.1.2",
+      "purl": "pkg:cargo/erased@0.1.2",
+      "bom-ref": "erased@0.1.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Erase the type of a reference or box, retaining the lifetime.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -2582,6 +3057,63 @@
     },
     {
       "type": "library",
+      "name": "gloo-net",
+      "version": "0.6.0",
+      "purl": "pkg:cargo/gloo-net@0.6.0",
+      "bom-ref": "gloo-net@0.6.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "HTTP requests library for WASM Apps",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "gloo-utils",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/gloo-utils@0.2.0",
+      "bom-ref": "gloo-utils@0.2.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Convenience crate for common `web_sys` features",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "guardian",
+      "version": "1.3.0",
+      "purl": "pkg:cargo/guardian@1.3.0",
+      "bom-ref": "guardian@1.3.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Provides owned mutex guards for refcounted mutexes.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "hashbrown",
       "version": "0.12.3",
       "purl": "pkg:cargo/hashbrown@0.12.3",
@@ -2753,6 +3285,25 @@
     },
     {
       "type": "library",
+      "name": "html-escape",
+      "version": "0.2.15",
+      "purl": "pkg:cargo/html-escape@0.2.15",
+      "bom-ref": "html-escape@0.2.15",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "This library is for encoding/escaping special characters in HTML and decoding/unescaping HTML entities as well.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "http",
       "version": "1.5.0",
       "purl": "pkg:cargo/http@1.5.0",
@@ -2810,6 +3361,25 @@
     },
     {
       "type": "library",
+      "name": "http-range-header",
+      "version": "0.4.2",
+      "purl": "pkg:cargo/http-range-header@0.4.2",
+      "bom-ref": "http-range-header@0.4.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "No-dep range header parser",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "httparse",
       "version": "1.10.1",
       "purl": "pkg:cargo/httparse@1.10.1",
@@ -2858,6 +3428,25 @@
         }
       ],
       "description": "Hybrid typenum-based and const generic array types designed to provide the\nflexibility of typenum-based expressions while also allowing interoperability\nand a transition path to const generics\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hydration_context",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/hydration_context@0.3.1",
+      "bom-ref": "hydration_context@0.3.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Utilities for sharing data between web servers and client-side web applications.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -3209,6 +3798,63 @@
     },
     {
       "type": "library",
+      "name": "inout",
+      "version": "0.1.4",
+      "purl": "pkg:cargo/inout@0.1.4",
+      "bom-ref": "inout@0.1.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Custom reference types for code generic over in-place and buffer-to-buffer modes of operation.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "interpolator",
+      "version": "0.5.0",
+      "purl": "pkg:cargo/interpolator@0.5.0",
+      "bom-ref": "interpolator@0.5.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "runtime format strings, fully compatible with std's macros",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "inventory",
+      "version": "0.3.24",
+      "purl": "pkg:cargo/inventory@0.3.24",
+      "bom-ref": "inventory@0.3.24",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Typed distributed plugin registration",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "io-extras",
       "version": "0.19.0",
       "purl": "pkg:cargo/io-extras@0.19.0",
@@ -3494,6 +4140,44 @@
     },
     {
       "type": "library",
+      "name": "konst",
+      "version": "0.2.20",
+      "purl": "pkg:cargo/konst@0.2.20",
+      "bom-ref": "konst@0.2.20",
+      "licenses": [
+        {
+          "expression": "Zlib"
+        }
+      ],
+      "description": "Const equivalents of std functions, compile-time comparison, and parsing",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "konst_macro_rules",
+      "version": "0.2.19",
+      "purl": "pkg:cargo/konst_macro_rules@0.2.19",
+      "bom-ref": "konst_macro_rules@0.2.19",
+      "licenses": [
+        {
+          "expression": "Zlib"
+        }
+      ],
+      "description": "Implementation detail of the konst crate",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "lazy_static",
       "version": "1.5.0",
       "purl": "pkg:cargo/lazy_static@1.5.0",
@@ -3542,6 +4226,120 @@
         }
       ],
       "description": "A library to encode and decode LEB128 compressed integers.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos",
+      "version": "0.8.20",
+      "purl": "pkg:cargo/leptos@0.8.20",
+      "bom-ref": "leptos@0.8.20",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Leptos is a full-stack, isomorphic Rust web framework leveraging fine-grained reactivity to build declarative user interfaces.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos_config",
+      "version": "0.8.10",
+      "purl": "pkg:cargo/leptos_config@0.8.10",
+      "bom-ref": "leptos_config@0.8.10",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Configuration for the Leptos web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos_dom",
+      "version": "0.8.8",
+      "purl": "pkg:cargo/leptos_dom@0.8.8",
+      "bom-ref": "leptos_dom@0.8.8",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "DOM operations for the Leptos web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos_hot_reload",
+      "version": "0.8.6",
+      "purl": "pkg:cargo/leptos_hot_reload@0.8.6",
+      "bom-ref": "leptos_hot_reload@0.8.6",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Utility types used for dev mode and hot-reloading for the Leptos web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos_macro",
+      "version": "0.8.17",
+      "purl": "pkg:cargo/leptos_macro@0.8.17",
+      "bom-ref": "leptos_macro@0.8.17",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "view macro for the Leptos web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "leptos_server",
+      "version": "0.8.7",
+      "purl": "pkg:cargo/leptos_server@0.8.7",
+      "bom-ref": "leptos_server@0.8.7",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "RPC for the Leptos web framework.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -3741,6 +4539,44 @@
     },
     {
       "type": "library",
+      "name": "manyhow",
+      "version": "0.11.4",
+      "purl": "pkg:cargo/manyhow@0.11.4",
+      "bom-ref": "manyhow@0.11.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "proc macro error handling à la anyhow x proc-macro-error",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "manyhow-macros",
+      "version": "0.11.4",
+      "purl": "pkg:cargo/manyhow-macros@0.11.4",
+      "bom-ref": "manyhow-macros@0.11.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Macro for manyhow",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "matchers",
       "version": "0.2.0",
       "purl": "pkg:cargo/matchers@0.2.0",
@@ -3874,6 +4710,25 @@
     },
     {
       "type": "library",
+      "name": "mime_guess",
+      "version": "2.0.5",
+      "purl": "pkg:cargo/mime_guess@2.0.5",
+      "bom-ref": "mime_guess@2.0.5",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A simple crate for detection of a file's MIME type by its extension.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "miniz_oxide",
       "version": "0.8.9",
       "purl": "pkg:cargo/miniz_oxide@0.8.9",
@@ -3903,6 +4758,25 @@
         }
       ],
       "description": "Lightweight non-blocking I/O.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "next_tuple",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/next_tuple@0.1.0",
+      "bom-ref": "next_tuple@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A trait to build and extend tuples.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4007,6 +4881,25 @@
     },
     {
       "type": "library",
+      "name": "oco_ref",
+      "version": "0.2.1",
+      "purl": "pkg:cargo/oco_ref@0.2.1",
+      "bom-ref": "oco_ref@0.2.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A smart pointer for storing immutable values with relatively-cheap cloning. (Like a `Cow` meets an `Rc`!)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "once_cell",
       "version": "1.21.4",
       "purl": "pkg:cargo/once_cell@1.21.4",
@@ -4017,6 +4910,25 @@
         }
       ],
       "description": "Single assignment cells and lazy values.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "opaque-debug",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/opaque-debug@0.3.1",
+      "bom-ref": "opaque-debug@0.3.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Macro for opaque Debug trait implementation",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4120,6 +5032,25 @@
       ]
     },
     {
+      "type": "library",
+      "name": "or_poisoned",
+      "version": "0.1.0",
+      "purl": "pkg:cargo/or_poisoned@0.1.0",
+      "bom-ref": "or_poisoned@0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Unwrap std lock guards in a semantic way.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
       "type": "application",
       "name": "panday-cli",
       "version": "0.0.1",
@@ -4131,6 +5062,19 @@
         }
       ],
       "description": "The terminal client (ratatui) + ACP server. Spec: docs/16-plugins.md §ACP, ADR-012"
+    },
+    {
+      "type": "application",
+      "name": "panday-console",
+      "version": "0.0.1",
+      "purl": "pkg:cargo/panday-console@0.0.1",
+      "bom-ref": "panday-console@0.0.1",
+      "licenses": [
+        {
+          "expression": "UNLICENSED"
+        }
+      ],
+      "description": "Operator console for panday-gateway. Spec: docs/11 §Operator console."
     },
     {
       "type": "application",
@@ -4347,6 +5291,44 @@
     },
     {
       "type": "library",
+      "name": "paste",
+      "version": "1.0.15",
+      "purl": "pkg:cargo/paste@1.0.15",
+      "bom-ref": "paste@1.0.15",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Macros for all your token pasting needs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pathdiff",
+      "version": "0.2.3",
+      "purl": "pkg:cargo/pathdiff@0.2.3",
+      "bom-ref": "pathdiff@0.2.3",
+      "licenses": [
+        {
+          "expression": "MIT/Apache-2.0"
+        }
+      ],
+      "description": "Library for diffing paths to obtain relative paths",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "percent-encoding",
       "version": "2.3.2",
       "purl": "pkg:cargo/percent-encoding@2.3.2",
@@ -4499,6 +5481,25 @@
     },
     {
       "type": "library",
+      "name": "poly1305",
+      "version": "0.8.0",
+      "purl": "pkg:cargo/poly1305@0.8.0",
+      "bom-ref": "poly1305@0.8.0",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "description": "The Poly1305 universal hash function and message authentication code",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "portable-atomic",
       "version": "1.15.0",
       "purl": "pkg:cargo/portable-atomic@1.15.0",
@@ -4613,6 +5614,82 @@
     },
     {
       "type": "library",
+      "name": "prettyplease",
+      "version": "0.2.37",
+      "purl": "pkg:cargo/prettyplease@0.2.37",
+      "bom-ref": "prettyplease@0.2.37",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "A minimal `syn` syntax tree pretty-printer",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro-error-attr2",
+      "version": "2.0.0",
+      "purl": "pkg:cargo/proc-macro-error-attr2@2.0.0",
+      "bom-ref": "proc-macro-error-attr2@2.0.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Attribute macro for the proc-macro-error2 crate",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro-error2",
+      "version": "2.0.1",
+      "purl": "pkg:cargo/proc-macro-error2@2.0.1",
+      "bom-ref": "proc-macro-error2@2.0.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Almost drop-in replacement to panics in proc-macros",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro-utils",
+      "version": "0.10.0",
+      "purl": "pkg:cargo/proc-macro-utils@0.10.0",
+      "bom-ref": "proc-macro-utils@0.10.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "low-level utilities on proc-macro and proc-macro2 types",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "proc-macro2",
       "version": "1.0.107",
       "purl": "pkg:cargo/proc-macro2@1.0.107",
@@ -4623,6 +5700,25 @@
         }
       ],
       "description": "A substitute implementation of the compiler's `proc_macro` API to decouple token-based libraries from the procedural macro use case.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro2-diagnostics",
+      "version": "0.10.1",
+      "purl": "pkg:cargo/proc-macro2-diagnostics@0.10.1",
+      "bom-ref": "proc-macro2-diagnostics@0.10.1",
+      "licenses": [
+        {
+          "expression": "MIT/Apache-2.0"
+        }
+      ],
+      "description": "Diagnostics for proc-macro2.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4803,6 +5899,44 @@
     },
     {
       "type": "library",
+      "name": "quote-use",
+      "version": "0.8.4",
+      "purl": "pkg:cargo/quote-use@0.8.4",
+      "bom-ref": "quote-use@0.8.4",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Support `use` in procmacros hygienically",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "quote-use-macros",
+      "version": "0.8.4",
+      "purl": "pkg:cargo/quote-use-macros@0.8.4",
+      "bom-ref": "quote-use-macros@0.8.4",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Support `use` in procmacros hygienically",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "r-efi",
       "version": "5.3.0",
       "purl": "pkg:cargo/r-efi@5.3.0",
@@ -4861,6 +5995,25 @@
     {
       "type": "library",
       "name": "rand",
+      "version": "0.8.7",
+      "purl": "pkg:cargo/rand@0.8.7",
+      "bom-ref": "rand@0.8.7",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Random number generators and other randomness functionality.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand",
       "version": "0.9.5",
       "purl": "pkg:cargo/rand@0.9.5",
       "bom-ref": "rand@0.9.5",
@@ -4870,6 +6023,25 @@
         }
       ],
       "description": "Random number generators and other randomness functionality.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_chacha",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/rand_chacha@0.3.1",
+      "bom-ref": "rand_chacha@0.3.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "ChaCha random number generator\n",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4908,6 +6080,25 @@
         }
       ],
       "description": "Core random number generation traits and tools for implementation.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "rand_core",
+      "version": "0.6.4",
+      "purl": "pkg:cargo/rand_core@0.6.4",
+      "bom-ref": "rand_core@0.6.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Core random number generator traits and tools for implementation.\n",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4984,6 +6175,63 @@
         }
       ],
       "description": "Core APIs for Rayon",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "reactive_graph",
+      "version": "0.2.14",
+      "purl": "pkg:cargo/reactive_graph@0.2.14",
+      "bom-ref": "reactive_graph@0.2.14",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A fine-grained reactive graph for building user interfaces.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "reactive_stores",
+      "version": "0.4.3",
+      "purl": "pkg:cargo/reactive_stores@0.4.3",
+      "bom-ref": "reactive_stores@0.4.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Stores for holding deeply-nested reactive state while maintaining fine-grained reactive tracking.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "reactive_stores_macro",
+      "version": "0.4.3",
+      "purl": "pkg:cargo/reactive_stores_macro@0.4.3",
+      "bom-ref": "reactive_stores_macro@0.4.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Stores for holding deeply-nested reactive state while maintaining fine-grained reactive tracking.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -5221,6 +6469,25 @@
     },
     {
       "type": "library",
+      "name": "rstml",
+      "version": "0.12.1",
+      "purl": "pkg:cargo/rstml@0.12.1",
+      "bom-ref": "rstml@0.12.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Rust templating for XML-based formats (HTML, SVG, MathML) implemented on top of proc-macro::TokenStreams",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "rustc-demangle",
       "version": "0.1.28",
       "purl": "pkg:cargo/rustc-demangle@0.1.28",
@@ -5411,6 +6678,25 @@
     },
     {
       "type": "library",
+      "name": "same-file",
+      "version": "1.0.6",
+      "purl": "pkg:cargo/same-file@1.0.6",
+      "bom-ref": "same-file@1.0.6",
+      "licenses": [
+        {
+          "expression": "Unlicense/MIT"
+        }
+      ],
+      "description": "A simple crate for determining whether two file paths point to the same file.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "schemars",
       "version": "0.9.0",
       "purl": "pkg:cargo/schemars@0.9.0",
@@ -5497,6 +6783,25 @@
         }
       ],
       "description": "Parser and evaluator for Cargo's flavor of Semantic Versioning",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "send_wrapper",
+      "version": "0.6.0",
+      "purl": "pkg:cargo/send_wrapper@0.6.0",
+      "bom-ref": "send_wrapper@0.6.0",
+      "licenses": [
+        {
+          "expression": "MIT/Apache-2.0"
+        }
+      ],
+      "description": "This Rust library implements a wrapper type called SendWrapper which allows you to move around non-Send types\nbetween threads, as long as you access the contained value only from within the original thread. You also have to\nmake sure that the wrapper is dropped from within the original thread. If any of these constraints is violated,\na panic occurs.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -5620,6 +6925,25 @@
     },
     {
       "type": "library",
+      "name": "serde_qs",
+      "version": "0.15.0",
+      "purl": "pkg:cargo/serde_qs@0.15.0",
+      "bom-ref": "serde_qs@0.15.0",
+      "licenses": [
+        {
+          "expression": "MIT/Apache-2.0"
+        }
+      ],
+      "description": "Querystrings for Serde",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "serde_spanned",
       "version": "1.1.1",
       "purl": "pkg:cargo/serde_spanned@1.1.1",
@@ -5706,6 +7030,63 @@
         }
       ],
       "description": "YAML data format for Serde",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "server_fn",
+      "version": "0.8.13",
+      "purl": "pkg:cargo/server_fn@0.8.13",
+      "bom-ref": "server_fn@0.8.13",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "RPC for any web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "server_fn_macro",
+      "version": "0.8.10",
+      "purl": "pkg:cargo/server_fn_macro@0.8.10",
+      "bom-ref": "server_fn_macro@0.8.10",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "RPC for any web framework.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "server_fn_macro_default",
+      "version": "0.8.5",
+      "purl": "pkg:cargo/server_fn_macro_default@0.8.5",
+      "bom-ref": "server_fn_macro_default@0.8.5",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "The default implementation of the server_fn macro without a context",
       "externalReferences": [
         {
           "type": "distribution",
@@ -5915,6 +7296,25 @@
         }
       ],
       "description": "Pre-allocated storage for a uniform data type",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "slotmap",
+      "version": "1.1.1",
+      "purl": "pkg:cargo/slotmap@1.1.1",
+      "bom-ref": "slotmap@1.1.1",
+      "licenses": [
+        {
+          "expression": "Zlib"
+        }
+      ],
+      "description": "Slotmap data structure",
       "externalReferences": [
         {
           "type": "distribution",
@@ -6266,6 +7666,25 @@
     },
     {
       "type": "library",
+      "name": "syn_derive",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/syn_derive@0.2.0",
+      "bom-ref": "syn_derive@0.2.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Derive macros for `syn::Parse` and `quote::ToTokens`",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "sync_wrapper",
       "version": "1.0.2",
       "purl": "pkg:cargo/sync_wrapper@1.0.2",
@@ -6295,6 +7714,25 @@
         }
       ],
       "description": "Helper methods and macros for custom derives",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "tachys",
+      "version": "0.2.18",
+      "purl": "pkg:cargo/tachys@0.2.18",
+      "bom-ref": "tachys@0.2.18",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Tools for building reactivity-agnostic, renderer-generic, statically-typed view trees for user interface libraries.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -6485,6 +7923,25 @@
         }
       ],
       "description": "Per-object thread-local storage",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "throw_error",
+      "version": "0.3.1",
+      "purl": "pkg:cargo/throw_error@0.3.1",
+      "bom-ref": "throw_error@0.3.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Utilities for wrapping, throwing, and catching errors.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -7102,6 +8559,44 @@
     },
     {
       "type": "library",
+      "name": "typed-builder",
+      "version": "0.23.2",
+      "purl": "pkg:cargo/typed-builder@0.23.2",
+      "bom-ref": "typed-builder@0.23.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Compile-time type-checked builder derive",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typed-builder-macro",
+      "version": "0.23.2",
+      "purl": "pkg:cargo/typed-builder-macro@0.23.2",
+      "bom-ref": "typed-builder-macro@0.23.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Compile-time type-checked builder derive",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "typenum",
       "version": "1.20.1",
       "purl": "pkg:cargo/typenum@1.20.1",
@@ -7112,6 +8607,25 @@
         }
       ],
       "description": "Typenum is a Rust library for type-level numbers evaluated at\n    compile time. It currently supports bits, unsigned integers, and signed\n    integers. It also provides a type-level array of type-level numbers, but its\n    implementation is incomplete.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unicase",
+      "version": "2.9.0",
+      "purl": "pkg:cargo/unicase@2.9.0",
+      "bom-ref": "unicase@2.9.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "A case-insensitive wrapper around strings.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -7245,6 +8759,25 @@
         }
       ],
       "description": "Determine whether characters have the XID_Start\nor XID_Continue properties according to\nUnicode Standard Annex #31.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "universal-hash",
+      "version": "0.5.1",
+      "purl": "pkg:cargo/universal-hash@0.5.1",
+      "bom-ref": "universal-hash@0.5.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Traits which describe the functionality of universal hash functions (UHFs)",
       "externalReferences": [
         {
           "type": "distribution",
@@ -7397,6 +8930,25 @@
         }
       ],
       "description": "Tiny crate to check the version of the installed/running rustc.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "walkdir",
+      "version": "2.5.0",
+      "purl": "pkg:cargo/walkdir@2.5.0",
+      "bom-ref": "walkdir@2.5.0",
+      "licenses": [
+        {
+          "expression": "Unlicense/MIT"
+        }
+      ],
+      "description": "Recursively walk a directory.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -7625,6 +9177,63 @@
         }
       ],
       "description": "Bridging between web streams and Rust streams using WebAssembly\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm-streams",
+      "version": "0.5.0",
+      "purl": "pkg:cargo/wasm-streams@0.5.0",
+      "bom-ref": "wasm-streams@0.5.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Bridging between web streams and Rust streams using WebAssembly\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm_split_helpers",
+      "version": "0.2.3",
+      "purl": "pkg:cargo/wasm_split_helpers@0.2.3",
+      "bom-ref": "wasm_split_helpers@0.2.3",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Split a WASM module into lazily loadable chunks",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wasm_split_macros",
+      "version": "0.2.2",
+      "purl": "pkg:cargo/wasm_split_macros@0.2.2",
+      "bom-ref": "wasm_split_macros@0.2.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Split a WASM module into lazily loadable chunks",
       "externalReferences": [
         {
           "type": "distribution",
@@ -8844,6 +10453,44 @@
     },
     {
       "type": "library",
+      "name": "xxhash-rust",
+      "version": "0.8.18",
+      "purl": "pkg:cargo/xxhash-rust@0.8.18",
+      "bom-ref": "xxhash-rust@0.8.18",
+      "licenses": [
+        {
+          "expression": "BSL-1.0"
+        }
+      ],
+      "description": "Implementation of xxhash",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "yansi",
+      "version": "1.0.1",
+      "purl": "pkg:cargo/yansi@1.0.1",
+      "bom-ref": "yansi@1.0.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "A dead simple ANSI terminal color painting library.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "yoke",
       "version": "0.8.3",
       "purl": "pkg:cargo/yoke@0.8.3",
@@ -8968,6 +10615,25 @@
         }
       ],
       "description": "Securely clear secrets from memory with a simple trait built on\nstable Rust primitives which guarantee memory is zeroed using an\noperation will not be 'optimized away' by the compiler.\nUses a portable pure Rust implementation that works everywhere,\neven WASM!\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zeroize_derive",
+      "version": "1.5.0",
+      "purl": "pkg:cargo/zeroize_derive@1.5.0",
+      "bom-ref": "zeroize_derive@1.5.0",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "description": "Custom derive support for zeroize",
       "externalReferences": [
         {
           "type": "distribution",
