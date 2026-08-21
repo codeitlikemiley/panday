@@ -71,22 +71,37 @@ session's TCC grants, which made the repository unreadable for hours.
   verify the path, prefer moving to deleting.
 - Commits use `--no-verify` (the pre-commit hook has false positives; the user approved this).
 - A red build is acceptable to hand over on — say so rather than hiding it.
+- **Open PRs as draft; do not mark ready or merge until every CI job is green.** This rule exists
+  because M25.1 went straight onto `main` with failing tests and the fixes had to be pushed to `main`
+  after it. `main` has **no branch protection** (`gh api …/branches/main/protection` → 404), so
+  nothing on GitHub enforces this — the discipline is the only guard. Check the run is on the head
+  SHA, not a stale one; that has bitten this repo before.
+- One milestone per commit. If the work exposes a gap with no milestone number, **add the milestone**
+  to the spec rather than smuggling the work into an unrelated commit (CLAUDE.md §4).
 
 ---
 
 ## 2. Where the project stands
 
-**HEAD:** `32fbbf2` — *M13.2: live unattended fix via Grok CLI OAuth*
+**HEAD (`main`):** `3cfcc4f` — *experiment: rotate Grok logins and provider API keys (#10)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
-**CI:** green on that commit (`ci`, `release`, `deploy`).
+**CI:** green on that commit.
 
-**89 milestones total: 83 shipped ✅, 3 partial, 3 not started.**
+**101 milestones total: 86 shipped ✅, 15 remaining.** Recount it rather than trusting this line —
+`docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
+count too.
 
 | Spec | Shipped |
 |---|---|
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
+| 25-credentials | 3 / 12 shipped (M25.1 vault, M25.2 `panday creds`, M25.4 pooled adapter). M25.9 partial. M25.3 is PR #12; M25.5–M25.12 are the next work. |
+
+**The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
+API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is
+additive — it does not skip training, Stripe, or the hardware-blocked work below. `docs/23` §Operator
+track is the summary; `docs/25` is the spec.
 
 Phases 0–2: numbered milestones complete; Phase 1's *exit* still wants the builder's dogfood
 judgement, Phase 2's *exit* still wants Zed and a real GGUF. Phase 3 complete except Stripe and a
@@ -146,9 +161,33 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight, uncommitted work
+## 3. In-flight — two stacked PRs, neither merged
 
-`git status` is **clean**. Nothing is sitting uncommitted on this tree.
+`git status` on `main` is clean; nothing is sitting uncommitted. But two branches are out for review,
+both **draft on purpose** under the rule in §1.2:
+
+| PR | Branch | Milestone | State |
+|---|---|---|---|
+| [#12](https://github.com/codeitlikemiley/panday/pull/12) | `m25.3-headers` | M25.3 | Draft. All six CI jobs green on head `71b9082`, `mergeStateStatus: CLEAN`. |
+| [#13](https://github.com/codeitlikemiley/panday/pull/13) | `m11.7-retry-after-egress` | M11.7 | Draft, based on `m25.3-headers` — GitHub retargets it to `main` when #12 merges. |
+
+**Merge #12 first**, or #13's diff will read as if it contains M25.3's changes too.
+
+- **#12 / M25.3** — the transport stops dropping response headers. `post_sse` returns
+  `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was
+  hardcoded to 0. Two defects were found and fixed *before* it was pushed, and both are worth knowing
+  because the same shapes will recur: a plain `min()` over a pool treated the 0 sentinel ("no header")
+  as the soonest wait and erased every real one, and filling `retry_after_ms` activated a
+  previously-dead retry arm that slept an unbounded upstream-controlled value outside the timeout
+  layer. `MAX_HONOURED_RETRY_AFTER` (60s) now caps what we will sleep.
+- **#13 / M11.7** — the gateway *tells the client* the wait. Until this, every 429 it ever emitted was
+  a bare status: the value was computed and dropped at the HTTP boundary, and panday's own
+  `RateLimiter` had been discarding its own window remainder the same way. Note for anyone touching
+  error handling: **there are three independent error mappers** — `ingress::error_response`,
+  `messages::anthropic_error`, `gemini_api::gemini_error` — that share no code and have already
+  drifted (`ModelUnavailable` is 503 in the first, 404 in the other two; only the first handles
+  `PermissionDenied`). Fixing one is not fixing the ingress. That status drift is **still open** and
+  wants its own commit.
 
 ---
 
@@ -266,9 +305,18 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 
 ## 6. Suggested next steps, in order
 
-**Nothing on this laptop is code-blocked.** Remaining numbered work needs hardware, a third party,
-training data, or a judgement only the builder can make. Do not invent rates or p95s.
+**This is no longer true: the operator track is laptop-buildable and unfinished.** Everything below
+item 1 still needs hardware, a third party, training data, or a judgement only the builder can make —
+but M25.5 onward needs none of that. Do not invent rates or p95s for the blocked items.
 
+0. **Merge #12, then #13** (§3), then continue the operator track in spec order: **M25.5** sticky
+   `session_id` + per-credential breakers, **M25.6** operator ceiling / local counters / remaining %
+   on `/accounts`, **M25.7** overlay the ratelimit headers M25.3 now keeps onto those counters,
+   **M25.8** `most_remaining` selector, **M25.9** finish vault-as-boot-source, **M25.10** prove Codex
+   import against the OpenAI adapter *or* write the note saying it does not work. M25.11 (hosted
+   Postgres ciphertext) and M25.12 (Keychain-wrapped KEK — needs `keyring`, so §1.2 applies) are
+   skip-unless-asked. There is also an open defect with no milestone: the three error mappers
+   disagree on status codes (§3).
 1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
 2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
