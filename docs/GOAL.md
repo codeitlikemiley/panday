@@ -31,8 +31,8 @@ Message the user with the blocked list rather than filling the gap.
   Antigravity CLI (`agy`) point at `panday-gateway` (`docs/11` §Pointing agents). That is
   not "use OpenCodex as upstream".
 - **Upstream credential pool** is `docs/25`. Not tenant BYOK. Not `pnd_` keys.
-  M25.1 vault and M25.2 `panday creds` are shipped. This experiment wires live
-  pools at gateway boot and `GET /accounts`. Remaining % / funnel / sticky session
+  M25.1 vault and M25.2 `panday creds` are shipped. Live pools at gateway boot
+  and `GET /accounts` ship with this PR. Remaining % / funnel / sticky session
   are later milestones. Do not scrape `claude.ai` / `grok.com` usage UIs.
 - **Env:** `PANDAY_BASE_URL` is an optional OpenAI-compatible *upstream* (llama-server, Together).
   `PANDAY_COMPAT_BASE_URL` is a deprecated alias. Inspect-ai talks *to* panday via
