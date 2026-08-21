@@ -277,19 +277,36 @@ impl ProviderAdapter for PooledAdapter {
         let n = members.len();
         let mut last_retryable: Option<PandayError> = None;
         let mut all_rate_limited = true;
+        let mut soonest_retry_after_ms: Option<u64> = None;
         for i in 0..n {
             let member = &members[(start + i) % n];
             match member.chat(req.clone()).await {
                 Ok(stream) => return Ok(stream),
                 Err(e) if e.is_retryable() => {
-                    all_rate_limited &= matches!(e, PandayError::RateLimited { .. });
+                    if let PandayError::RateLimited {
+                        retry_after_ms: wait,
+                    } = &e
+                    {
+                        // 0 means the upstream sent no `Retry-After`, not "retry
+                        // now" (docs/25 M25.3). A member that did not say must
+                        // not out-vote one that did, so unknowns abstain rather
+                        // than collapsing the minimum to zero.
+                        if *wait > 0 {
+                            soonest_retry_after_ms =
+                                Some(soonest_retry_after_ms.map_or(*wait, |s| s.min(*wait)));
+                        }
+                    } else {
+                        all_rate_limited = false;
+                    }
                     last_retryable = Some(e);
                 }
                 Err(e) => return Err(e),
             }
         }
         if all_rate_limited && last_retryable.is_some() {
-            return Err(PandayError::RateLimited { retry_after_ms: 0 });
+            return Err(PandayError::RateLimited {
+                retry_after_ms: soonest_retry_after_ms.unwrap_or(0),
+            });
         }
         Err(last_retryable.unwrap_or_else(|| PandayError::Provider {
             upstream: self.dialect_name.into(),
@@ -395,7 +412,7 @@ mod tests {
     use super::*;
     use crate::CacheStyle;
     use futures_util::StreamExt;
-    use panday_sdk::providers::transport::{ByteStream, HttpStreamTransport};
+    use panday_sdk::providers::transport::{HttpStreamTransport, SseResponse};
     use panday_types::id::{AccountId, RequestId};
     use panday_types::model::{
         CallMeta, ContentBlock, Message, ModelRef, Role, Sampling, StopReason, StreamItem,
@@ -410,7 +427,7 @@ mod tests {
     }
 
     enum Script {
-        RateLimited,
+        RateLimited(u64),
         BadRequest,
         Retryable,
         Ok(&'static str),
@@ -444,7 +461,9 @@ mod tests {
         async fn chat(&self, _req: ChatRequest) -> Result<ItemStream, PandayError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             match self.script {
-                Script::RateLimited => Err(PandayError::RateLimited { retry_after_ms: 0 }),
+                Script::RateLimited(retry_after_ms) => {
+                    Err(PandayError::RateLimited { retry_after_ms })
+                }
                 Script::BadRequest => Err(PandayError::Provider {
                     upstream: self.name.into(),
                     message: "HTTP 400: bad request".into(),
@@ -513,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn rate_limited_member_walks_to_the_next_key() {
-        let a = Spy::new("openai_compat", Script::RateLimited);
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
         let b = Spy::new("openai_compat", Script::Ok("from-b"));
         let adapter = pool(vec![a.clone(), b.clone()]);
         assert_eq!(adapter.name(), "openai_compat");
@@ -525,14 +544,51 @@ mod tests {
 
     #[tokio::test]
     async fn every_member_429_returns_rate_limited() {
-        let a = Spy::new("openai_compat", Script::RateLimited);
-        let b = Spy::new("openai_compat", Script::RateLimited);
+        let a = Spy::new("openai_compat", Script::RateLimited(8_000));
+        let b = Spy::new("openai_compat", Script::RateLimited(3_000));
         let adapter = pool(vec![a.clone(), b.clone()]);
         let err = drain_text(&adapter).await.expect_err("pool exhausted");
-        assert!(matches!(err, PandayError::RateLimited { .. }));
+        match &err {
+            PandayError::RateLimited { retry_after_ms } => {
+                assert_eq!(*retry_after_ms, 3_000, "the soonest Retry-After wins")
+            }
+            other => panic!("expected RateLimited, got {other}"),
+        }
         assert!(err.is_retryable());
         assert_eq!(a.calls(), 1);
         assert_eq!(b.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_member_that_sent_no_retry_after_does_not_erase_one_that_did() {
+        // 0 is "the upstream sent no header", not a zero-millisecond wait.
+        // Folding it into the minimum would throw away the only real signal.
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
+        let b = Spy::new("openai_compat", Script::RateLimited(60_000));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        let err = drain_text(&adapter).await.expect_err("pool exhausted");
+        match &err {
+            PandayError::RateLimited { retry_after_ms } => assert_eq!(
+                *retry_after_ms, 60_000,
+                "the known wait survives an unknown sibling"
+            ),
+            other => panic!("expected RateLimited, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pool_where_nobody_stated_a_wait_reports_zero() {
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
+        let b = Spy::new("openai_compat", Script::RateLimited(0));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        let err = drain_text(&adapter).await.expect_err("pool exhausted");
+        match &err {
+            PandayError::RateLimited { retry_after_ms } => assert_eq!(
+                *retry_after_ms, 0,
+                "no header anywhere means no wait to report, not an invented one"
+            ),
+            other => panic!("expected RateLimited, got {other}"),
+        }
     }
 
     #[tokio::test]
@@ -602,14 +658,15 @@ mod tests {
             _url: &str,
             _headers: &[(String, String)],
             _body: Vec<u8>,
-        ) -> Result<ByteStream, PandayError> {
+        ) -> Result<SseResponse, PandayError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if let Some(err) = *self.fail.lock().unwrap() {
                 return Err(err());
             }
-            Ok(Box::pin(futures_util::stream::iter(vec![Ok(self
-                .body
-                .clone())])))
+            Ok(SseResponse {
+                headers: Default::default(),
+                body: Box::pin(futures_util::stream::iter(vec![Ok(self.body.clone())])),
+            })
         }
     }
 
@@ -680,7 +737,7 @@ data: [DONE]
 
     #[tokio::test]
     async fn round_robin_still_walks_on_429() {
-        let a = Spy::new("openai_compat", Script::RateLimited);
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
         let b = Spy::new("openai_compat", Script::Ok("from-b"));
         let adapter = pool(vec![a.clone(), b.clone()]);
         adapter.set_rotate(Rotate::RoundRobin);
@@ -691,8 +748,8 @@ data: [DONE]
 
     #[tokio::test]
     async fn three_api_keys_failover_skips_two_429s() {
-        let a = Spy::new("openai_compat", Script::RateLimited);
-        let b = Spy::new("openai_compat", Script::RateLimited);
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
+        let b = Spy::new("openai_compat", Script::RateLimited(0));
         let c = Spy::new("openai_compat", Script::Ok("from-c"));
         let adapter = pool(vec![a.clone(), b.clone(), c.clone()]);
         assert_eq!(drain_text(&adapter).await.unwrap(), "from-c");

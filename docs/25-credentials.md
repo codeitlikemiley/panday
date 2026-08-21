@@ -95,8 +95,7 @@ here — breakers are still `(provider, model)`.
 
 ## Remaining % (two numbers)
 
-**Rate-limit headroom** (minutes): response headers, once the transport stops
-dropping them (M25.3). OpenAI `x-ratelimit-remaining-*`, Anthropic
+**Rate-limit headroom** (minutes): response headers. OpenAI `x-ratelimit-remaining-*`, Anthropic
 `anthropic-ratelimit-*-remaining`, xAI API the OpenAI-shaped set. SuperGrok /
 Claude Max / Codex ChatGPT OAuth do **not** document a remaining-percentage API.
 We do not scrape their UIs.
@@ -147,7 +146,17 @@ A one-credential gateway must keep today's failover behaviour.
   `~/.panday/credentials.sqlite`.)*
 
 - **M25.3** Transport keeps headers. `Retry-After` fills `RateLimited.retry_after_ms`
-  (today it is always 0). Success path exposes ratelimit headers.
+  (today it is always 0). Success path exposes ratelimit headers. ✅ *(shipped:
+  `ResponseHeaders` + `SseResponse` on `HttpStreamTransport::post_sse`. 429
+  `Retry-After` is delay-seconds or IMF-fixdate → `RateLimited.retry_after_ms`;
+  missing stays 0. Success keeps `x-ratelimit-remaining-*` /
+  `anthropic-ratelimit-*-remaining`. A pool or chain of 429s keeps the soonest
+  **stated** wait — 0 means "no header", so a silent member abstains from the
+  minimum instead of collapsing it. The retry middleware honours a stated wait
+  only up to `MAX_HONOURED_RETRY_AFTER` (60s); past that it returns the error
+  with the upstream's number intact rather than parking the caller, because that
+  sleep sits outside the timeout layer. Overlay onto operator remaining % is
+  M25.7.)*
 
 - **M25.4** `PooledAdapter`: inner loop over credentials. Key A 429 → key B 200;
   both 429 → `RateLimited` so the model chain walks; 400 does not walk keys. ✅
