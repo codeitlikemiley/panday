@@ -9,8 +9,10 @@
 
 use crate::{AdapterCaps, CacheStyle, ProviderAdapter};
 use panday_sdk::providers::openai_compat::OpenAiCompatClient;
+use panday_sdk::providers::transport::HttpStreamTransport;
 use panday_sdk::{ItemStream, ModelClient, PandayError};
 use panday_types::model::ChatRequest;
+use std::sync::Arc;
 
 /// One adapter, many bases: Together, Fireworks, Groq, vLLM, llama-server,
 /// mistral.rs. `local` is this adapter pinned to loopback with no auth.
@@ -28,6 +30,17 @@ impl OpenAiCompat {
     /// The `local` tier: loopback llama-server, no auth (docs/11).
     pub fn local(base_url: impl Into<String>) -> Self {
         Self::new(base_url, None)
+    }
+
+    /// Inject a transport — the seam pooled-adapter tests use.
+    pub fn with_transport(
+        base_url: impl Into<String>,
+        api_key: Option<String>,
+        http: Arc<dyn HttpStreamTransport>,
+    ) -> Self {
+        Self {
+            client: OpenAiCompatClient::with_transport(base_url, api_key, http),
+        }
     }
 }
 

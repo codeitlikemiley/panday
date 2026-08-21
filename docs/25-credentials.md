@@ -47,6 +47,31 @@ Import is explicit and read-only against official CLI stores (`~/.grok/auth.json
 Claude Code Keychain, `~/.codex/auth.json`). Never write those files. Never accept
 the secret on argv (`ps` sees argv).
 
+## Multiple Grok sessions are N tokens, not N CLIs
+
+Grok CLI itself keeps one session in `~/.grok/auth.json`. That is the official
+CLI's store, not panday's limit. The proxy can:
+
+1. Parse **every** `https://auth.x.ai::<client_id>` object in one JSON file
+   (two accounts pasted into one `auth.json`).
+2. Read extra files listed in `PANDAY_GROK_AUTH` (colon-separated paths) plus
+   the default `~/.grok/auth.json`. Missing or empty files are skipped.
+3. Hold those access tokens in memory (the sealed vault in `panday_sdk::vault`
+   can already store two `provider=xai` secrets; pick-at-request-time is M25.9).
+4. Rotate: same model `xai/grok-4.6`, credential A 429 → credential B.
+
+`panday-gateway` registers **one** `"xai"` adapter. Zero tokens → no adapter.
+One token → today's single `OpenAiCompat`. Two or more → a `PooledAdapter` that
+walks members in order on the same request. A 400 does not walk keys. If every
+member 429s the pool returns `RateLimited` so the model chain can still fail
+over to Claude.
+
+A second SuperGrok login is a copy of another machine's `auth.json`, not a
+second Grok CLI install. Stale tokens are refreshed in memory when a refresh
+token is present; a failed refresh drops that token at boot and does not write
+the CLI store. This rotation is proven with mocks (`sk-test-aaaa` /
+`access-token-a`). It is **not** live two-account dogfood.
+
 ## How a call is served
 
 ```
@@ -125,6 +150,8 @@ A one-credential gateway must keep today's failover behaviour.
 
 - **M25.4** `PooledAdapter`: inner loop over credentials. Key A 429 → key B 200;
   both 429 → `RateLimited` so the model chain walks; 400 does not walk keys.
+  **Partial (this experiment branch):** xAI OAuth from files only, in-order walk,
+  no vault, no sticky `session_id`. Mock-proven; not live two-account dogfood.
 
 - **M25.5** Per-credential breakers + sticky `session_id`.
 

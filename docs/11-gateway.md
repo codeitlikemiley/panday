@@ -28,7 +28,7 @@ risk + dialect drift belongs to us):
 | Adapter | Dialect | Notes |
 |---|---|---|
 | `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
-| `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`). Model id `xai/grok-4.6`. Not a proxy. |
+| `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`, extra files in `PANDAY_GROK_AUTH`). Model id `xai/grok-4.6`. Not a proxy. Two+ tokens register one `PooledAdapter` as `"xai"` (docs/25). |
 | `openai` | Chat Completions | `OPENAI_API_KEY`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
 | `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY`. Optional `GEMINI_BASE_URL`. Model ids `gemini/gemini-2.5-flash` |
 | `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
@@ -37,9 +37,12 @@ risk + dialect drift belongs to us):
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
 and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A pool of
 several keys or subscriptions is `docs/25-credentials.md` — put them in with `panday creds`
-(stdin or `--from-grok` / `--from-claude` / `--from-codex`). One credential per provider at boot
-is the current gateway wiring; the vault is M25.1, the CLI is M25.2, M25.9 loads the pool.
-A client talking *to* panday ingress must send the full `provider/model` id
+(stdin or `--from-grok` / `--from-claude` / `--from-codex`). `panday-gateway` wraps two or more
+still-fresh (or in-memory-refreshed) Grok tokens in one `PooledAdapter` registered as `"xai"`;
+a single token keeps the historical one-adapter boot. Extra `auth.json` copies are
+`PANDAY_GROK_AUTH` (colon-separated). This is N tokens in files/memory, not N Grok CLI
+installs. Not live two-account dogfood; vault-backed pick-at-request-time is M25.9. A client
+talking *to* panday ingress must send the full `provider/model` id
 (`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router honestly refuse
 `grok-4.6`.
 

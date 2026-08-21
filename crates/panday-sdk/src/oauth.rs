@@ -44,21 +44,47 @@ pub enum OauthError {
     Refresh(String),
 }
 
-/// Grok CLI's xAI OIDC session, if `~/.grok/auth.json` has one.
+/// Grok CLI's xAI OIDC session, if any configured store has one.
+///
+/// First token only — same contract as before this experiment. Every xAI
+/// entry / extra `auth.json` is [`grok_cli_all`].
 pub fn grok_cli() -> Option<Token> {
-    grok_cli_from_path(&grok_auth_path())
+    grok_cli_all().into_iter().next()
 }
 
 pub fn grok_cli_from_path(path: &Path) -> Option<Token> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    grok_cli_from_json(&raw)
+    grok_cli_all_from_path(path).into_iter().next()
 }
 
+/// Every xAI OIDC entry in one Grok CLI `auth.json`.
+pub fn grok_cli_all_from_path(path: &Path) -> Vec<Token> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    grok_cli_all_from_json(&raw)
+}
+
+/// First xAI OIDC entry in `raw`. Old callers that assumed one session.
 pub fn grok_cli_from_json(raw: &str) -> Option<Token> {
-    let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(raw).ok()?;
-    let (key, entry) = map
-        .into_iter()
-        .find(|(k, _)| k.starts_with(XAI_AUTH_KEY_PREFIX))?;
+    grok_cli_all_from_json(raw).into_iter().next()
+}
+
+/// Every `https://auth.x.ai::` object in one JSON document.
+///
+/// One file can hold two SuperGrok accounts pasted side by side. Empty `key`
+/// values are skipped. Map iteration order is what [`grok_cli_from_json`]
+/// used to pick as "first".
+pub fn grok_cli_all_from_json(raw: &str) -> Vec<Token> {
+    let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(raw) else {
+        return Vec::new();
+    };
+    map.into_iter()
+        .filter(|(k, _)| k.starts_with(XAI_AUTH_KEY_PREFIX))
+        .filter_map(|(k, entry)| token_from_xai_entry(&k, &entry))
+        .collect()
+}
+
+fn token_from_xai_entry(key: &str, entry: &serde_json::Value) -> Option<Token> {
     let access = entry.get("key")?.as_str()?.to_string();
     if access.is_empty() {
         return None;
@@ -89,13 +115,51 @@ pub fn grok_cli_from_json(raw: &str) -> Option<Token> {
     })
 }
 
+/// Union of xAI sessions across several `auth.json` files.
+///
+/// Missing or empty files are skipped, not fatal. A second SuperGrok login is
+/// a copy of another machine's file, not a second Grok CLI install. Duplicate
+/// access tokens (same file listed twice) are kept once, first path wins.
+pub fn grok_cli_from_paths<P: AsRef<Path>>(paths: &[P]) -> Vec<Token> {
+    let mut out = Vec::new();
+    for path in paths {
+        for tok in grok_cli_all_from_path(path.as_ref()) {
+            if out.iter().any(|have: &Token| have.access == tok.access) {
+                continue;
+            }
+            out.push(tok);
+        }
+    }
+    out
+}
+
+/// Default `~/.grok/auth.json` plus colon-separated extras in `PANDAY_GROK_AUTH`.
+pub fn grok_cli_all() -> Vec<Token> {
+    grok_cli_from_paths(&grok_auth_paths())
+}
+
 /// Access token for the `xai` adapter, refreshing if the CLI session is stale.
 pub async fn grok_access() -> Option<String> {
-    let tok = grok_cli()?;
-    if tok.still_fresh() {
-        return Some(tok.access);
+    grok_access_all().await.into_iter().next()
+}
+
+/// Every still-usable Grok access token.
+///
+/// Stale tokens are refreshed in memory via the existing xAI OIDC flow; a
+/// failed refresh drops that token rather than writing `auth.json`. There is
+/// no write-back of rotated refresh tokens (same as [`grok_access`]).
+pub async fn grok_access_all() -> Vec<String> {
+    let mut out = Vec::new();
+    for tok in grok_cli_all() {
+        if tok.still_fresh() {
+            out.push(tok.access);
+            continue;
+        }
+        if let Ok(refreshed) = refresh_xai(&tok).await {
+            out.push(refreshed.access);
+        }
     }
-    refresh_xai(&tok).await.ok().map(|t| t.access)
+    out
 }
 
 /// Where the `xai` openai_compat adapter should point.
@@ -234,6 +298,32 @@ fn grok_auth_path() -> PathBuf {
     home_dir().join(".grok").join("auth.json")
 }
 
+fn grok_auth_paths() -> Vec<PathBuf> {
+    grok_auth_paths_from(
+        grok_auth_path(),
+        std::env::var("PANDAY_GROK_AUTH").ok().as_deref(),
+    )
+}
+
+/// `default` first, then colon-separated extras. Duplicate paths are dropped.
+fn grok_auth_paths_from(default: PathBuf, extra: Option<&str>) -> Vec<PathBuf> {
+    let mut paths = vec![default];
+    if let Some(extra) = extra {
+        for raw in extra.split(':') {
+            let raw = raw.trim();
+            if raw.is_empty() {
+                continue;
+            }
+            let path = PathBuf::from(raw);
+            if paths.iter().any(|have| have == &path) {
+                continue;
+            }
+            paths.push(path);
+        }
+    }
+    paths
+}
+
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -325,6 +415,114 @@ mod tests {
     fn grok_cli_json_ignores_unrelated_keys() {
         let raw = r#"{"https://example.com::other":{"key":"nope"}}"#;
         assert!(grok_cli_from_json(raw).is_none());
+        assert!(grok_cli_all_from_json(raw).is_empty());
+    }
+
+    const TWO_GROK_SESSIONS: &str = r#"{
+      "https://example.com::other": { "key": "nope" },
+      "https://auth.x.ai::client-a": {
+        "key": "sk-test-aaaa",
+        "refresh_token": "refresh-a",
+        "expires_at": "2099-01-01T00:00:00Z",
+        "oidc_client_id": "client-a",
+        "email": "a@example.com"
+      },
+      "https://auth.x.ai::client-b": {
+        "key": "sk-test-bbbb",
+        "refresh_token": "refresh-b",
+        "expires_at": "2099-01-01T00:00:00Z",
+        "oidc_client_id": "client-b",
+        "email": "b@example.com"
+      },
+      "https://auth.x.ai::empty": { "key": "" }
+    }"#;
+
+    #[test]
+    fn grok_cli_all_from_json_keeps_every_xai_entry() {
+        let toks = grok_cli_all_from_json(TWO_GROK_SESSIONS);
+        assert_eq!(
+            toks.iter().map(|t| t.access.as_str()).collect::<Vec<_>>(),
+            vec!["sk-test-aaaa", "sk-test-bbbb"]
+        );
+        assert_eq!(toks[0].client_id.as_deref(), Some("client-a"));
+        assert_eq!(toks[1].client_id.as_deref(), Some("client-b"));
+        let first = grok_cli_from_json(TWO_GROK_SESSIONS).expect("first session");
+        assert_eq!(first.access, toks[0].access);
+        assert_eq!(first.access, "sk-test-aaaa");
+    }
+
+    #[test]
+    fn grok_cli_from_paths_unions_files_and_skips_missing_or_empty() {
+        let root =
+            std::env::temp_dir().join(format!("panday-grok-auth-{}-union", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let a = root.join("a.json");
+        let b = root.join("b.json");
+        let missing = root.join("nope.json");
+        let empty = root.join("empty.json");
+        // Same oidc client_id in both files: two machines, one Grok CLI app.
+        std::fs::write(
+            &a,
+            r#"{
+              "https://auth.x.ai::test-client": {
+                "key": "access-token-a",
+                "refresh_token": "refresh-a",
+                "expires_at": "2099-01-01T00:00:00Z",
+                "oidc_client_id": "test-client"
+              }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &b,
+            r#"{
+              "https://auth.x.ai::test-client": {
+                "key": "access-token-b",
+                "refresh_token": "refresh-b",
+                "expires_at": "2099-01-01T00:00:00Z",
+                "oidc_client_id": "test-client"
+              }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(&empty, "   ").unwrap();
+        let toks = grok_cli_from_paths(&[
+            a.as_path(),
+            missing.as_path(),
+            empty.as_path(),
+            b.as_path(),
+            a.as_path(),
+        ]);
+        assert_eq!(
+            toks.iter().map(|t| t.access.as_str()).collect::<Vec<_>>(),
+            vec!["access-token-a", "access-token-b"]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn grok_auth_paths_default_then_colon_separated_extras() {
+        let default = PathBuf::from("/tmp/default-auth.json");
+        let paths = grok_auth_paths_from(
+            default.clone(),
+            Some(" /tmp/second.json : /tmp/third.json : /tmp/default-auth.json : "),
+        );
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/tmp/default-auth.json"),
+                PathBuf::from("/tmp/second.json"),
+                PathBuf::from("/tmp/third.json"),
+            ]
+        );
+        assert_eq!(
+            grok_auth_paths_from(default.clone(), None),
+            vec![default.clone()]
+        );
+        assert_eq!(
+            grok_auth_paths_from(default.clone(), Some("")),
+            vec![default]
+        );
     }
 
     #[test]

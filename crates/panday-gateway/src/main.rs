@@ -62,14 +62,12 @@ async fn main() {
             );
         }
     }
-    if let Some(token) = panday_sdk::oauth::grok_access().await {
-        builder = builder.adapter(
-            "xai",
-            Arc::new(OpenAiCompat::new(
-                panday_sdk::oauth::xai_api_base(),
-                Some(token),
-            )) as Arc<dyn ProviderAdapter>,
-        );
+    // 0 tokens: no xai adapter. 1 token: today's single OpenAiCompat.
+    // 2+: one pooled adapter registered as "xai", walking credentials on 429.
+    if let Some(xai) =
+        panday_gateway::adapters::pool::from_xai_tokens(panday_sdk::oauth::grok_access_all().await)
+    {
+        builder = builder.adapter("xai", xai);
     }
     if let Ok(key) = std::env::var("GEMINI_API_KEY") {
         if !key.trim().is_empty() {
