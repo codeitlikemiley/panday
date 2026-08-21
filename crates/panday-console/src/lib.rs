@@ -91,7 +91,7 @@ mod tests {
         let html = render("/accounts", snap());
         assert!(html.contains("grok-cli-1"), "{html}");
         assert!(html.contains("aaaa"), "{html}");
-        assert!(html.contains("sk-test-aaaa") == false, "{html}");
+        assert!(!html.contains("sk-test-aaaa"), "{html}");
         assert!(html.contains("Import Grok CLI"), "{html}");
         assert!(
             html.contains("round_robin")
