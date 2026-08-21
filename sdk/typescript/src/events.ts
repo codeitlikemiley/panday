@@ -156,8 +156,8 @@ export type Actor =
     };
 
 /**
- * A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-4-5`,
- * `local/qwen3.5-4b`) or the literal `auto` to let the router decide.
+ * A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-5`,
+ * `xai/grok-4.6`) or the literal `auto` to let the router decide.
  */
 export type ModelRef = string;
 
