@@ -29,8 +29,8 @@ Message the user with the blocked list rather than filling the gap.
 - **Env:** `PANDAY_BASE_URL` is an optional OpenAI-compatible *upstream* (llama-server, Together).
   `PANDAY_COMPAT_BASE_URL` is a deprecated alias. Inspect-ai talks *to* panday via
   `PANDAY_GATEWAY_URL`.
-- **Model names** are `provider/model`: `xai/grok-4.6`, `anthropic/claude-sonnet-4-5`. Never
-  `together/xai/…`.
+- **Model names** are `provider/model`: `xai/grok-4.6`, `anthropic/claude-sonnet-5`,
+  `openai/gpt-5.6-sol`. Never `together/xai/…`.
 
 ## Standing rules (handover §1 — non-negotiable)
 

@@ -29,9 +29,9 @@ risk + dialect drift belongs to us):
 |---|---|---|
 | `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
 | `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`). Model id `xai/grok-4.6`. Not a proxy. |
-| `openai` | Chat Completions + Responses | auto prefix caching ≥1024 tokens |
+| `openai` | Chat Completions | `OPENAI_API_KEY`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
 | `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
-| `local` | openai_compat pinned to loopback | the offline tier; no auth |
+| `local` | openai_compat pinned to loopback | the offline tier; no auth. Registered only when that URL answers (default `http://127.0.0.1:8081`, or `PANDAY_LOCAL_BASE_URL`) |
 
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
 and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A client
@@ -85,8 +85,12 @@ Trunk CSR.
 **Architecture.** Leptos 0.8 **islands** on the existing Axum process
 (`panday-console`, ssr in the gateway binary, hydrate WASM in the browser):
 
-- Status, providers, catalog, OAuth flags render as HTML on the server. They
-  work with WASM disabled.
+- Status, providers, OAuth flags, and **callable** models render as HTML on
+  the server. They work with WASM disabled. `GET /models` is the intersection
+  of the shipped catalog and the adapters this process registered — not the
+  whole catalog. Together/local GGUF rows stay in `catalog/default.yaml` for
+  deployments that have those backends; they do not appear here unless that
+  adapter is up (local also requires the loopback server to answer).
 - The playground is an `#[island]`: only that component hydrates. A form POST
   to `/console/try` is the no-WASM fallback.
 - Split/lazy WASM (`cargo leptos --split`, `#[lazy]` islands) is the next

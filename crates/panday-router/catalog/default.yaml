@@ -12,50 +12,67 @@
 #
 # Prices change without warning. This file is a starting point a deployment overrides, not a
 # billing source of truth — the ledger prices from what it was configured with at call time.
+#
+# Together and local rows exist so a deployment that *has* those backends can route to them.
+# The operator console lists a row only when that provider's adapter is registered (and, for
+# local, when something is actually listening).
 version: 1
 
 models:
   # --- frontier -----------------------------------------------------------------------------
-  - id: anthropic/claude-opus-4-1
-    context: 200000
+  - id: anthropic/claude-opus-5
+    context: 1000000
     json: 0.99
     tools: 0.98
     vision: true
     max_subagents: 4
     price:
-      input_per_mtok_micros: 15000000
-      output_per_mtok_micros: 75000000
+      input_per_mtok_micros: 5000000
+      output_per_mtok_micros: 25000000
       cache_read_pct: 10
       cache_write_pct: 125
       cache_write_1h_pct: 200
 
-  - id: openai/gpt-5
-    context: 200000
-    json: 0.98
-    tools: 0.96
+  - id: openai/gpt-5.6-sol
+    context: 1000000
+    json: 0.99
+    tools: 0.98
     vision: true
     max_subagents: 4
     price:
-      input_per_mtok_micros: 1250000
-      output_per_mtok_micros: 10000000
+      input_per_mtok_micros: 5000000
+      output_per_mtok_micros: 30000000
       # Automatic prefix caching: reads are discounted, writes carry no premium (ADR-007).
       cache_read_pct: 10
       cache_write_pct: 100
       cache_write_1h_pct: 100
 
   # --- workhorse ----------------------------------------------------------------------------
-  - id: anthropic/claude-sonnet-4-5
-    context: 200000
+  - id: anthropic/claude-sonnet-5
+    context: 1000000
     json: 0.98
     tools: 0.96
     vision: true
     max_subagents: 3
     price:
-      input_per_mtok_micros: 3000000
-      output_per_mtok_micros: 15000000
+      input_per_mtok_micros: 2000000
+      output_per_mtok_micros: 10000000
       cache_read_pct: 10
       cache_write_pct: 125
       cache_write_1h_pct: 200
+
+  - id: openai/gpt-5.6-terra
+    context: 1000000
+    json: 0.97
+    tools: 0.95
+    vision: true
+    max_subagents: 3
+    price:
+      input_per_mtok_micros: 2000000
+      output_per_mtok_micros: 12000000
+      cache_read_pct: 10
+      cache_write_pct: 100
+      cache_write_1h_pct: 100
 
   # Subscription OAuth (Grok CLI ~/.grok/auth.json) — unpriced until we meter xAI.
   # measured 2026-08-20 — max_context_tokens, json_reliability, tool_reliability
@@ -81,6 +98,19 @@ models:
       output_per_mtok_micros: 800000
 
   # --- cheap --------------------------------------------------------------------------------
+  - id: openai/gpt-5.6-luna
+    context: 1000000
+    json: 0.9
+    tools: 0.88
+    vision: true
+    max_subagents: 2
+    price:
+      input_per_mtok_micros: 200000
+      output_per_mtok_micros: 1200000
+      cache_read_pct: 10
+      cache_write_pct: 100
+      cache_write_1h_pct: 100
+
   - id: together/qwen3.5-9b
     context: 64000
     json: 0.82

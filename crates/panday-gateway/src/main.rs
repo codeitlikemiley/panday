@@ -8,7 +8,9 @@ use panday_gateway::adapters::anthropic::Anthropic;
 use panday_gateway::adapters::openai_compat::OpenAiCompat;
 use panday_gateway::{CollectUsage, Gateway, IngressState, ProviderAdapter};
 use panday_router::PolicyRouter;
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
+use std::time::Duration;
 
 const DEV_POLICY: &str = include_str!("../../panday-router/policy/dev.yaml");
 
@@ -69,6 +71,16 @@ async fn main() {
             )) as Arc<dyn ProviderAdapter>,
         );
     }
+    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+        if !key.trim().is_empty() {
+            let base = std::env::var("OPENAI_BASE_URL")
+                .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+            builder = builder.adapter(
+                "openai",
+                Arc::new(OpenAiCompat::new(base, Some(key))) as Arc<dyn ProviderAdapter>,
+            );
+        }
+    }
     let base = std::env::var("PANDAY_BASE_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -87,11 +99,17 @@ async fn main() {
         );
     }
     let local = std::env::var("PANDAY_LOCAL_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
-    builder = builder.adapter(
-        "local",
-        Arc::new(OpenAiCompat::local(local.clone())) as Arc<dyn ProviderAdapter>,
-    );
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "http://127.0.0.1:8081".to_string());
+    // Do not advertise local GGUFs unless something is actually listening.
+    // A catalog row is not a running llama-server.
+    if endpoint_listening(&local) {
+        builder = builder.adapter(
+            "local",
+            Arc::new(OpenAiCompat::local(local)) as Arc<dyn ProviderAdapter>,
+        );
+    }
 
     let gateway = Arc::new(builder.build());
     println!("panday-gateway providers: {:?}", gateway.providers());
@@ -143,4 +161,32 @@ async fn main() {
         eprintln!("panday-gateway: {e}");
         std::process::exit(1);
     }
+}
+
+/// TCP probe so we do not register `local/` against a catalog row with nothing behind it.
+fn endpoint_listening(base: &str) -> bool {
+    let trimmed = base.trim();
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    let hostport = without_scheme.split('/').next().unwrap_or(without_scheme);
+    let default_port: u16 = if trimmed.starts_with("https://") {
+        443
+    } else {
+        80
+    };
+    let (host, port) = match hostport.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => {
+            (h, p.parse().unwrap_or(default_port))
+        }
+        _ => (hostport, default_port),
+    };
+    let Ok(mut addrs) = (host, port).to_socket_addrs() else {
+        return false;
+    };
+    let Some(addr) = addrs.next() else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }

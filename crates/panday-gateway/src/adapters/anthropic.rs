@@ -69,7 +69,7 @@ mod tests {
     fn advertises_explicit_cache_breakpoints() {
         let a = Anthropic::new("sk-test");
         assert_eq!(a.name(), "anthropic");
-        let caps = a.capabilities("claude-sonnet-4-5");
+        let caps = a.capabilities("claude-sonnet-5");
         assert_eq!(
             caps.cache_style,
             CacheStyle::Explicit,

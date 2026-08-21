@@ -22,7 +22,8 @@ use panday_types::model::ModelRef;
 use panday_types::pricing::{PriceTable, Pricing};
 use serde::{Deserialize, Serialize};
 
-/// One model the deployment can actually call.
+/// One model a policy can name. Whether this process can call it depends on a
+/// registered adapter (and, for `local/`, a server that answers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntry {
     /// `provider/model`, exactly as an adapter expects it.
@@ -396,6 +397,20 @@ models:
     fn the_shipped_catalog_parses_and_covers_the_shipped_policy() {
         let c = ModelCatalog::shipped();
         assert!(!c.is_empty());
+        for id in [
+            "anthropic/claude-opus-5",
+            "anthropic/claude-sonnet-5",
+            "openai/gpt-5.6-sol",
+            "openai/gpt-5.6-terra",
+            "openai/gpt-5.6-luna",
+            "xai/grok-4.6",
+        ] {
+            assert_eq!(c.expand(id).len(), 1, "missing current model {id}");
+        }
+        assert!(
+            c.expand("anthropic/claude-opus-4-1").is_empty(),
+            "retired ids must not linger in the shipped catalog"
+        );
         // Every pool entry in every shipped policy must name at least one real model, or the
         // deployment has a pool that silently routes nowhere.
         for policy_src in [

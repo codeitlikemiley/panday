@@ -124,8 +124,8 @@ fn RecentTable(rows: Vec<CallRow>) -> impl IntoView {
 #[component]
 fn ModelsPage(snapshot: Snapshot) -> impl IntoView {
     view! {
-        <h1>Catalog and pools</h1>
-        <p>"The router expands these. Pin " <code>"xai/grok-4.6"</code> " or send " <code>"auto"</code>"."</p>
+        <h1>Models this process can call</h1>
+        <p>"Intersection of the catalog and the adapters that booted. Together and local GGUFs stay in the catalog for deployments that have them — they do not show up here unless that backend is up."</p>
         <h2>Pools</h2>
         <div class="grid">
             {snapshot
@@ -175,11 +175,13 @@ fn ModelRowView(row: ModelRow) -> impl IntoView {
 
 #[component]
 fn PlaygroundPage(snapshot: Snapshot) -> impl IntoView {
-    let default_model = if snapshot.providers.iter().any(|p| p == "xai") {
-        "xai/grok-4.6"
-    } else {
-        "auto"
-    };
+    let default_model = snapshot
+        .models
+        .iter()
+        .find(|m| m.id.starts_with("xai/"))
+        .or_else(|| snapshot.models.first())
+        .map(|m| m.id.as_str())
+        .unwrap_or("auto");
     view! {
         <h1>Playground</h1>
         <p>"Posts to this process " <code>"/v1/chat/completions"</code> ". Same path curl uses."</p>

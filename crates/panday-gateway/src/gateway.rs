@@ -1015,7 +1015,7 @@ mod tests {
         // Default rule -> workhorse -> the concrete sonnet id.
         assert_eq!(
             anthropic.seen().as_deref(),
-            Some("anthropic/claude-sonnet-4-5")
+            Some("anthropic/claude-sonnet-5")
         );
     }
 
@@ -1069,7 +1069,7 @@ mod tests {
             "the record must be attributable"
         );
         assert_eq!(records[0].provider, "anthropic");
-        assert_eq!(records[0].model.0, "anthropic/claude-sonnet-4-5");
+        assert_eq!(records[0].model.0, "anthropic/claude-sonnet-5");
         assert_eq!(records[0].usage.input_tokens, 1000);
         assert_eq!(records[0].usage.cache_read_tokens, 800);
     }
@@ -1123,7 +1123,7 @@ mod tests {
         let err = g.chat(req("auto")).await.map(|_| ()).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("claude-sonnet-4-5"),
+            msg.contains("claude-sonnet-5"),
             "an operator must be able to see which target was unreachable: {msg}"
         );
     }
@@ -1140,7 +1140,7 @@ mod tests {
         let mut r = req("auto");
         r.metadata.task = Some(TaskClass::Route);
         drain(&g, r).await;
-        // cheap = [together/qwen3.5-9b, local/...]; first callable wins.
+        // cheap = [openai/gpt-5.6-luna, together/qwen3.5-9b, local/...]; first callable wins.
         assert!(
             g.providers().contains(&"together"),
             "sanity: together is registered"

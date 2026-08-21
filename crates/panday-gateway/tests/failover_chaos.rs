@@ -165,8 +165,8 @@ fn gateway(
     workhorse: Arc<FlakyProvider>,
     usage: Arc<CollectUsage>,
 ) -> Gateway {
-    // dev.yaml: code+pro -> frontier (anthropic/claude-opus-4-1) with a
-    // workhorse fallback (anthropic/claude-sonnet-4-5). Both are `anthropic`,
+    // dev.yaml: code+pro -> frontier (anthropic/claude-opus-5) with a
+    // workhorse fallback (anthropic/claude-sonnet-5). Both are `anthropic`,
     // so distinguish them by registering under two provider prefixes and
     // pinning explicitly in the tests that need it.
     Gateway::builder(Arc::new(

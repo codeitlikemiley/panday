@@ -110,8 +110,8 @@ pub trait CostModel: Send + Sync {
 
 /// Prices keyed by the exact `provider/model` id.
 ///
-/// Exact ids only, no prefix matching: `anthropic/claude-opus-4-1` and
-/// `anthropic/claude-sonnet-4-5` differ 5x in price, and a prefix rule that
+/// Exact ids only, no prefix matching: `anthropic/claude-opus-5` and
+/// `anthropic/claude-sonnet-5` differ in price, and a prefix rule that
 /// quietly priced one as the other would be a billing bug that looks like a
 /// rounding error. The model catalog (M12.2) is where these come from
 /// eventually; until then a caller configures what it knows.

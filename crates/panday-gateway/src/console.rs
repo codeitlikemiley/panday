@@ -133,29 +133,19 @@ fn snapshot(state: &ConsoleState) -> Snapshot {
     let grok = panday_sdk::oauth::grok_cli();
     let claude = panday_sdk::oauth::claude_code();
     let catalog = panday_router::ModelCatalog::shipped();
+    let providers: Vec<String> = state
+        .gateway
+        .providers()
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     Snapshot {
         listen: state.listen.clone(),
-        providers: state
-            .gateway
-            .providers()
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
+        providers: providers.clone(),
         grok: cred(grok.as_ref()),
         claude: cred(claude.as_ref()),
-        models: catalog
-            .models
-            .iter()
-            .map(|m| ModelRow {
-                id: m.id.clone(),
-                context: m.profile.context,
-                provenance: match m.profile.provenance {
-                    panday_types::capability::Provenance::Measured => "measured".into(),
-                    panday_types::capability::Provenance::Declared => "declared".into(),
-                },
-            })
-            .collect(),
-        pools: pools_from_dev(),
+        models: callable_models(&catalog, &providers),
+        pools: callable_pools(pools_from_dev(), &providers),
         recent: state
             .usage
             .recent()
@@ -170,6 +160,38 @@ fn snapshot(state: &ConsoleState) -> Snapshot {
             })
             .collect(),
     }
+}
+
+/// The `/models` page lists what this process can call, not the whole shipped catalog.
+fn adapter_up(providers: &[String], id: &str) -> bool {
+    id.split_once('/')
+        .is_some_and(|(p, _)| providers.iter().any(|x| x == p))
+}
+
+fn callable_models(catalog: &panday_router::ModelCatalog, providers: &[String]) -> Vec<ModelRow> {
+    catalog
+        .models
+        .iter()
+        .filter(|m| adapter_up(providers, &m.id))
+        .map(|m| ModelRow {
+            id: m.id.clone(),
+            context: m.profile.context,
+            provenance: match m.profile.provenance {
+                panday_types::capability::Provenance::Measured => "measured".into(),
+                panday_types::capability::Provenance::Declared => "declared".into(),
+            },
+        })
+        .collect()
+}
+
+fn callable_pools(pools: Vec<PoolRow>, providers: &[String]) -> Vec<PoolRow> {
+    pools
+        .into_iter()
+        .filter_map(|mut p| {
+            p.models.retain(|m| adapter_up(providers, m));
+            (!p.models.is_empty()).then_some(p)
+        })
+        .collect()
 }
 
 fn cred(tok: Option<&Token>) -> Cred {
@@ -203,4 +225,58 @@ fn pools_from_dev() -> Vec<PoolRow> {
             Some(PoolRow { name, models })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_models_page_hides_backends_this_process_cannot_call() {
+        let catalog = panday_router::ModelCatalog::shipped();
+        let rows = callable_models(&catalog, &["anthropic".into(), "xai".into()]);
+        let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"anthropic/claude-opus-5"), "{ids:?}");
+        assert!(ids.contains(&"anthropic/claude-sonnet-5"), "{ids:?}");
+        assert!(ids.contains(&"xai/grok-4.6"), "{ids:?}");
+        assert!(
+            !ids.iter().any(|id| id.starts_with("together/")),
+            "together is not registered: {ids:?}"
+        );
+        assert!(
+            !ids.iter().any(|id| id.starts_with("local/")),
+            "local llama-server is not up: {ids:?}"
+        );
+        assert!(
+            !ids.iter().any(|id| id.starts_with("openai/")),
+            "no OpenAI key: {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"anthropic/claude-opus-4-1"),
+            "retired ids must not appear: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn empty_pools_are_dropped_not_shown_as_fiction() {
+        let pools = callable_pools(
+            vec![
+                PoolRow {
+                    name: "workhorse".into(),
+                    models: vec![
+                        "anthropic/claude-sonnet-5".into(),
+                        "together/qwen3.5-32b-instruct".into(),
+                    ],
+                },
+                PoolRow {
+                    name: "local-only".into(),
+                    models: vec!["local/qwen3.5-4b".into()],
+                },
+            ],
+            &["anthropic".into()],
+        );
+        assert_eq!(pools.len(), 1);
+        assert_eq!(pools[0].name, "workhorse");
+        assert_eq!(pools[0].models, ["anthropic/claude-sonnet-5"]);
+    }
 }
