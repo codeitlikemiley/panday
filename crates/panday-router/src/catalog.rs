@@ -405,6 +405,7 @@ models:
             "openai/gpt-5.6-terra",
             "openai/gpt-5.6-luna",
             "xai/grok-4.6",
+            "gemini/gemini-2.5-flash",
         ] {
             assert_eq!(c.expand(id).len(), 1, "missing current model {id}");
         }

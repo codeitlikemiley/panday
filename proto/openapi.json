@@ -104,6 +104,42 @@
           }
         }
       }
+    },
+    "/v1/messages": {
+      "post": {
+        "operationId": "createMessage",
+        "summary": "Anthropic Messages API. Claude Code: ANTHROPIC_BASE_URL=http://127.0.0.1:8088",
+        "responses": {
+          "200": {
+            "description": "A message, or Anthropic SSE when stream is true."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1beta/models": {
+      "get": {
+        "operationId": "listGeminiModels",
+        "summary": "Gemini/Antigravity model list (GOOGLE_GEMINI_BASE_URL).",
+        "responses": {
+          "200": {
+            "description": "models[] with name models/{id}"
+          }
+        }
+      }
+    },
+    "/v1beta/models/{*tail}": {
+      "post": {
+        "operationId": "generateContent",
+        "summary": "Gemini generateContent / streamGenerateContent. Tail is `{model}:generateContent`.",
+        "responses": {
+          "200": {
+            "description": "GenerateContentResponse or SSE."
+          }
+        }
+      }
     }
   },
   "components": {

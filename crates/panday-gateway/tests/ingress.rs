@@ -374,3 +374,66 @@ async fn get_v1_models_lists_what_the_adapter_reported() {
     assert_eq!(v["data"][0]["id"], "local/qwen3.5-4b");
     assert_eq!(v["data"][0]["owned_by"], "local");
 }
+
+async fn post_path(addr: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\n\
+         Host: {addr}\r\n\
+         Content-Type: application/json\r\n\
+         {headers}\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await.unwrap();
+    let text = String::from_utf8_lossy(&raw).to_string();
+    let status: u16 = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+    let body = if text.to_lowercase().contains("transfer-encoding: chunked") {
+        dechunk(&body)
+    } else {
+        body
+    };
+    (status, body)
+}
+
+#[tokio::test]
+async fn anthropic_messages_accepts_x_api_key_and_returns_a_message() {
+    let addr = serve(echo("pong")).await;
+    let (status, body) = post_path(
+        &addr,
+        "/v1/messages",
+        "x-api-key: unused\r\nanthropic-version: 2023-06-01\r\n",
+        r#"{"model":"local/qwen3.5-4b","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let v: serde_json::Value = serde_json::from_str(body.trim()).expect("json");
+    assert_eq!(v["type"], "message");
+    assert_eq!(v["role"], "assistant");
+    assert_eq!(v["content"][0]["text"], "pong");
+    assert_eq!(v["stop_reason"], "end_turn");
+}
+
+#[tokio::test]
+async fn gemini_generate_content_returns_candidates() {
+    let addr = serve(echo("pong")).await;
+    let (status, body) = post_path(
+        &addr,
+        "/v1beta/models/local/qwen3.5-4b:generateContent",
+        "x-goog-api-key: unused\r\n",
+        r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#,
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let v: serde_json::Value = serde_json::from_str(body.trim()).expect("json");
+    assert_eq!(v["candidates"][0]["content"]["parts"][0]["text"], "pong");
+    assert_eq!(v["candidates"][0]["finishReason"], "STOP");
+}

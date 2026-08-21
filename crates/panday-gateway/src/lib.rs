@@ -9,7 +9,9 @@ pub mod cache;
 pub mod circuit;
 pub mod console;
 pub mod gateway;
+pub mod gemini_api;
 pub mod ingress;
+pub mod messages;
 pub mod openapi;
 
 pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};

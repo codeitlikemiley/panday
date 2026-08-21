@@ -103,6 +103,13 @@ models:
     max_subagents: 3
     provenance: measured
 
+  - id: gemini/gemini-2.5-flash
+    context: 1000000
+    json: 0.95
+    tools: 0.9
+    vision: true
+    max_subagents: 3
+
   - id: together/qwen3.5-32b-instruct
     context: 128000
     json: 0.9

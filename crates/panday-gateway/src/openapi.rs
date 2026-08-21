@@ -17,6 +17,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("post", "/v1/chat/completions", "createChatCompletion"),
     ("get", "/metrics", "getMetrics"),
     ("get", "/v1/models", "listModels"),
+    ("post", "/v1/messages", "createMessage"),
+    ("get", "/v1beta/models", "listGeminiModels"),
+    ("post", "/v1beta/models/{*tail}", "generateContent"),
 ];
 
 /// The OpenAPI 3.1 document.
@@ -85,6 +88,30 @@ pub fn document() -> Value {
                         },
                         "401": { "$ref": "#/components/responses/Error" },
                     },
+                },
+            },
+            "/v1/messages": {
+                "post": {
+                    "operationId": "createMessage",
+                    "summary": "Anthropic Messages API. Claude Code: ANTHROPIC_BASE_URL=http://127.0.0.1:8088",
+                    "responses": {
+                        "200": { "description": "A message, or Anthropic SSE when stream is true." },
+                        "401": { "$ref": "#/components/responses/Error" },
+                    },
+                },
+            },
+            "/v1beta/models": {
+                "get": {
+                    "operationId": "listGeminiModels",
+                    "summary": "Gemini/Antigravity model list (GOOGLE_GEMINI_BASE_URL).",
+                    "responses": { "200": { "description": "models[] with name models/{id}" } },
+                },
+            },
+            "/v1beta/models/{*tail}": {
+                "post": {
+                    "operationId": "generateContent",
+                    "summary": "Gemini generateContent / streamGenerateContent. Tail is `{model}:generateContent`.",
+                    "responses": { "200": { "description": "GenerateContentResponse or SSE." } },
                 },
             },
         },

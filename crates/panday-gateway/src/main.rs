@@ -71,6 +71,17 @@ async fn main() {
             )) as Arc<dyn ProviderAdapter>,
         );
     }
+    if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+        if !key.trim().is_empty() {
+            let base = std::env::var("GEMINI_BASE_URL").unwrap_or_else(|_| {
+                "https://generativelanguage.googleapis.com/v1beta/openai".to_string()
+            });
+            builder = builder.adapter(
+                "gemini",
+                Arc::new(OpenAiCompat::new(base, Some(key))) as Arc<dyn ProviderAdapter>,
+            );
+        }
+    }
     if let Ok(key) = std::env::var("OPENAI_API_KEY") {
         if !key.trim().is_empty() {
             let base = std::env::var("OPENAI_BASE_URL")
@@ -156,6 +167,8 @@ async fn main() {
     };
     println!("panday-gateway listening on {addr}");
     println!("  POST /v1/chat/completions");
+    println!("  POST /v1/messages");
+    println!("  POST /v1beta/models/{{model}}:generateContent");
     println!("  GET  /                  operator console");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("panday-gateway: {e}");

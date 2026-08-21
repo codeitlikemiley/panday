@@ -78,6 +78,13 @@ pub struct CacheControl {
     pub ttl: Option<&'static str>,
 }
 
+fn omits_temperature(model: &str) -> bool {
+    model.starts_with("claude-opus-5")
+        || model.starts_with("claude-sonnet-5")
+        || model.starts_with("claude-fable-")
+        || model.starts_with("claude-mythos-")
+}
+
 impl CacheControl {
     fn new(extended: bool) -> Self {
         Self {
@@ -166,6 +173,11 @@ impl WireRequest {
             })
             .collect();
 
+        let temperature = if omits_temperature(&model) {
+            None
+        } else {
+            req.sampling.temperature
+        };
         let mut out = WireRequest {
             model,
             max_tokens: req.sampling.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
@@ -181,7 +193,7 @@ impl WireRequest {
                 })
                 .collect(),
             stream: true,
-            temperature: req.sampling.temperature,
+            temperature,
             top_p: req.sampling.top_p,
             stop_sequences: req.sampling.stop.clone(),
         };

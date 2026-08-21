@@ -319,7 +319,26 @@ pub fn router(state: IngressState) -> Router {
         .route(crate::openapi::ROUTES[0].1, post(chat_completions))
         .route(crate::openapi::ROUTES[1].1, get(metrics_endpoint))
         .route(crate::openapi::ROUTES[2].1, get(list_models))
+        .route(crate::openapi::ROUTES[3].1, post(crate::messages::create))
+        .route(
+            crate::openapi::ROUTES[4].1,
+            get(crate::gemini_api::list_models),
+        )
+        .route(
+            crate::openapi::ROUTES[5].1,
+            post(crate::gemini_api::generate),
+        )
         .with_state(state)
+}
+
+/// Bare names from Claude Code / Antigravity become `provider/model`.
+pub(crate) fn qualify_model(raw: &str, default_provider: &str) -> String {
+    let raw = raw.trim().trim_start_matches("models/");
+    if raw.is_empty() || raw == "auto" || raw.contains('/') {
+        raw.to_string()
+    } else {
+        format!("{default_provider}/{raw}")
+    }
 }
 
 /// `GET /v1/models` — what the signed-in providers actually list, not the YAML catalog.
@@ -364,7 +383,7 @@ async fn metrics_endpoint() -> Response {
 /// One 401 for every failure — missing, malformed, unknown, revoked. The caller learns nothing from
 /// the distinction that they could not learn by trying, and telling them "revoked" confirms the key
 /// was once real, which is a fact worth having if you found it in a log.
-async fn authenticate(
+pub(crate) async fn authenticate(
     state: &IngressState,
     headers: &axum::http::HeaderMap,
 ) -> Result<Caller, Response> {
@@ -372,8 +391,23 @@ async fn authenticate(
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or("")
-        .trim();
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            headers
+                .get("x-api-key")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| {
+            headers
+                .get("x-goog-api-key")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("");
 
     match state.auth.authenticate(bearer).await {
         Ok(caller) => {
@@ -402,7 +436,7 @@ fn unauthorized(message: &str) -> Response {
 }
 
 /// Map an IR error onto the status code a standard client expects.
-fn error_response(e: PandayError) -> Response {
+pub(crate) fn error_response(e: PandayError) -> Response {
     use axum::http::StatusCode;
     let status = match &e {
         PandayError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
@@ -575,4 +609,31 @@ async fn stream_sse(stream: panday_sdk::ItemStream, model: String) -> Response {
 
 fn sse(value: &serde_json::Value) -> String {
     format!("data: {value}\n\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::qualify_model;
+
+    #[test]
+    fn bare_claude_ids_become_anthropic() {
+        assert_eq!(
+            qualify_model("claude-sonnet-5", "anthropic"),
+            "anthropic/claude-sonnet-5"
+        );
+    }
+
+    #[test]
+    fn already_qualified_ids_are_left_alone() {
+        assert_eq!(qualify_model("xai/grok-4.6", "anthropic"), "xai/grok-4.6");
+        assert_eq!(qualify_model("auto", "anthropic"), "auto");
+    }
+
+    #[test]
+    fn gemini_models_prefix_is_stripped() {
+        assert_eq!(
+            qualify_model("models/gemini-2.5-flash", "gemini"),
+            "gemini/gemini-2.5-flash"
+        );
+    }
 }

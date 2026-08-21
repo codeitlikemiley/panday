@@ -44,6 +44,22 @@ cargo build --release
 ./target/release/panday replay .panday/session.jsonl --costs
 ```
 
+**Point an agent at the local gateway** (`docs/11` §Pointing agents). After
+`panday-gateway` is listening (this laptop: `127.0.0.1:8088`):
+
+```bash
+# OpenAI-shaped clients (Grok Build custom model, Codex, curl, Python SDK)
+curl -sS http://127.0.0.1:8088/v1/chat/completions \
+  -H 'Authorization: Bearer unused' -H 'Content-Type: application/json' \
+  -d '{"model":"xai/grok-4.6","messages":[{"role":"user","content":"pong"}],"max_tokens":64}'
+
+# Claude Code — Anthropic Messages, not Chat Completions
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8088 ANTHROPIC_API_KEY=unused
+
+# Antigravity CLI (`agy`) — Gemini generateContent, not Gemini CLI
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088 GEMINI_API_KEY=unused
+```
+
 **The hosted shape, on a laptop.** `just dev` brings up Postgres and MinIO, migrates,
 and prints an API key with the `curl` that uses it — accounts, per-key rate limiting,
 the ledger and the route audit all wired (`docs/22-deployment.md`).

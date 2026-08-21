@@ -115,8 +115,11 @@ POST   /v1/sessions                     create (returns session + ws url)
 GET    /v1/sessions/:id/events?after_seq=  replay/tail
 POST   /v1/sessions/:id/messages        send user message (non-ws clients)
 POST   /v1/sessions/:id/fork            branch from seq
-GET    /v1/models                       what the router will admit for this key
+GET    /v1/models                       what the signed-in providers list (OpenAI shape)
 POST   /v1/chat/completions             OpenAI-compatible passthrough (gateway)
+POST   /v1/messages                     Anthropic Messages (Claude Code)
+GET    /v1beta/models                   Gemini/Antigravity model list
+POST   /v1beta/models/{model}:generateContent  Gemini generateContent
 GET    /v1/usage                        ledger view for the caller
 POST   /v1/keys · GET /v1/keys · DELETE /v1/keys/:id
 ```

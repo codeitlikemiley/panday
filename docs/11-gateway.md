@@ -30,6 +30,7 @@ risk + dialect drift belongs to us):
 | `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
 | `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`). Model id `xai/grok-4.6`. Not a proxy. |
 | `openai` | Chat Completions | `OPENAI_API_KEY`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
+| `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY`. Optional `GEMINI_BASE_URL`. Model ids `gemini/gemini-2.5-flash` |
 | `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
 | `local` | openai_compat pinned to loopback | the offline tier; no auth. Registered only when that URL answers (default `http://127.0.0.1:8081`, or `PANDAY_LOCAL_BASE_URL`) |
 
@@ -104,12 +105,93 @@ Trunk CSR.
 **Never shown:** access tokens, refresh tokens, raw prompts in the recent-call
 list. OAuth is a boolean plus expiry class.
 
-## Also serves: OpenAI-compatible ingress
+## Also serves: OpenAI-, Anthropic-, and Gemini-compatible ingress
 
-`POST /v1/chat/completions` accepting the standard dialect, mapped to IR.
-Any existing tool (aider, continue.dev, curl scripts) can point at panday
-with an API key and inherit routing/metering/caching. This is the platform's
-cheapest adoption wedge and its best A/B harness (compare us vs direct).
+Three inbound dialects, one IR, one router:
+
+| Dialect | Path | Who points here |
+|---|---|---|
+| OpenAI Chat Completions | `POST /v1/chat/completions` | Grok Build custom model, Codex, Aider, OpenAI SDK |
+| Anthropic Messages | `POST /v1/messages` | Claude Code (`ANTHROPIC_BASE_URL`) |
+| Gemini generateContent | `POST /v1beta/models/{model}:generateContent` | Antigravity CLI (`GOOGLE_GEMINI_BASE_URL`) — not Gemini CLI |
+
+`GET /v1/models` is OpenAI-shaped. `GET /v1beta/models` is Gemini-shaped. Both list what the signed-in providers actually return.
+
+A client talking *to* panday must send a model the router can place: `provider/model` (`xai/grok-4.6`), or a bare Claude/Gemini id which is qualified (`claude-sonnet-5` → `anthropic/claude-sonnet-5`). `auto` lets policy pick.
+
+The solo gateway on a laptop has no auth: any bearer / `x-api-key` / `x-goog-api-key` is accepted.
+
+### Pointing agents at a running gateway
+
+Listen is `PANDAY_GATEWAY_ADDR` (this laptop: `127.0.0.1:8088`). Subscription OAuth is read from Grok CLI and Claude Code at boot; `GEMINI_API_KEY` registers the Gemini outbound adapter.
+
+**Curl (OpenAI):**
+
+```bash
+curl -sS http://127.0.0.1:8088/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer unused' \
+  -d '{"model":"xai/grok-4.6","messages":[{"role":"user","content":"reply with the single word pong"}],"max_tokens":64}'
+```
+
+Do not send `temperature` to Claude 5 / Fable 5 — those models reject it. Omit the field.
+
+**Curl (Anthropic Messages — what Claude Code sends):**
+
+```bash
+curl -sS http://127.0.0.1:8088/v1/messages \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: unused' \
+  -H 'anthropic-version: 2023-06-01' \
+  -d '{"model":"claude-sonnet-5","max_tokens":64,"messages":[{"role":"user","content":"reply with the single word pong"}]}'
+```
+
+**Claude Code:**
+
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8088
+export ANTHROPIC_API_KEY=unused
+# optional: ANTHROPIC_MODEL=claude-sonnet-5
+# do not append /v1 — Claude Code adds /v1/messages
+```
+
+**Grok Build** — add *outside* the OpenCodex managed block in `~/.grok/config.toml`:
+
+```toml
+[model.panday]
+model = "xai/grok-4.6"
+base_url = "http://127.0.0.1:8088/v1"
+api_backend = "chat_completions"
+api_key = "unused"
+name = "panday grok-4.6"
+```
+
+Then `/model panday`.
+
+**Antigravity CLI (`agy`)** — Gemini-compatible, not OpenAI:
+
+```bash
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088
+export GEMINI_API_KEY=unused
+```
+
+It posts to `/v1beta/models/{model}:generateContent`. Bare ids become `gemini/…`. A qualified id (`xai/grok-4.6`) is kept, so Antigravity can call whatever this gateway has adapters for.
+
+**Playground:** `GET http://127.0.0.1:8088/playground` — same Chat Completions path as curl.
+
+**Python OpenAI SDK:**
+
+```python
+from openai import OpenAI
+c = OpenAI(base_url="http://127.0.0.1:8088/v1", api_key="unused")
+print(c.chat.completions.create(
+    model="xai/grok-4.6",
+    messages=[{"role":"user","content":"pong?"}],
+    max_tokens=64,
+).choices[0].message.content)
+```
+
+Outbound Gemini (this process *calling* Google) is `GEMINI_API_KEY` plus optional `GEMINI_BASE_URL` (default `https://generativelanguage.googleapis.com/v1beta/openai`). That is independent of Antigravity pointing *at* us.
 
 ## Non-goals
 
