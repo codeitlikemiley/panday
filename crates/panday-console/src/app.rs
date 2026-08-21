@@ -1,4 +1,4 @@
-use crate::snapshot::{CallRow, Cred, ModelRow, PoolRow, Snapshot};
+use crate::snapshot::{AccountRow, CallRow, Cred, ModelRow, PoolRow, Snapshot};
 use leptos::prelude::*;
 
 #[component]
@@ -9,6 +9,7 @@ pub fn App(path: String, snapshot: Snapshot) -> impl IntoView {
                 <a class="mark" href="/">panday</a>
                 <nav>
                     <a href="/" class=active(&path, "/")>console</a>
+                    <a href="/accounts" class=active(&path, "/accounts")>accounts</a>
                     <a href="/models" class=active(&path, "/models")>models</a>
                     <a href="/playground" class=active(&path, "/playground")>playground</a>
                     <a href="/metrics">metrics</a>
@@ -19,6 +20,7 @@ pub fn App(path: String, snapshot: Snapshot) -> impl IntoView {
                 {match path.as_str() {
                     "/models" => view! { <ModelsPage snapshot=snapshot /> }.into_any(),
                     "/playground" => view! { <PlaygroundPage snapshot=snapshot /> }.into_any(),
+                    "/accounts" => view! { <AccountsPage snapshot=snapshot /> }.into_any(),
                     _ => view! { <OverviewPage snapshot=snapshot /> }.into_any(),
                 }}
             </main>
@@ -45,6 +47,7 @@ fn OverviewPage(snapshot: Snapshot) -> impl IntoView {
             <CredCard name="Grok CLI" id="xai/grok-4.6" cred=snapshot.grok />
             <CredCard name="Claude Code" id="anthropic/*" cred=snapshot.claude />
         </div>
+        <p><a href="/accounts">"Manage Grok logins and API keys (" {snapshot.accounts.len()} " loaded, rotate=" {snapshot.rotate.clone()} ")"</a></p>
         <h2>Adapters up</h2>
         <ul class="chips">
             {snapshot.providers.into_iter().map(|p| view! { <li>{p}</li> }).collect_view()}
@@ -111,6 +114,118 @@ fn RecentTable(rows: Vec<CallRow>) -> impl IntoView {
                                 <td class="num">{r.input_tokens}</td>
                                 <td class="num">{r.output_tokens}</td>
                                 <td class="num">{r.cache_read_tokens}</td>
+                            </tr>
+                        }
+                    })
+                    .collect_view()}
+            </tbody>
+        </table>
+    }
+    .into_any()
+}
+
+#[component]
+fn AccountsPage(snapshot: Snapshot) -> impl IntoView {
+    let rotate = snapshot.rotate.clone();
+    let failover_selected = rotate == "failover";
+    let rr_selected = rotate == "round_robin";
+    view! {
+        <h1>Accounts</h1>
+        <p>"Outbound credentials this gateway spends. Grok logins and provider API keys. The secret is never shown — only the last four characters. Rotation is per request; a 429 walks to the next key."</p>
+
+        <h2>How to rotate</h2>
+        <form class="play" method="post" action="/console/accounts/rotate">
+            <label>
+                "policy"
+                <select name="policy">
+                    <option value="failover" selected=failover_selected>"failover — always try the first key, then the next on 429"</option>
+                    <option value="round_robin" selected=rr_selected>"round-robin — spread requests, still walk on 429"</option>
+                </select>
+            </label>
+            <button type="submit">save rotation</button>
+        </form>
+        <p class="kicker">"current: " {rotate} " (or env PANDAY_ROTATE)"</p>
+
+        <h2>Loaded</h2>
+        <AccountTable rows=snapshot.accounts />
+
+        <h2>Import Grok CLI</h2>
+        <p>"Copies every xAI session in ~/.grok/auth.json (and PANDAY_GROK_AUTH files) into this process. Does not write those files. Add a second SuperGrok by pasting that machine's auth.json below."</p>
+        <form class="play" method="post" action="/console/accounts/import-grok">
+            <button type="submit">Import Grok CLI</button>
+        </form>
+
+        <h2>Paste a Grok auth.json</h2>
+        <form class="play" method="post" action="/console/accounts/paste-grok">
+            <label>
+                "label"
+                <input type="text" name="label" placeholder="laptop-2" />
+            </label>
+            <label>
+                "auth.json"
+                <textarea name="json" placeholder="{ \"https://auth.x.ai::…\": { \"key\": \"…\" } }"></textarea>
+            </label>
+            <button type="submit">add Grok session</button>
+        </form>
+
+        <h2>API key</h2>
+        <p>"OpenAI, xAI (Grok API key, not OAuth), Anthropic, Gemini. Paste several at boot via PANDAY_OPENAI_API_KEYS (comma-separated) or add them here."</p>
+        <form class="play" method="post" action="/console/accounts/api">
+            <label>
+                "provider"
+                <select name="provider">
+                    <option value="openai">openai</option>
+                    <option value="xai">xai</option>
+                    <option value="anthropic">anthropic</option>
+                    <option value="gemini">gemini</option>
+                </select>
+            </label>
+            <label>
+                "label"
+                <input type="text" name="label" placeholder="free-tier" />
+            </label>
+            <label>
+                "API key"
+                <input type="password" name="key" autocomplete="off" />
+            </label>
+            <button type="submit">add API key</button>
+        </form>
+    }
+}
+
+#[component]
+fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
+    if rows.is_empty() {
+        return view! { <p class="empty">"No outbound credentials yet. Import Grok CLI or add an API key."</p> }
+            .into_any();
+    }
+    view! {
+        <table>
+            <thead>
+                <tr>
+                    <th>provider</th>
+                    <th>kind</th>
+                    <th>label</th>
+                    <th>last4</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows
+                    .into_iter()
+                    .map(|r| {
+                        view! {
+                            <tr>
+                                <td class="mono">{r.provider}</td>
+                                <td>{r.kind}</td>
+                                <td>{r.label}</td>
+                                <td class="mono">{"…"}{r.last4}</td>
+                                <td>
+                                    <form method="post" action="/console/accounts/revoke">
+                                        <input type="hidden" name="id" value=r.id />
+                                        <button type="submit">revoke</button>
+                                    </form>
+                                </td>
                             </tr>
                         }
                     })

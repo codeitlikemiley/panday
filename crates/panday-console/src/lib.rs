@@ -59,6 +59,14 @@ mod tests {
                 present: false,
                 fresh: false,
             },
+            accounts: vec![AccountRow {
+                id: "00000000-0000-4000-8000-000000000001".into(),
+                provider: "xai".into(),
+                kind: "oauth".into(),
+                label: "grok-cli-1".into(),
+                last4: "aaaa".into(),
+            }],
+            rotate: "failover".into(),
             models: vec![ModelRow {
                 id: "xai/grok-4.6".into(),
                 context: 64528,
@@ -75,5 +83,25 @@ mod tests {
         assert!(html.contains("xai/grok-4.6"), "{html}");
         assert!(html.contains("signed in"), "{html}");
         assert!(html.contains("/console/forge.css"));
+        assert!(html.contains("/accounts"), "{html}");
+    }
+
+    #[test]
+    fn accounts_page_lists_last4_and_not_a_secret() {
+        let html = render("/accounts", snap());
+        assert!(html.contains("grok-cli-1"), "{html}");
+        assert!(html.contains("aaaa"), "{html}");
+        assert!(!html.contains("sk-test-aaaa"), "{html}");
+        assert!(html.contains("Import Grok CLI"), "{html}");
+        assert!(
+            html.contains("round_robin")
+                || html.contains("round-robin")
+                || html.contains("Round-robin"),
+            "{html}"
+        );
+        assert!(
+            html.contains("ANTHROPIC") || html.contains("anthropic") || html.contains("API key"),
+            "{html}"
+        );
     }
 }

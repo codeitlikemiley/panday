@@ -27,19 +27,23 @@ risk + dialect drift belongs to us):
 
 | Adapter | Dialect | Notes |
 |---|---|---|
-| `anthropic` | Messages API | cache breakpoints, 1h TTL option, tool use. `ANTHROPIC_API_KEY`, or Claude Code subscription OAuth (`Authorization: Bearer` + `anthropic-beta: claude-code-20250219,oauth-2025-04-20`) |
-| `xai` | openai_compat → `https://api.x.ai` | Grok CLI subscription OAuth (`~/.grok/auth.json`). Model id `xai/grok-4.6`. Not a proxy. |
-| `openai` | Chat Completions | `OPENAI_API_KEY`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
-| `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY`. Optional `GEMINI_BASE_URL`. Model ids `gemini/gemini-2.5-flash` |
+| `anthropic` | Messages API | `ANTHROPIC_API_KEY` and/or `PANDAY_ANTHROPIC_API_KEYS` (comma-separated), plus Claude Code OAuth. Rotated in one pool (docs/25). |
+| `xai` | openai_compat → `https://api.x.ai` | Grok CLI OAuth (`~/.grok/auth.json`, `PANDAY_GROK_AUTH`) and/or `XAI_API_KEY` / `PANDAY_XAI_API_KEYS`. Console: `GET /accounts`. |
+| `openai` | Chat Completions | `OPENAI_API_KEY` and/or `PANDAY_OPENAI_API_KEYS`. Models `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` |
+| `gemini` | openai_compat → Google OpenAI layer | `GEMINI_API_KEY` and/or `PANDAY_GEMINI_API_KEYS`. Optional `GEMINI_BASE_URL`. |
 | `openai_compat` | Chat Completions | Together/Fireworks/Groq/vLLM/llama-server/mistral.rs — one adapter, many bases. Optional upstream via `PANDAY_BASE_URL` (alias `PANDAY_COMPAT_BASE_URL`) registers as `together/` |
 | `local` | openai_compat pinned to loopback | the offline tier; no auth. Registered only when that URL answers (default `http://127.0.0.1:8081`, or `PANDAY_LOCAL_BASE_URL`) |
 
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
 and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A pool of
 several keys or subscriptions is `docs/25-credentials.md` — put them in with `panday creds`
-(stdin or `--from-grok` / `--from-claude` / `--from-codex`). One credential per provider at boot
-is the current gateway wiring; the vault is M25.1, the CLI is M25.2, M25.9 loads the pool.
-A client talking *to* panday ingress must send the full `provider/model` id
+(stdin or `--from-grok` / `--from-claude` / `--from-codex`). `GET /accounts` on the operator
+console imports Grok CLI logins, accepts a pasted `auth.json`, and accepts extra OpenAI /
+xAI / Anthropic / Gemini API keys. `PANDAY_ROTATE=failover|round_robin` (same control on
+that page). Extra `auth.json` copies are `PANDAY_GROK_AUTH` (colon-separated); extra API
+keys are `PANDAY_OPENAI_API_KEYS` (comma-separated) and friends. This is N tokens in
+memory, not N CLI installs. A client
+talking *to* panday ingress must send the full `provider/model` id
 (`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router honestly refuse
 `grok-4.6`.
 
@@ -96,6 +100,9 @@ Trunk CSR.
   prices, measured context, and pool preference — not the inventory. A new
   Anthropic/OpenAI/xAI model appears when that API lists it; it does not wait
   on a catalog edit.
+- `GET /accounts` is HTML forms (no WASM): import Grok CLI, paste `auth.json`,
+  add OpenAI/xAI/Anthropic/Gemini API keys, revoke, pick failover vs
+  round-robin. Last4 only — never the secret.
 - The playground is an `#[island]`: only that component hydrates. A form POST
   to `/console/try` is the no-WASM fallback.
 - Split/lazy WASM (`cargo leptos --split`, `#[lazy]` islands) is the next
@@ -135,7 +142,7 @@ Wire fields some upstreams 400 on are stripped on the way out, not rejected inbo
 
 ### Pointing agents at a running gateway
 
-Default listen is `127.0.0.1:8080` (`PANDAY_GATEWAY_ADDR`). Examples below use `8088` because this laptop's 8080 is already taken. Subscription OAuth is read from Grok CLI and Claude Code at boot; `GEMINI_API_KEY` on the *gateway* process registers the Gemini *outbound* adapter. That key is independent of the dummy key a client sends *to* us.
+Default listen is `127.0.0.1:8080` (`PANDAY_GATEWAY_ADDR`). Examples below use `8088` because this laptop's 8080 is already taken. Subscription OAuth is read from Grok CLI and Claude Code at boot; extra Grok files are `PANDAY_GROK_AUTH`; extra API keys are `PANDAY_OPENAI_API_KEYS` (and xai/anthropic/gemini). Manage them in the browser at `GET /accounts`. `GEMINI_API_KEY` on the *gateway* process is outbound Google, independent of the dummy key a client sends *to* us.
 
 **Curl (OpenAI):**
 

@@ -18,8 +18,8 @@ remains is named in each phase's status, not guessed.
 **Operator track (docs/25), started 2026-08-21:** twelve milestones (M25.1–25.12)
 to pool upstream API keys and Grok/Claude/Codex subscriptions behind the gateway.
 Additive — not Phase 5/6, does not skip training or Stripe. M25.1 sealed vault and
-M25.2 `panday creds` are on this branch. Live pools + `GET /accounts` are
-`experiment/rotate-grok-oauth`.
+M25.2 `panday creds` are shipped. Live pools + `GET /accounts` are this PR
+(M25.4, partial M25.9).
 
 ## Phase 0 — Spine (~weeks 1–4)
 

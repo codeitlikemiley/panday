@@ -70,6 +70,19 @@ export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088 GEMINI_API_KEY=unused
 agy --print "reply with the single word pong"
 ```
 
+**Several Grok logins or API keys** (`docs/25`). After the gateway is up, open
+`http://127.0.0.1:8088/accounts` — import Grok CLI, paste another `auth.json`,
+add OpenAI / xAI / Anthropic / Gemini keys, pick **failover** or **round-robin**.
+Or at boot:
+
+```bash
+# extra Grok CLI auth.json copies (colon-separated)
+export PANDAY_GROK_AUTH=/path/to/other-auth.json
+# extra API keys (comma-separated)
+export PANDAY_OPENAI_API_KEYS=sk-test-aaaa,sk-test-bbbb
+export PANDAY_ROTATE=round_robin   # or failover (default)
+```
+
 **The hosted shape, on a laptop.** `just dev` brings up Postgres and MinIO, migrates,
 and prints an API key with the `curl` that uses it — accounts, per-key rate limiting,
 the ledger and the route audit all wired (`docs/22-deployment.md`).

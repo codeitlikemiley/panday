@@ -4,7 +4,6 @@
 //! tool can point at panday with a base-URL change and inherit routing and
 //! metering. Thin over the library, per docs/02.
 
-use panday_gateway::adapters::anthropic::Anthropic;
 use panday_gateway::adapters::openai_compat::OpenAiCompat;
 use panday_gateway::{CollectUsage, Gateway, IngressState, ProviderAdapter};
 use panday_router::PolicyRouter;
@@ -45,53 +44,17 @@ async fn main() {
         .usage_sink(usage.clone() as Arc<dyn panday_gateway::UsageSink>)
         .costs(Arc::new(prices));
 
-    // Same environment contract as the CLI, so one set of variables configures
-    // either entry point.
-    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !key.trim().is_empty() {
-            builder = builder.adapter(
-                "anthropic",
-                Arc::new(Anthropic::new(key)) as Arc<dyn ProviderAdapter>,
-            );
-        }
-    } else if let Some(tok) = panday_sdk::oauth::claude_code() {
-        if tok.still_fresh() {
-            builder = builder.adapter(
-                "anthropic",
-                Arc::new(Anthropic::oauth(tok.access)) as Arc<dyn ProviderAdapter>,
-            );
-        }
-    }
-    if let Some(token) = panday_sdk::oauth::grok_access().await {
-        builder = builder.adapter(
-            "xai",
-            Arc::new(OpenAiCompat::new(
-                panday_sdk::oauth::xai_api_base(),
-                Some(token),
-            )) as Arc<dyn ProviderAdapter>,
-        );
-    }
-    if let Ok(key) = std::env::var("GEMINI_API_KEY") {
-        if !key.trim().is_empty() {
-            let base = std::env::var("GEMINI_BASE_URL").unwrap_or_else(|_| {
-                "https://generativelanguage.googleapis.com/v1beta/openai".to_string()
-            });
-            builder = builder.adapter(
-                "gemini",
-                Arc::new(OpenAiCompat::new(base, Some(key))) as Arc<dyn ProviderAdapter>,
-            );
-        }
-    }
-    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-        if !key.trim().is_empty() {
-            let base = std::env::var("OPENAI_BASE_URL")
-                .unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
-            builder = builder.adapter(
-                "openai",
-                Arc::new(OpenAiCompat::new(base, Some(key))) as Arc<dyn ProviderAdapter>,
-            );
-        }
-    }
+    // Live pools: env (one key or PANDAY_*_API_KEYS list), Grok/Claude OAuth,
+    // vault rows, and the operator console can add more without a restart.
+    let hub = panday_gateway::adapters::pool::CredHub::seed_from_process().await;
+    builder = builder
+        .adapter("xai", hub.xai.clone() as Arc<dyn ProviderAdapter>)
+        .adapter(
+            "anthropic",
+            hub.anthropic.clone() as Arc<dyn ProviderAdapter>,
+        )
+        .adapter("openai", hub.openai.clone() as Arc<dyn ProviderAdapter>)
+        .adapter("gemini", hub.gemini.clone() as Arc<dyn ProviderAdapter>);
     let base = std::env::var("PANDAY_BASE_URL")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -155,6 +118,7 @@ async fn main() {
         gateway: Arc::clone(&gateway),
         usage: Arc::clone(&usage),
         listen: addr.clone(),
+        hub,
     });
     let app = panday_gateway::ingress::router(state).merge(console);
 
@@ -170,6 +134,7 @@ async fn main() {
     println!("  POST /v1/messages");
     println!("  POST /v1beta/models/{{model}}:generateContent");
     println!("  GET  /                  operator console");
+    println!("  GET  /accounts          grok logins + API keys");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("panday-gateway: {e}");
         std::process::exit(1);

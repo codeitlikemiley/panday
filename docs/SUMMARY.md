@@ -13,8 +13,8 @@
 # Component Specs
 
 - [SDK](10-sdk.md)
-- [Gateway](11-gateway.md) (operator console at `GET /`)
-- [Upstream credentials](25-credentials.md) (`panday creds`)
+- [Gateway](11-gateway.md) (operator console at `GET /`, accounts at `GET /accounts`)
+- [Upstream credentials](25-credentials.md) (`panday creds`, key/subscription pool)
 - [Model Router](12-router.md)
 - [Harness](13-harness.md)
 - [Sandbox](14-sandbox.md)
