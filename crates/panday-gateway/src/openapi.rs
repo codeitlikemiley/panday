@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 pub const ROUTES: &[(&str, &str, &str)] = &[
     ("post", "/v1/chat/completions", "createChatCompletion"),
     ("get", "/metrics", "getMetrics"),
+    ("get", "/v1/models", "listModels"),
 ];
 
 /// The OpenAPI 3.1 document.
@@ -71,6 +72,21 @@ pub fn document() -> Value {
                     }},
                 },
             },
+            "/v1/models": {
+                "get": {
+                    "operationId": "listModels",
+                    "summary": "Models the signed-in providers list for this account, not the YAML catalog.",
+                    "responses": {
+                        "200": {
+                            "description": "OpenAI-shaped list. `id` is `provider/model`.",
+                            "content": { "application/json": { "schema": {
+                                "$ref": "#/components/schemas/ModelList"
+                            }}},
+                        },
+                        "401": { "$ref": "#/components/responses/Error" },
+                    },
+                },
+            },
         },
         "components": {
             "securitySchemes": { "bearerAuth": {
@@ -93,6 +109,26 @@ pub fn document() -> Value {
 
 fn schemas() -> Value {
     json!({
+        "ModelList": {
+            "type": "object",
+            "required": ["object", "data"],
+            "properties": {
+                "object": { "const": "list" },
+                "data": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/Model" },
+                },
+            },
+        },
+        "Model": {
+            "type": "object",
+            "required": ["id", "object"],
+            "properties": {
+                "id": { "type": "string", "description": "`provider/model`" },
+                "object": { "const": "model" },
+                "owned_by": { "type": "string" },
+            },
+        },
         "ChatCompletionRequest": {
             "type": "object",
             "description": "The subset of the standard dialect this ingress reads. Fields not \

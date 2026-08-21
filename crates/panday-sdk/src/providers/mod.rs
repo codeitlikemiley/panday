@@ -13,6 +13,9 @@
 //! belongs to `panday-gateway` (docs/11).
 
 pub mod anthropic;
+pub mod models;
 pub mod openai_compat;
 pub mod sse;
 pub mod transport;
+
+pub use models::RemoteModel;

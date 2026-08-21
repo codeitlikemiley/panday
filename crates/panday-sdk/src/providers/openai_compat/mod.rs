@@ -23,6 +23,7 @@ use panday_types::model::{ChatRequest, StopReason, StreamItem};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::models::{self, RemoteModel};
 use super::sse;
 use super::transport::{self, HttpStreamTransport, ReqwestTransport};
 use wire::WireChunk;
@@ -214,6 +215,13 @@ impl OpenAiCompatClient {
             Some(key) => vec![("authorization".into(), format!("Bearer {key}"))],
             None => Vec::new(),
         }
+    }
+
+    /// What this credential / local server can actually call (`GET /v1/models`).
+    pub async fn list_models(&self) -> Result<Vec<RemoteModel>, PandayError> {
+        let url = models::models_url(&self.base_url);
+        let body = self.http.get_json(&url, &self.headers()).await?;
+        models::parse_openai_models(&body)
     }
 }
 

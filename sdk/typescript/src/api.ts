@@ -3,6 +3,20 @@
 // Source: the same schemas the Rust implementation is checked against, so a
 // protocol change that forgets this file fails CI rather than a user's build.
 
+export interface ModelList {
+  object: "list";
+  data: Model[];
+}
+
+export interface Model {
+  /**
+   * `provider/model`
+   */
+  id: string;
+  object: "model";
+  owned_by?: string;
+}
+
 /**
  * The subset of the standard dialect this ingress reads. Fields not listed are accepted and ignored rather than rejected — a client should not have to strip its request to be redirected here.
  */

@@ -83,6 +83,27 @@
           }
         }
       }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "Models the signed-in providers list for this account, not the YAML catalog.",
+        "responses": {
+          "200": {
+            "description": "OpenAI-shaped list. `id` is `provider/model`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -106,6 +127,43 @@
       }
     },
     "schemas": {
+      "ModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "const": "list"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            }
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": [
+          "id",
+          "object"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "`provider/model`"
+          },
+          "object": {
+            "const": "model"
+          },
+          "owned_by": {
+            "type": "string"
+          }
+        }
+      },
       "ChatCompletionRequest": {
         "type": "object",
         "description": "The subset of the standard dialect this ingress reads. Fields not listed are accepted and ignored rather than rejected — a client should not have to strip its request to be redirected here.",

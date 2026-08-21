@@ -12,6 +12,7 @@
 
 use panday_gateway::{AdapterCaps, Gateway, IngressState, ProviderAdapter};
 use panday_router::PolicyRouter;
+use panday_sdk::providers::RemoteModel;
 use panday_sdk::{ItemStream, PandayError};
 use panday_types::id::AccountId;
 use panday_types::model::{ChatRequest, StopReason, StreamItem, Usage};
@@ -34,6 +35,14 @@ impl ProviderAdapter for Echo {
     fn capabilities(&self, _m: &str) -> AdapterCaps {
         AdapterCaps::default()
     }
+    async fn list_models(&self) -> Result<Vec<RemoteModel>, PandayError> {
+        Ok(vec![RemoteModel {
+            id: "qwen3.5-4b".into(),
+            context: Some(16_000),
+            display_name: None,
+        }])
+    }
+
     async fn chat(&self, _req: ChatRequest) -> Result<ItemStream, PandayError> {
         if let Some(f) = self.fail {
             return Err(f());
@@ -337,4 +346,31 @@ async fn auto_lets_the_router_choose_which_is_the_point_of_the_wedge() {
     assert_eq!(status, 200, "{body}");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["choices"][0]["message"]["content"], "routed");
+}
+
+#[tokio::test]
+async fn get_v1_models_lists_what_the_adapter_reported() {
+    let addr = serve(echo("x")).await;
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    let request = format!(
+        "GET /v1/models HTTP/1.1\r\n\
+         Host: {addr}\r\n\
+         Authorization: Bearer pnd_live_test\r\n\
+         Connection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).await.unwrap();
+    let text = String::from_utf8_lossy(&raw);
+    let status: u16 = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+    assert_eq!(status, 200, "{text}");
+    let v: serde_json::Value = serde_json::from_str(body.trim()).expect("valid JSON");
+    assert_eq!(v["object"], "list");
+    assert_eq!(v["data"][0]["id"], "local/qwen3.5-4b");
+    assert_eq!(v["data"][0]["owned_by"], "local");
 }

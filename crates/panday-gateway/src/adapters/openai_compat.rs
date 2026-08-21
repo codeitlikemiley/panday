@@ -55,6 +55,10 @@ impl ProviderAdapter for OpenAiCompat {
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
         self.client.chat(req).await
     }
+
+    async fn list_models(&self) -> Result<Vec<panday_sdk::providers::RemoteModel>, PandayError> {
+        self.client.list_models().await
+    }
 }
 
 #[cfg(test)]

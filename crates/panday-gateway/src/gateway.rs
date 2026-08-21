@@ -161,6 +161,14 @@ impl RouteAudit for CollectRoutes {
     }
 }
 
+/// One model a signed-in provider listed (`GET /v1/models` on that backend).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveModel {
+    pub id: String,
+    pub context: Option<u32>,
+    pub display_name: Option<String>,
+}
+
 /// The model plane.
 pub struct Gateway {
     /// Keyed by the `provider` half of a `ModelRef` ("anthropic", "local", …).
@@ -217,6 +225,49 @@ impl Gateway {
     /// Which providers this gateway can actually reach.
     pub fn providers(&self) -> Vec<&str> {
         self.adapters.keys().map(String::as_str).collect()
+    }
+
+    /// Ask every registered adapter what its account can call.
+    ///
+    /// The catalog does not invent this list. A provider that times out or
+    /// errors is omitted rather than replaced with YAML fiction.
+    pub async fn live_models(&self) -> Vec<LiveModel> {
+        let futs = self.adapters.iter().map(|(provider, adapter)| {
+            let provider = provider.clone();
+            let adapter = adapter.clone();
+            async move {
+                match tokio::time::timeout(Duration::from_secs(5), adapter.list_models()).await {
+                    Ok(Ok(models)) => models
+                        .into_iter()
+                        .map(|m| {
+                            let id = if m.id.contains('/') {
+                                m.id
+                            } else {
+                                format!("{provider}/{}", m.id)
+                            };
+                            LiveModel {
+                                id,
+                                context: m.context,
+                                display_name: m.display_name,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                    Ok(Err(e)) => {
+                        tracing::warn!(provider, error = %e, "listing models failed");
+                        Vec::new()
+                    }
+                    Err(_) => {
+                        tracing::warn!(provider, "listing models timed out");
+                        Vec::new()
+                    }
+                }
+            }
+        });
+        futures_util::future::join_all(futs)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// Resolve a request to callable targets, keeping the decision that produced them.

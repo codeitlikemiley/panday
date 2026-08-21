@@ -15,12 +15,13 @@ pub mod openapi;
 pub use cache::{CacheKey, CachedResponse, ExactCache, MemoryExactCache, NoCache};
 pub use circuit::{BreakerConfig, Breakers, State as CircuitState};
 pub use gateway::{
-    BudgetGate, CollectRoutes, CollectUsage, DiscardRoutes, DiscardUsage, Gateway, NoBudget,
-    RouteAudit, RouteRecord, UsageRecord, UsageSink,
+    BudgetGate, CollectRoutes, CollectUsage, DiscardRoutes, DiscardUsage, Gateway, LiveModel,
+    NoBudget, RouteAudit, RouteRecord, UsageRecord, UsageSink,
 };
 pub use ingress::{IngressRequest, IngressState};
 
 use async_trait::async_trait;
+use panday_sdk::providers::RemoteModel;
 use panday_sdk::{ItemStream, PandayError};
 use panday_types::model::ChatRequest;
 
@@ -49,4 +50,10 @@ pub trait ProviderAdapter: Send + Sync {
     fn name(&self) -> &'static str;
     fn capabilities(&self, model: &str) -> AdapterCaps;
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError>;
+
+    /// Models this credential can call. Default is empty so test spies stay
+    /// spies; production adapters ask the provider.
+    async fn list_models(&self) -> Result<Vec<RemoteModel>, PandayError> {
+        Ok(Vec::new())
+    }
 }

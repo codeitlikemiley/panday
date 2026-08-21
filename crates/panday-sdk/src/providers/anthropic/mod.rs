@@ -6,6 +6,7 @@
 
 pub mod wire;
 
+use super::models::{self, RemoteModel};
 use super::sse;
 use super::transport::{self, HttpStreamTransport, ReqwestTransport};
 use crate::{ItemStream, ModelClient, PandayError};
@@ -226,6 +227,27 @@ impl AnthropicClient {
             }
         }
         h
+    }
+
+    /// What this credential can actually call (`GET /v1/models`), paginated.
+    pub async fn list_models(&self) -> Result<Vec<RemoteModel>, PandayError> {
+        let mut out = Vec::new();
+        let mut after: Option<String> = None;
+        for _ in 0..16 {
+            let mut url = format!("{}/v1/models?limit=1000", self.base_url);
+            if let Some(id) = &after {
+                url.push_str("&after_id=");
+                url.push_str(id);
+            }
+            let body = self.http.get_json(&url, &self.headers()).await?;
+            let (page, next) = models::parse_anthropic_models(&body)?;
+            out.extend(page);
+            match next {
+                Some(id) => after = Some(id),
+                None => break,
+            }
+        }
+        Ok(out)
     }
 }
 

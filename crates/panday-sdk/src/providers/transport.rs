@@ -8,6 +8,7 @@
 use crate::PandayError;
 use futures_core::Stream;
 use std::pin::Pin;
+use std::time::Duration;
 
 /// A stream of raw response-body chunks. Chunk boundaries are arbitrary and
 /// may split a line or a UTF-8 sequence; `SseDecoder` handles that.
@@ -29,6 +30,18 @@ pub trait HttpStreamTransport: Send + Sync {
         headers: &[(String, String)],
         body: Vec<u8>,
     ) -> Result<ByteStream, PandayError>;
+
+    /// One buffered GET. Used to list models; mocks that never implement it
+    /// fail closed rather than inventing an inventory.
+    async fn get_json(
+        &self,
+        _url: &str,
+        _headers: &[(String, String)],
+    ) -> Result<Vec<u8>, PandayError> {
+        Err(PandayError::Protocol(
+            "this transport does not implement GET".into(),
+        ))
+    }
 }
 
 /// The production transport.
@@ -113,6 +126,27 @@ impl HttpStreamTransport for ReqwestTransport {
         let stream = futures_util::StreamExt::map(stream, |r| r.map(|b| b.to_vec()));
 
         Ok(Box::pin(stream))
+    }
+
+    async fn get_json(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+    ) -> Result<Vec<u8>, PandayError> {
+        let mut req = self.client.get(url).timeout(Duration::from_secs(8));
+        for (name, value) in headers {
+            req = req.header(name, value);
+        }
+        let resp = req.send().await.map_err(transport_error)?;
+        let status = resp.status();
+        let body = resp.bytes().await.map_err(transport_error)?;
+        if !status.is_success() {
+            return Err(status_error(
+                status,
+                String::from_utf8_lossy(&body).into_owned(),
+            ));
+        }
+        Ok(body.to_vec())
     }
 }
 

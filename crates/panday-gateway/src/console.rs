@@ -42,7 +42,7 @@ fn pkg_dir() -> Option<PathBuf> {
 }
 
 async fn page(State(state): State<ConsoleState>, uri: axum::http::Uri) -> Html<String> {
-    Html(panday_console::render(uri.path(), snapshot(&state)))
+    Html(panday_console::render(uri.path(), snapshot(&state).await))
 }
 
 async fn css() -> Response {
@@ -54,7 +54,7 @@ async fn css() -> Response {
 }
 
 async fn snapshot_json(State(state): State<ConsoleState>) -> axum::Json<Snapshot> {
-    axum::Json(snapshot(&state))
+    axum::Json(snapshot(&state).await)
 }
 
 #[derive(Deserialize)]
@@ -129,7 +129,7 @@ fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-fn snapshot(state: &ConsoleState) -> Snapshot {
+async fn snapshot(state: &ConsoleState) -> Snapshot {
     let grok = panday_sdk::oauth::grok_cli();
     let claude = panday_sdk::oauth::claude_code();
     let catalog = panday_router::ModelCatalog::shipped();
@@ -139,13 +139,15 @@ fn snapshot(state: &ConsoleState) -> Snapshot {
         .into_iter()
         .map(str::to_string)
         .collect();
+    let live = state.gateway.live_models().await;
+    let live_ids: std::collections::HashSet<String> = live.iter().map(|m| m.id.clone()).collect();
     Snapshot {
         listen: state.listen.clone(),
-        providers: providers.clone(),
+        providers,
         grok: cred(grok.as_ref()),
         claude: cred(claude.as_ref()),
-        models: callable_models(&catalog, &providers),
-        pools: callable_pools(pools_from_dev(), &providers),
+        models: overlay_live(&live, &catalog),
+        pools: pools_for_live(pools_from_dev(), &live_ids),
         recent: state
             .usage
             .recent()
@@ -162,33 +164,39 @@ fn snapshot(state: &ConsoleState) -> Snapshot {
     }
 }
 
-/// The `/models` page lists what this process can call, not the whole shipped catalog.
-fn adapter_up(providers: &[String], id: &str) -> bool {
-    id.split_once('/')
-        .is_some_and(|(p, _)| providers.iter().any(|x| x == p))
-}
-
-fn callable_models(catalog: &panday_router::ModelCatalog, providers: &[String]) -> Vec<ModelRow> {
-    catalog
-        .models
-        .iter()
-        .filter(|m| adapter_up(providers, &m.id))
-        .map(|m| ModelRow {
-            id: m.id.clone(),
-            context: m.profile.context,
-            provenance: match m.profile.provenance {
-                panday_types::capability::Provenance::Measured => "measured".into(),
-                panday_types::capability::Provenance::Declared => "declared".into(),
-            },
+/// Catalog supplies measured context and prices when we already know the id.
+/// Presence on the page comes only from the provider listing.
+fn overlay_live(live: &[crate::LiveModel], catalog: &panday_router::ModelCatalog) -> Vec<ModelRow> {
+    live.iter()
+        .map(|m| {
+            if let Some(entry) = catalog.models.iter().find(|e| e.id == m.id) {
+                ModelRow {
+                    id: m.id.clone(),
+                    context: entry.profile.context,
+                    provenance: match entry.profile.provenance {
+                        panday_types::capability::Provenance::Measured => "measured".into(),
+                        panday_types::capability::Provenance::Declared => "declared".into(),
+                    },
+                }
+            } else {
+                ModelRow {
+                    id: m.id.clone(),
+                    context: m.context.unwrap_or(0),
+                    provenance: "live".into(),
+                }
+            }
         })
         .collect()
 }
 
-fn callable_pools(pools: Vec<PoolRow>, providers: &[String]) -> Vec<PoolRow> {
+fn pools_for_live(
+    pools: Vec<PoolRow>,
+    live_ids: &std::collections::HashSet<String>,
+) -> Vec<PoolRow> {
     pools
         .into_iter()
         .filter_map(|mut p| {
-            p.models.retain(|m| adapter_up(providers, m));
+            p.models.retain(|m| live_ids.contains(m));
             (!p.models.is_empty()).then_some(p)
         })
         .collect()
@@ -230,37 +238,50 @@ fn pools_from_dev() -> Vec<PoolRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LiveModel;
+
+    fn live(id: &str) -> LiveModel {
+        LiveModel {
+            id: id.into(),
+            context: None,
+            display_name: None,
+        }
+    }
 
     #[test]
-    fn the_models_page_hides_backends_this_process_cannot_call() {
+    fn the_page_shows_what_the_provider_listed_not_the_yaml() {
         let catalog = panday_router::ModelCatalog::shipped();
-        let rows = callable_models(&catalog, &["anthropic".into(), "xai".into()]);
+        let listed = vec![
+            live("anthropic/claude-fable-5"),
+            live("anthropic/claude-opus-5"),
+            live("xai/grok-4.6"),
+            live("anthropic/claude-some-new-thing"),
+        ];
+        let rows = overlay_live(&listed, &catalog);
         let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"anthropic/claude-fable-5"), "{ids:?}");
-        assert!(ids.contains(&"anthropic/claude-opus-5"), "{ids:?}");
-        assert!(ids.contains(&"anthropic/claude-sonnet-5"), "{ids:?}");
-        assert!(ids.contains(&"xai/grok-4.6"), "{ids:?}");
-        assert!(
-            !ids.iter().any(|id| id.starts_with("together/")),
-            "together is not registered: {ids:?}"
+        assert_eq!(
+            ids,
+            [
+                "anthropic/claude-fable-5",
+                "anthropic/claude-opus-5",
+                "xai/grok-4.6",
+                "anthropic/claude-some-new-thing"
+            ]
         );
+        assert_eq!(rows[3].provenance, "live");
+        assert_eq!(rows[2].provenance, "measured");
         assert!(
-            !ids.iter().any(|id| id.starts_with("local/")),
-            "local llama-server is not up: {ids:?}"
-        );
-        assert!(
-            !ids.iter().any(|id| id.starts_with("openai/")),
-            "no OpenAI key: {ids:?}"
-        );
-        assert!(
-            !ids.contains(&"anthropic/claude-opus-4-1"),
-            "retired ids must not appear: {ids:?}"
+            !ids.contains(&"together/qwen3.5-32b-instruct"),
+            "catalog rows the provider did not list stay off the page"
         );
     }
 
     #[test]
-    fn empty_pools_are_dropped_not_shown_as_fiction() {
-        let pools = callable_pools(
+    fn pools_only_name_models_the_provider_listed() {
+        let live_ids = ["anthropic/claude-sonnet-5".to_string()]
+            .into_iter()
+            .collect();
+        let pools = pools_for_live(
             vec![
                 PoolRow {
                     name: "workhorse".into(),
@@ -274,10 +295,9 @@ mod tests {
                     models: vec!["local/qwen3.5-4b".into()],
                 },
             ],
-            &["anthropic".into()],
+            &live_ids,
         );
         assert_eq!(pools.len(), 1);
-        assert_eq!(pools[0].name, "workhorse");
         assert_eq!(pools[0].models, ["anthropic/claude-sonnet-5"]);
     }
 }

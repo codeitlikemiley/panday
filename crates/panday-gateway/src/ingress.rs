@@ -13,7 +13,7 @@
 use crate::Gateway;
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use panday_sdk::{ModelClient, PandayError};
 use panday_types::id::{AccountId, RequestId};
@@ -317,11 +317,29 @@ pub fn router(state: IngressState) -> Router {
     // disagree about what exists (M10.6).
     Router::new()
         .route(crate::openapi::ROUTES[0].1, post(chat_completions))
-        .route(
-            crate::openapi::ROUTES[1].1,
-            axum::routing::get(metrics_endpoint),
-        )
+        .route(crate::openapi::ROUTES[1].1, get(metrics_endpoint))
+        .route(crate::openapi::ROUTES[2].1, get(list_models))
         .with_state(state)
+}
+
+/// `GET /v1/models` — what the signed-in providers actually list, not the YAML catalog.
+async fn list_models(
+    State(state): State<IngressState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Err(response) = authenticate(&state, &headers).await {
+        return response;
+    }
+    let models = state.gateway.live_models().await;
+    Json(serde_json::json!({
+        "object": "list",
+        "data": models.iter().map(|m| serde_json::json!({
+            "id": m.id,
+            "object": "model",
+            "owned_by": m.id.split_once('/').map(|(p, _)| p).unwrap_or(""),
+        })).collect::<Vec<_>>(),
+    }))
+    .into_response()
 }
 
 /// `GET /metrics` — Prometheus text exposition (docs/21 §Metrics, M21.2).

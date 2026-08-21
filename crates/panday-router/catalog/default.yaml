@@ -14,8 +14,8 @@
 # billing source of truth — the ledger prices from what it was configured with at call time.
 #
 # Together and local rows exist so a deployment that *has* those backends can route to them.
-# The operator console lists a row only when that provider's adapter is registered (and, for
-# local, when something is actually listening).
+# The operator console and GET /v1/models do **not** dump this file: they ask each signed-in
+# provider. This file is prices, measured context, and pool preference.
 version: 1
 
 models:

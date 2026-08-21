@@ -125,7 +125,7 @@ fn RecentTable(rows: Vec<CallRow>) -> impl IntoView {
 fn ModelsPage(snapshot: Snapshot) -> impl IntoView {
     view! {
         <h1>Models this process can call</h1>
-        <p>"Intersection of the catalog and the adapters that booted. Together and local GGUFs stay in the catalog for deployments that have them — they do not show up here unless that backend is up."</p>
+        <p>"Each signed-in provider is asked what this account can call. The catalog only fills in measured context and prices for ids we already know — a new model shows up here without a YAML edit."</p>
         <h2>Pools</h2>
         <div class="grid">
             {snapshot

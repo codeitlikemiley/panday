@@ -86,11 +86,11 @@ Trunk CSR.
 (`panday-console`, ssr in the gateway binary, hydrate WASM in the browser):
 
 - Status, providers, OAuth flags, and **callable** models render as HTML on
-  the server. They work with WASM disabled. `GET /models` is the intersection
-  of the shipped catalog and the adapters this process registered — not the
-  whole catalog. Together/local GGUF rows stay in `catalog/default.yaml` for
-  deployments that have those backends; they do not appear here unless that
-  adapter is up (local also requires the loopback server to answer).
+  the server. They work with WASM disabled. `GET /models` (and `GET /v1/models`)
+  ask each signed-in provider what this account can call. The YAML catalog is
+  prices, measured context, and pool preference — not the inventory. A new
+  Anthropic/OpenAI/xAI model appears when that API lists it; it does not wait
+  on a catalog edit.
 - The playground is an `#[island]`: only that component hydrates. A form POST
   to `/console/try` is the no-WASM fallback.
 - Split/lazy WASM (`cargo leptos --split`, `#[lazy]` islands) is the next
