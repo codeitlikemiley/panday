@@ -165,16 +165,17 @@ fn a_pinned_model_the_catalog_knows_is_still_a_pin() {
 }
 
 #[test]
-fn a_pinned_model_the_catalog_does_not_know_fails_here_rather_than_at_the_provider() {
-    // A typo in a model name is a request that cannot succeed. Catching it in the router costs one
-    // string comparison; catching it at the provider costs a round trip and reports somebody else's
-    // error message.
+fn a_pinned_model_the_catalog_does_not_know_is_kept() {
+    // Live `/v1/models` lists names the YAML overlay has not priced yet (agy's
+    // `gemini-3.1-pro` is the example). Emptying the chain would 400 a request
+    // the provider would have served. A typo still fails at the provider.
     let mut q = query(TaskClass::Chat);
     q.requested = ModelRef("anthropic/claude-onyx-9".into());
-    assert!(matches!(
-        router().route(&q),
-        Err(RouteError::NoRoute { .. })
-    ));
+    let d = router()
+        .route(&q)
+        .expect("exact unknown pins stay in the chain");
+    assert_eq!(chain(&d), ["anthropic/claude-onyx-9"]);
+    assert_eq!(d.matched_rule, "pinned");
 }
 
 #[test]

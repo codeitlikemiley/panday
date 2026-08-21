@@ -30,6 +30,9 @@ allow = [
     # is a permissive *data* licence covering the certificate list itself
     # (no copyleft, no attribution burden on our binaries).
     "CDLA-Permissive-2.0",
+    # xxhash-rust (via leptos `server_fn`). OSI-approved, FSF Free/Libre,
+    # Boost Software License — same class as MIT/BSD, not copyleft.
+    "BSL-1.0",
 ]
 confidence-threshold = 0.93
 # Our own crates carry `license = "UNLICENSED"`, which is not an SPDX id.

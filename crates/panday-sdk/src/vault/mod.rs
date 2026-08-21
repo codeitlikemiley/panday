@@ -174,8 +174,8 @@ impl Kek {
         }
         let mut bytes = [0u8; KEK_LEN];
         for i in 0..KEK_LEN {
-            bytes[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-                .map_err(|_| VaultError::BadKek)?;
+            bytes[i] =
+                u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(|_| VaultError::BadKek)?;
         }
         Ok(Self(bytes))
     }
@@ -229,7 +229,8 @@ impl fmt::Debug for Kek {
 
 fn write_master_key(path: &Path, bytes: &[u8; KEK_LEN]) -> Result<(), VaultError> {
     let mut f = fs::File::create(path).map_err(|e| VaultError::Io(e.to_string()))?;
-    f.write_all(bytes).map_err(|e| VaultError::Io(e.to_string()))?;
+    f.write_all(bytes)
+        .map_err(|e| VaultError::Io(e.to_string()))?;
     f.sync_all().map_err(|e| VaultError::Io(e.to_string()))?;
     #[cfg(unix)]
     {
@@ -266,7 +267,11 @@ fn aad(meta: &CredentialMeta) -> Vec<u8> {
     out
 }
 
-pub(crate) fn seal(kek: &Kek, meta: &CredentialMeta, secret: &str) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
+pub(crate) fn seal(
+    kek: &Kek,
+    meta: &CredentialMeta,
+    secret: &str,
+) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek.0));

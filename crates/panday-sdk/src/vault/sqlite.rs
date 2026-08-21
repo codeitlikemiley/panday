@@ -83,7 +83,9 @@ fn meta_from_row(
     state: String,
 ) -> Result<CredentialMeta, VaultError> {
     Ok(CredentialMeta {
-        id: id.parse().map_err(|e: uuid::Error| VaultError::Io(e.to_string()))?,
+        id: id
+            .parse()
+            .map_err(|e: uuid::Error| VaultError::Io(e.to_string()))?,
         provider,
         kind: Kind::parse(&kind).ok_or_else(|| VaultError::Io(format!("bad kind {kind}")))?,
         label,
