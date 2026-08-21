@@ -78,12 +78,19 @@ session's TCC grants, which made the repository unreadable for hours.
   SHA, not a stale one; that has bitten this repo before.
 - One milestone per commit. If the work exposes a gap with no milestone number, **add the milestone**
   to the spec rather than smuggling the work into an unrelated commit (CLAUDE.md §4).
+- **Never `gh pr merge --delete-branch` on a PR that another PR is stacked on.** Deleting the base
+  branch auto-closes the child, and a closed PR whose base is gone can be neither reopened nor
+  retargeted — the work has to be rebased and re-filed under a new number. Delete base branches by
+  hand once their children have landed. (This is how #13 was lost; see §3.)
+- **`git fetch` against `origin` fails silently-ish** because the remote is SSH and SSH is broken
+  (§4.2). A stale `origin/main` will happily let you rebase onto the wrong base. Fetch the same way
+  you push: `git -c credential.helper='!gh auth git-credential' fetch https://github.com/codeitlikemiley/panday.git main`.
 
 ---
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `3cfcc4f` — *experiment: rotate Grok logins and provider API keys (#10)*
+**HEAD (`main`):** `8f1feb7` — *M25.3: transport keeps Retry-After and ratelimit headers (#12)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
@@ -161,19 +168,21 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight — two stacked PRs, neither merged
+## 3. In-flight — one merged, two stacked PRs open
 
-`git status` on `main` is clean; nothing is sitting uncommitted. But two branches are out for review,
-both **draft on purpose** under the rule in §1.2:
+`git status` on `main` is clean; nothing is sitting uncommitted.
 
 | PR | Branch | Milestone | State |
 |---|---|---|---|
-| [#12](https://github.com/codeitlikemiley/panday/pull/12) | `m25.3-headers` | M25.3 | Draft. All six CI jobs green on head `71b9082`, `mergeStateStatus: CLEAN`. |
-| [#13](https://github.com/codeitlikemiley/panday/pull/13) | `m11.7-retry-after-egress` | M11.7 | Draft, based on `m25.3-headers` — GitHub retargets it to `main` when #12 merges. |
-| [#15](https://github.com/codeitlikemiley/panday/pull/15) | `m11.8-one-error-mapper` | M11.8 | Draft, based on `m11.7-retry-after-egress`. Green on `f2bc801`. |
+| [#12](https://github.com/codeitlikemiley/panday/pull/12) | `m25.3-headers` | M25.3 | **Merged** as `8f1feb7`. |
+| [#16](https://github.com/codeitlikemiley/panday/pull/16) | `m11.7-retry-after-egress` | M11.7 | Open, based on `main`. Head `8913807`. |
+| [#15](https://github.com/codeitlikemiley/panday/pull/15) | `m11.8-one-error-mapper` | M11.8 | Open, based on `m11.7-retry-after-egress`. Head `ad99214`. |
 
-**Merge in order: #12 → #13 → #15.** Each retargets to `main` as its base lands; out of order, a
-diff reads as if it contains its parent's changes too.
+**Merge #16 before #15**, and **do not pass `--delete-branch` to a PR something else is stacked on.**
+Merging #12 that way deleted `m25.3-headers`, which auto-closed the PR targeting it (#13, now dead
+and unreopenable — a closed PR whose base branch is gone can be neither reopened nor retargeted).
+M11.7 had to be rebased onto the squashed `main` and re-filed as #16. Delete a base branch by hand
+after its children have landed.
 
 - **#12 / M25.3** — the transport stops dropping response headers. `post_sse` returns
   `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was
@@ -182,7 +191,7 @@ diff reads as if it contains its parent's changes too.
   as the soonest wait and erased every real one, and filling `retry_after_ms` activated a
   previously-dead retry arm that slept an unbounded upstream-controlled value outside the timeout
   layer. `MAX_HONOURED_RETRY_AFTER` (60s) now caps what we will sleep.
-- **#13 / M11.7** — the gateway *tells the client* the wait. Until this, every 429 it ever emitted was
+- **#16 / M11.7** — the gateway *tells the client* the wait. Until this, every 429 it ever emitted was
   a bare status: the value was computed and dropped at the HTTP boundary, and panday's own
   `RateLimiter` had been discarding its own window remainder the same way. Note for anyone touching
   error handling: **there are three independent error mappers** — `ingress::error_response`,
@@ -194,7 +203,7 @@ diff reads as if it contains its parent's changes too.
   one: 403 is terminal and 502 is retryable, so a client with ordinary backoff would hammer a refusal
   it can never satisfy — on the two routes agents actually use. Status now comes from one
   `ingress::status_for`; envelopes stay per-dialect. Two table-driven tests hold the line, and both
-  fail against #13, which is what makes them a guard rather than decoration.
+  fail against #16, which is what makes them a guard rather than decoration.
 
   **Still open, and now the interesting one:** `ModelUnavailable` conflates two failures — an
   exhausted chain (503 is right) and a rule with no usable target, which includes a caller pinning a
@@ -323,7 +332,7 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 item 1 still needs hardware, a third party, training data, or a judgement only the builder can make —
 but M25.5 onward needs none of that. Do not invent rates or p95s for the blocked items.
 
-0. **Merge #12, then #13** (§3), then continue the operator track in spec order: **M25.5** sticky
+0. **Merge #16, then #15** (§3), then continue the operator track in spec order: **M25.5** sticky
    `session_id` + per-credential breakers, **M25.6** operator ceiling / local counters / remaining %
    on `/accounts`, **M25.7** overlay the ratelimit headers M25.3 now keeps onto those counters,
    **M25.8** `most_remaining` selector, **M25.9** finish vault-as-boot-source, **M25.10** prove Codex
