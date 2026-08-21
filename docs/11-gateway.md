@@ -36,10 +36,12 @@ risk + dialect drift belongs to us):
 
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
 and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A pool of
-several keys or subscriptions is `docs/25-credentials.md` — one credential per provider at boot
-is the current wiring; the vault is M25.1. A client talking *to* panday ingress must send the
-full `provider/model` id (`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router
-honestly refuse `grok-4.6`.
+several keys or subscriptions is `docs/25-credentials.md` — put them in with `panday creds`
+(stdin or `--from-grok` / `--from-claude` / `--from-codex`). One credential per provider at boot
+is the current gateway wiring; the vault is M25.1, the CLI is M25.2, M25.9 loads the pool.
+A client talking *to* panday ingress must send the full `provider/model` id
+(`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router honestly refuse
+`grok-4.6`.
 
 Adapter contract: `fn chat(req: ChatRequest) -> impl Stream<StreamItem>` plus
 `capabilities() -> Caps` (max context, tool support, cache style, modalities).

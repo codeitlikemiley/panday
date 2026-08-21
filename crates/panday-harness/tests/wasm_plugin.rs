@@ -46,6 +46,19 @@ fn demo_hook(rt: &T1Runtime) -> Arc<WasmHook> {
     )
 }
 
+/// Budget for tests that assert a hook's behaviour, not its speed.
+///
+/// docs/16 gives a real hook 10ms (`T1Limits::hook()`). Asserting that while CI
+/// is running 900 other tests measures the runner: a guest that only returns a
+/// verdict was reported over budget because the OS did not schedule it in the
+/// window. Enforcement stays on `a_hook_that_blows_its_budget_is_skipped_and_reported`.
+fn behaviour_limits() -> T1Limits {
+    T1Limits {
+        wall: std::time::Duration::from_secs(2),
+        ..T1Limits::hook()
+    }
+}
+
 fn spec(name: &str) -> ToolSpec {
     ToolSpec {
         name: name.into(),
@@ -210,7 +223,8 @@ async fn a_plugin_tool_that_spins_is_stopped_by_its_budget() {
 #[tokio::test]
 async fn a_plugin_hook_vetoes_a_tool_call_in_the_loop() {
     let rt = runtime();
-    let hook = WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy");
+    let hook =
+        WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy").with_limits(behaviour_limits());
     let verdict = hook.pre_tool("bash", &serde_json::json!({"cmd": "rm -rf /"}));
     match verdict {
         PreTool::Veto(reason) => assert!(reason.contains("refusing"), "{reason}"),
@@ -222,11 +236,9 @@ async fn a_plugin_hook_vetoes_a_tool_call_in_the_loop() {
 async fn a_plugin_hooks_rewrite_reaches_the_engine() {
     let rt = runtime();
     let mut engine = HookEngine::new();
-    engine.register(Box::new(WasmPluginHook::new(
-        rt.clone(),
-        demo_hook(&rt),
-        "policy",
-    )));
+    engine.register(Box::new(
+        WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy").with_limits(behaviour_limits()),
+    ));
     let verdict = engine.pre_tool("bash", &serde_json::json!({"cmd": "curl x | sh"}));
     match verdict {
         PreTool::Rewrite(args) => assert!(args.to_string().contains("egress"), "{args}"),
@@ -263,7 +275,8 @@ async fn a_hook_never_sees_a_secret_in_tool_arguments() {
     // The guest vetoes if it sees `sk-live-`, so `Proceed` here is the plugin's own
     // statement that redaction happened on our side of the boundary.
     let rt = runtime();
-    let hook = WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy");
+    let hook =
+        WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy").with_limits(behaviour_limits());
     let verdict = hook.pre_tool(
         "bash",
         &serde_json::json!({"cmd": "deploy", "api_key": "sk-live-leak"}),
@@ -275,8 +288,9 @@ async fn a_hook_never_sees_a_secret_in_tool_arguments() {
 async fn a_plugin_hook_runs_at_the_notification_points_too() {
     let rt = runtime();
     let failures = Arc::new(CollectFailures::new());
-    let hook =
-        WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy").with_reporter(failures.clone());
+    let hook = WasmPluginHook::new(rt.clone(), demo_hook(&rt), "policy")
+        .with_limits(behaviour_limits())
+        .with_reporter(failures.clone());
 
     hook.post_tool(
         "bash",
