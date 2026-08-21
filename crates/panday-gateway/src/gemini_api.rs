@@ -88,7 +88,8 @@ impl GenerateRequest {
                 temperature: cfg.temperature,
                 top_p: cfg.top_p,
                 max_tokens: cfg.max_output_tokens,
-                stop: cfg.stop_sequences,
+                // agy sends stopSequences; Grok rejects `stop`. Drop them here.
+                stop: Vec::new(),
             },
             cache: Default::default(),
             stream: false,
@@ -155,7 +156,12 @@ pub async fn generate(
             return gemini_error(e);
         }
     }
-    let (model, stream) = parse_tail(&tail);
+    let (mut model, stream) = parse_tail(&tail);
+    // Antigravity names Gemini models. If this process has no Gemini adapter
+    // (no GEMINI_API_KEY), route with `auto` so Grok/Claude OAuth still serve.
+    if model.starts_with("gemini/") && !state.gateway.providers().iter().any(|p| *p == "gemini") {
+        model = "auto".into();
+    }
     let mut ir = req.into_ir(caller.account, model.clone());
     ir.stream = stream;
     let items = match state.gateway.chat(ir).await {

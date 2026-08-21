@@ -455,7 +455,17 @@ impl PolicyRouter {
         };
         let mut out: Vec<ModelRef> = Vec::new();
         for pattern in chain {
-            for model in catalog.expand(&pattern.0) {
+            let expanded = catalog.expand(&pattern.0);
+            // An exact pin the catalog does not know (a live-listed model) is
+            // kept. Globs that match nothing stay empty — that is a pool with
+            // no models, not a pin.
+            if expanded.is_empty() && !pattern.0.contains('*') {
+                if !out.contains(&pattern) {
+                    out.push(pattern);
+                }
+                continue;
+            }
+            for model in expanded {
                 if !out.contains(&model) {
                     out.push(model);
                 }
@@ -635,7 +645,12 @@ mod tests {
             "frontier + workhorse fallback should concatenate: {:?}",
             d.chain
         );
-        assert!(first(&d).starts_with("anthropic/claude-opus"));
+        assert!(
+            first(&d).starts_with("anthropic/claude-fable")
+                || first(&d).starts_with("anthropic/claude-opus"),
+            "frontier head: {}",
+            first(&d)
+        );
         assert!(
             d.chain.iter().any(|m| m.0.contains("sonnet")),
             "the fallback leg must be present"

@@ -143,6 +143,11 @@ impl WireRequest {
         } else {
             req.model.0.clone()
         };
+        let stop = if model.starts_with("grok") {
+            Vec::new()
+        } else {
+            req.sampling.stop.clone()
+        };
 
         WireRequest {
             model,
@@ -154,7 +159,7 @@ impl WireRequest {
             temperature: req.sampling.temperature,
             top_p: req.sampling.top_p,
             max_tokens: req.sampling.max_tokens,
-            stop: req.sampling.stop.clone(),
+            stop,
             tools: req.tools.iter().map(to_wire_tool).collect(),
         }
     }

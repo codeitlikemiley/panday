@@ -168,14 +168,25 @@ name = "panday grok-4.6"
 
 Then `/model panday`.
 
-**Antigravity CLI (`agy`)** — Gemini-compatible, not OpenAI:
+**Antigravity CLI (`agy`)** — Gemini `generateContent`, not OpenAI. All three of these are required together. `agy` does **not** read `.env` files; the key must be in the process environment.
 
-```bash
-export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088
-export GEMINI_API_KEY=unused
+`~/.gemini/antigravity-cli/settings.json`:
+
+```json
+{
+  "modelProvider": "gemini"
+}
 ```
 
-It posts to `/v1beta/models/{model}:generateContent`. Bare ids become `gemini/…`. A qualified id (`xai/grok-4.6`) is kept, so Antigravity can call whatever this gateway has adapters for.
+```bash
+export GEMINI_API_KEY=unused
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088
+agy --print "reply with the single word pong"
+```
+
+`modelProvider: "gemini"` without `GEMINI_API_KEY` is the error `agy` prints at startup. The dummy `unused` is enough for this solo gateway (no auth). `GOOGLE_GEMINI_BASE_URL` must not include `/v1beta` — `agy` appends `/v1beta/models/{model}:generateContent`.
+
+If this gateway has no `GEMINI_API_KEY` of its own (outbound Google), those Gemini model names route with `auto` (Grok/Claude OAuth). To call Google itself, start the gateway with `GEMINI_API_KEY` set.
 
 **Playground:** `GET http://127.0.0.1:8088/playground` — same Chat Completions path as curl.
 
