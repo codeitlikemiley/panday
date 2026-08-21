@@ -256,19 +256,18 @@ pub async fn create(
     }
 }
 
-fn anthropic_error(e: PandayError) -> Response {
-    let status = match &e {
-        PandayError::RateLimited { .. } => axum::http::StatusCode::TOO_MANY_REQUESTS,
-        PandayError::BudgetExceeded { .. } | PandayError::EntitlementDenied { .. } => {
-            axum::http::StatusCode::PAYMENT_REQUIRED
-        }
-        PandayError::ModelUnavailable { .. } => axum::http::StatusCode::NOT_FOUND,
-        PandayError::Protocol(_) => axum::http::StatusCode::BAD_REQUEST,
-        _ => axum::http::StatusCode::BAD_GATEWAY,
-    };
+pub(crate) fn anthropic_error(e: PandayError) -> Response {
+    // Status comes from the shared table (docs/11 M11.8) — it is protocol, not
+    // dialect. Only the envelope and the `type` vocabulary below are Anthropic's.
+    let status = crate::ingress::status_for(&e);
     let ty = match &e {
         PandayError::RateLimited { .. } => "rate_limit_error",
         PandayError::Protocol(_) => "invalid_request_error",
+        // Anthropic's own vocabulary, so a client written against the real API
+        // branches the same way here. `overloaded_error` is what they send when
+        // capacity is the problem, which is what an exhausted chain is.
+        PandayError::PermissionDenied(_) => "permission_error",
+        PandayError::ModelUnavailable { .. } => "overloaded_error",
         _ => "api_error",
     };
     (

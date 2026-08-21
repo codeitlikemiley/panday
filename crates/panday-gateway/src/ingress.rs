@@ -453,10 +453,19 @@ pub(crate) fn retry_after_headers(e: &PandayError) -> axum::http::HeaderMap {
     headers
 }
 
-/// Map an IR error onto the status code a standard client expects.
-pub(crate) fn error_response(e: PandayError) -> Response {
+/// The HTTP status for an IR error — for **every** ingress (docs/11 M11.8).
+///
+/// Status is protocol; only the envelope is dialect. The three ingresses used to
+/// decide this separately and had drifted: the same exhausted chain was a 503 on
+/// `/v1/chat/completions` and a 404 on `/v1/messages`, and a `PermissionDenied`
+/// that was a 403 here fell through to 502 on the other two. Nothing asserted
+/// they agreed, so nothing caught it — `every_ingress_agrees_on_status` does now.
+///
+/// `ModelUnavailable` is 503 per docs/11 M11.5, which reasons about it as the
+/// exhausted-chain case. See the note there about what it also has to cover.
+pub(crate) fn status_for(e: &PandayError) -> axum::http::StatusCode {
     use axum::http::StatusCode;
-    let status = match &e {
+    match e {
         PandayError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
         PandayError::BudgetExceeded { .. } | PandayError::EntitlementDenied { .. } => {
             StatusCode::PAYMENT_REQUIRED
@@ -465,7 +474,12 @@ pub(crate) fn error_response(e: PandayError) -> Response {
         PandayError::PermissionDenied(_) => StatusCode::FORBIDDEN,
         PandayError::Protocol(_) => StatusCode::BAD_REQUEST,
         PandayError::Provider { .. } | PandayError::Other(_) => StatusCode::BAD_GATEWAY,
-    };
+    }
+}
+
+/// Map an IR error onto the status code a standard client expects.
+pub(crate) fn error_response(e: PandayError) -> Response {
+    let status = status_for(&e);
 
     // The standard error envelope: a client that only understands OpenAI's
     // shape must be able to read our failures too.
@@ -632,7 +646,7 @@ fn sse(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{error_response, qualify_model, retry_after_headers};
+    use super::{error_response, qualify_model, retry_after_headers, status_for};
     use panday_sdk::PandayError;
 
     fn retry_after_of(e: PandayError) -> Option<String> {
@@ -679,6 +693,124 @@ mod tests {
             }),
             Some("1".into())
         );
+    }
+
+    /// One of every `PandayError` variant. A new variant will not compile here
+    /// until it is added, which is the point.
+    fn one_of_each() -> Vec<(&'static str, PandayError)> {
+        vec![
+            (
+                "RateLimited",
+                PandayError::RateLimited {
+                    retry_after_ms: 1_000,
+                },
+            ),
+            (
+                "BudgetExceeded",
+                PandayError::BudgetExceeded { balance_micros: -5 },
+            ),
+            (
+                "EntitlementDenied",
+                PandayError::EntitlementDenied {
+                    plan: "free".into(),
+                    needed: "frontier".into(),
+                },
+            ),
+            (
+                "ModelUnavailable",
+                PandayError::ModelUnavailable {
+                    tried: vec!["anthropic/claude-sonnet-5".into()],
+                },
+            ),
+            (
+                "PermissionDenied",
+                PandayError::PermissionDenied("no".into()),
+            ),
+            ("Protocol", PandayError::Protocol("bad json".into())),
+            (
+                "Provider",
+                PandayError::Provider {
+                    upstream: "http".into(),
+                    message: "500".into(),
+                    retryable: true,
+                },
+            ),
+            ("Other", PandayError::Other("boom".into())),
+        ]
+    }
+
+    #[test]
+    fn every_ingress_agrees_on_status() {
+        // The three dialects render different envelopes on purpose. The status
+        // is not part of the envelope — it is the protocol — and they had
+        // drifted apart precisely because nothing asserted this (docs/11 M11.8):
+        // an exhausted chain was 503 here and 404 on /v1/messages, and a
+        // PermissionDenied that is 403 here fell through to 502 on both others.
+        for (name, e) in one_of_each() {
+            let openai = error_response(clone_of(&e)).status();
+            let anthropic = crate::messages::anthropic_error(clone_of(&e)).status();
+            let gemini = crate::gemini_api::gemini_error(clone_of(&e)).status();
+            assert_eq!(
+                openai, anthropic,
+                "{name}: /v1/chat/completions says {openai}, /v1/messages says {anthropic}"
+            );
+            assert_eq!(
+                openai, gemini,
+                "{name}: /v1/chat/completions says {openai}, /v1beta says {gemini}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_shared_table_is_what_every_ingress_actually_uses() {
+        // Guards against a dialect quietly reintroducing its own match arm:
+        // agreement with each other is not enough if all three drift together.
+        for (name, e) in one_of_each() {
+            let expected = status_for(&e);
+            assert_eq!(error_response(clone_of(&e)).status(), expected, "{name}");
+            assert_eq!(
+                crate::messages::anthropic_error(clone_of(&e)).status(),
+                expected,
+                "{name}"
+            );
+            assert_eq!(
+                crate::gemini_api::gemini_error(clone_of(&e)).status(),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    /// `PandayError` is not `Clone` (`Other` boxes a `dyn Error`), and the three
+    /// mappers take it by value.
+    fn clone_of(e: &PandayError) -> PandayError {
+        match e {
+            PandayError::RateLimited { retry_after_ms } => PandayError::RateLimited {
+                retry_after_ms: *retry_after_ms,
+            },
+            PandayError::BudgetExceeded { balance_micros } => PandayError::BudgetExceeded {
+                balance_micros: *balance_micros,
+            },
+            PandayError::EntitlementDenied { plan, needed } => PandayError::EntitlementDenied {
+                plan: plan.clone(),
+                needed: needed.clone(),
+            },
+            PandayError::ModelUnavailable { tried } => PandayError::ModelUnavailable {
+                tried: tried.clone(),
+            },
+            PandayError::PermissionDenied(m) => PandayError::PermissionDenied(m.clone()),
+            PandayError::Protocol(m) => PandayError::Protocol(m.clone()),
+            PandayError::Provider {
+                upstream,
+                message,
+                retryable,
+            } => PandayError::Provider {
+                upstream: upstream.clone(),
+                message: message.clone(),
+                retryable: *retryable,
+            },
+            PandayError::Other(e) => PandayError::Other(e.to_string().into()),
+        }
     }
 
     #[test]

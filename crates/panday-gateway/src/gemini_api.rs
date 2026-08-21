@@ -175,13 +175,12 @@ pub async fn generate(
     }
 }
 
-fn gemini_error(e: PandayError) -> Response {
-    let status = match &e {
-        PandayError::RateLimited { .. } => axum::http::StatusCode::TOO_MANY_REQUESTS,
-        PandayError::Protocol(_) => axum::http::StatusCode::BAD_REQUEST,
-        PandayError::ModelUnavailable { .. } => axum::http::StatusCode::NOT_FOUND,
-        _ => axum::http::StatusCode::BAD_GATEWAY,
-    };
+pub(crate) fn gemini_error(e: PandayError) -> Response {
+    // Shared status table (docs/11 M11.8). This route used to answer 404 for an
+    // exhausted chain and 502 for a budget refusal, both of which disagreed with
+    // `/v1/chat/completions` for the identical failure. `rpc_code` derives the
+    // Code name from the status, so it stays consistent for free.
+    let status = crate::ingress::status_for(&e);
     let mut error = json!({
         "code": status.as_u16(),
         "message": e.to_string(),
@@ -212,6 +211,9 @@ fn rpc_code(status: axum::http::StatusCode) -> &'static str {
     match status.as_u16() {
         400 => "INVALID_ARGUMENT",
         401 => "UNAUTHENTICATED",
+        // No canonical Code maps to 402. A billing refusal is a precondition the
+        // caller has not met, not an exhausted quota (that is 429).
+        402 => "FAILED_PRECONDITION",
         403 => "PERMISSION_DENIED",
         404 => "NOT_FOUND",
         429 => "RESOURCE_EXHAUSTED",

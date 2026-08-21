@@ -451,3 +451,48 @@ in-process, not a product surface. The gateway is stateless apart from cache
   429 with headers, not an SSE error frame. A mid-stream rate limit is not
   reachable today; if one ever becomes reachable it has no header to sit in, and
   that is the milestone that will have to answer it.
+
+- **M11.8** One status table for all three ingresses. ✅ *(shipped:
+  `ingress::status_for`, called by `error_response`, `anthropic_error` and
+  `gemini_error`; parity enforced by `every_ingress_agrees_on_status` and
+  `the_shared_table_is_what_every_ingress_actually_uses`.)*
+
+  M11.7 shared the `Retry-After` header across the three dialects and left their
+  *status* decisions alone, one per mapper. They had already drifted, silently,
+  because nothing ever compared them:
+
+  | Error | `/v1/chat/completions` | `/v1/messages` | `/v1beta` |
+  |---|---|---|---|
+  | `ModelUnavailable` | 503 | **404** | **404** |
+  | `PermissionDenied` | 403 | **502** | **502** |
+  | `BudgetExceeded` / `EntitlementDenied` | 402 | 402 | **502** |
+
+  So the same exhausted chain was a retryable outage on one route and a
+  permanent "no such thing" on another, and a permission refusal — the one
+  answer a caller must not retry — arrived as a retryable bad-gateway on the two
+  routes agents actually use. **Status is protocol, not dialect.** The envelope
+  is what differs between OpenAI, Anthropic and Gemini; the number in the status
+  line is the same fact about the same failure. It now comes from one table.
+
+  Dialect vocabulary stays per-dialect, which is the point of keeping the
+  mappers separate at all: `/v1/messages` now says `permission_error` and
+  `overloaded_error` — Anthropic's own type names, so a client written against
+  the real API branches identically here — and the Gemini `status` field derives
+  its `google.rpc.Code` name from the shared status, so it cannot drift by
+  construction. 402 has no canonical Code; `FAILED_PRECONDITION` is the honest
+  one, since a billing refusal is not an exhausted quota (that is 429).
+
+  **The guard is the deliverable.** Two table-driven tests walk one of every
+  `PandayError` variant through all three mappers — one asserting they agree with
+  each other, one asserting they agree with `status_for`, because three mappers
+  that drift *together* would pass the first test alone. A new variant does not
+  compile until it is added to the fixture.
+
+  **Left honest, not fixed:** `ModelUnavailable` carries two different failures.
+  `Gateway::chat` raises it when a chain is exhausted (503 is right), and
+  `resolve_chain` raises it when a rule has no usable target at all — which
+  includes a caller pinning a model this deployment will never serve. 503 tells
+  that caller to come back later about a request that can only ever fail, and
+  all three upstream APIs would answer 404. Splitting the variant is a change to
+  the error vocabulary in docs/10 §Errors and to the generated clients, so it is
+  a milestone of its own rather than a rider on this one.
