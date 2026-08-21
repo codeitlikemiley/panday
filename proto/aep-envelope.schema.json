@@ -752,7 +752,7 @@
       ]
     },
     "ModelRef": {
-      "description": "A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-4-5`,\n`local/qwen3.5-4b`) or the literal `auto` to let the router decide.",
+      "description": "A model reference: `provider/model` (e.g. `anthropic/claude-sonnet-5`,\n`xai/grok-4.6`) or the literal `auto` to let the router decide.",
       "type": "string"
     },
     "StopReason": {
