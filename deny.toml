@@ -9,7 +9,12 @@ all-features = true
 
 [advisories]
 version = 2
-ignore = []
+# Both are leptos-macro graph only. We do not call them; there is no
+# maintained upgrade on that path. Revisit when leptos drops them.
+ignore = [
+    "RUSTSEC-2024-0436", # paste — unmaintained, via leptos
+    "RUSTSEC-2026-0173", # proc-macro-error2 — unmaintained, via leptos_macro
+]
 
 [licenses]
 version = 2
