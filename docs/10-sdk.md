@@ -142,9 +142,13 @@ M25.3); missing stays 0 rather than inventing a delay, and 0 therefore reads as
 "unknown" everywhere downstream, never as "retry now". `Retry` honours a stated
 wait over its own curve up to `MAX_HONOURED_RETRY_AFTER` (60s) — beyond that it
 returns the error instead of sleeping, since that sleep is outside the timeout
-layer and the value is upstream-controlled. Success responses keep ratelimit
-remaining headers on the transport (`SseResponse.headers`); overlay onto
-operator remaining % is M25.7.
+layer and the value is upstream-controlled. `retry_after_secs()` is the wire
+form — whole seconds rounded **up**, and `None` when the wait is unknown, so an
+ingress omits `Retry-After` rather than sending 0 (docs/11 M11.7). The `Display`
+for `RateLimited` follows the same rule and says the upstream stated no delay
+instead of interpolating a zero. Success responses keep ratelimit remaining
+headers on the transport (`SseResponse.headers`); overlay onto operator
+remaining % is M25.7.
 
 ## Milestones
 

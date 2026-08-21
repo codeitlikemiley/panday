@@ -435,6 +435,24 @@ fn unauthorized(message: &str) -> Response {
         .into_response()
 }
 
+/// The `Retry-After` a 429 should carry, or no headers at all when no upstream
+/// stated a wait.
+///
+/// Shared by all three ingress dialects. RFC 9110 is not a dialect feature, and
+/// a caller should not have to know which envelope it asked for to learn when to
+/// come back. Omission is deliberate: `retry_after_ms` of 0 means *unknown*
+/// (docs/25 M25.3), and `Retry-After: 0` would say "retry now" — the one
+/// instruction this header exists to prevent.
+pub(crate) fn retry_after_headers(e: &PandayError) -> axum::http::HeaderMap {
+    let mut headers = axum::http::HeaderMap::new();
+    if let Some(secs) = e.retry_after_secs() {
+        if let Ok(value) = axum::http::HeaderValue::from_str(&secs.to_string()) {
+            headers.insert(axum::http::header::RETRY_AFTER, value);
+        }
+    }
+    headers
+}
+
 /// Map an IR error onto the status code a standard client expects.
 pub(crate) fn error_response(e: PandayError) -> Response {
     use axum::http::StatusCode;
@@ -453,6 +471,7 @@ pub(crate) fn error_response(e: PandayError) -> Response {
     // shape must be able to read our failures too.
     (
         status,
+        retry_after_headers(&e),
         Json(serde_json::json!({
             "error": {
                 "message": e.to_string(),
@@ -613,7 +632,73 @@ fn sse(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::qualify_model;
+    use super::{error_response, qualify_model, retry_after_headers};
+    use panday_sdk::PandayError;
+
+    fn retry_after_of(e: PandayError) -> Option<String> {
+        error_response(e)
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .map(|v| v.to_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn a_stated_wait_reaches_the_client_as_delay_seconds() {
+        assert_eq!(
+            retry_after_of(PandayError::RateLimited {
+                retry_after_ms: 8_000
+            }),
+            Some("8".into())
+        );
+    }
+
+    #[test]
+    fn an_unknown_wait_sends_no_header_at_all() {
+        // 0 is "no upstream stated one" (docs/25 M25.3). `Retry-After: 0` would
+        // say "retry now", which is the opposite instruction.
+        assert_eq!(
+            retry_after_of(PandayError::RateLimited { retry_after_ms: 0 }),
+            None
+        );
+    }
+
+    #[test]
+    fn a_partial_second_rounds_up_rather_than_down() {
+        // Truncating 1500ms to 1s sends the client back inside the window, and
+        // several providers extend the penalty when you retry too early.
+        assert_eq!(
+            retry_after_of(PandayError::RateLimited {
+                retry_after_ms: 1_500
+            }),
+            Some("2".into())
+        );
+        // A sub-second wait must not floor to 0 and become "retry now".
+        assert_eq!(
+            retry_after_of(PandayError::RateLimited {
+                retry_after_ms: 400
+            }),
+            Some("1".into())
+        );
+    }
+
+    #[test]
+    fn only_a_rate_limit_carries_the_header() {
+        assert_eq!(retry_after_of(PandayError::Protocol("nope".into())), None);
+        assert!(retry_after_headers(&PandayError::ModelUnavailable { tried: vec![] }).is_empty());
+    }
+
+    #[test]
+    fn a_long_upstream_window_is_published_unclamped() {
+        // MAX_HONOURED_RETRY_AFTER bounds how long *we* sleep, not what the
+        // upstream said. Republishing a shortened number would schedule a
+        // retry storm at the moment our own cap expired.
+        assert_eq!(
+            retry_after_of(PandayError::RateLimited {
+                retry_after_ms: 3_600_000
+            }),
+            Some("3600".into())
+        );
+    }
 
     #[test]
     fn bare_claude_ids_become_anthropic() {
