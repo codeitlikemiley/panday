@@ -109,7 +109,7 @@ a human can do: run it in Zed, and run it against a real local model.
 Platform service: accounts/keys/entitlements (M17.1–17.3), ledger from
 gateway+sandbox with property-tested reconciliation (M17.2, M3.5), Stripe
 test-mode → live (M17.4–17.5), OpenAI-compat ingress as the API product
-(M11.5), deploy shape 2 with status page (M22.2–22.3), abuse guardrails
+(M11.5; Anthropic Messages and Gemini generateContent join it), deploy shape 2 with status page (M22.2–22.3), abuse guardrails
 (M20.4), minimal web dashboard (usage, keys, billing).
 
 **Exit:** a stranger pays; the month's Stripe invoices reconcile with the
@@ -117,8 +117,8 @@ ledger to the cent; killing a provider mid-day degrades sessions to fallback
 pools without a support ticket.
 
 **Status: everything that does not need a third party is shipped.** Accounts, keys and rate
-limiting (M17.3), the ledger with property-tested reconciliation (M17.2, M3.5), the OpenAI-compat
-ingress as the product (M11.5), the webhook inbox and meter export (M17.4–17.5), abuse guardrails
+limiting (M17.3), the ledger with property-tested reconciliation (M17.2, M3.5), the OpenAI /
+Anthropic / Gemini ingress as the product (M11.5), the webhook inbox and meter export (M17.4–17.5), abuse guardrails
 and the admin surface (M17.7, M20.4), the dev shape and the service binary that is the composition
 root (M22.1).
 

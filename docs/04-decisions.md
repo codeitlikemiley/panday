@@ -107,8 +107,8 @@ from the open Rust gateways.
 
 **Consequences.** We own streaming quirks, provider flakiness, and dialect
 drift forever. Mitigation: conformance fixtures per provider, recorded-replay
-tests, and the OpenAI-compat ingress so we can A/B our gateway against any
-other by flipping a base URL.
+tests, and inbound Chat Completions, Anthropic Messages, and Gemini
+generateContent so a client is redirectable by changing a base URL.
 
 ---
 

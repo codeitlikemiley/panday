@@ -53,11 +53,16 @@ curl -sS http://127.0.0.1:8088/v1/chat/completions \
   -H 'Authorization: Bearer unused' -H 'Content-Type: application/json' \
   -d '{"model":"xai/grok-4.6","messages":[{"role":"user","content":"pong"}],"max_tokens":64}'
 
-# Claude Code — Anthropic Messages, not Chat Completions
+# Claude Code — Anthropic Messages. --bare or it talks to Anthropic directly.
+# Do not put /v1 on the URL.
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8088 ANTHROPIC_API_KEY=unused
+claude --bare --print "reply with the single word pong"
 
-# Antigravity CLI (`agy`) — Gemini generateContent, not Gemini CLI
+# Antigravity CLI (`agy`) — Gemini generateContent, not Gemini CLI.
+# Install the CLI only. agy does not read .env. Do not put /v1beta on the URL.
+# ~/.gemini/antigravity-cli/settings.json must have {"modelProvider":"gemini"}
 export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088 GEMINI_API_KEY=unused
+agy --print "reply with the single word pong"
 ```
 
 **The hosted shape, on a laptop.** `just dev` brings up Postgres and MinIO, migrates,
@@ -86,7 +91,9 @@ Phases 0–2's numbered work is complete (Phase 1's *exit* still wants you to us
 the agent on a real repo; Phase 2's still wants Zed and a GGUF). Phase 3 is
 built except Stripe and a host; phase 4 except T3 on KVM; phase 5's
 infrastructure is in place and its models are not. Live traffic on this laptop
-uses Grok CLI OAuth (`xai/grok-4.6` against `api.x.ai`), not a proxy.
+uses Grok CLI OAuth (`xai/grok-4.6` against `api.x.ai`) as the *outbound* hop.
+Inbound, Claude Code / Grok Build / `agy` point at `panday-gateway` — that is
+not routing through OpenCodex or LiteLLM.
 
 `docs/23-roadmap.md` carries the honest sequencing and a per-phase status. Every
 shipped milestone is marked ✅ in its own spec together with what was learned

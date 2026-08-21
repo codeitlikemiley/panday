@@ -129,10 +129,11 @@ not know the model, which reads as "no claim", not as "no capabilities".
   dropped from the chain. `json_reliability` and `tool_reliability` are in the profile and are
   deliberately *not* admission criteria — they are soft numbers the harness adapts to (docs/18: the
   model is told what it is), and a router that filtered on them would make every local-only
-  deployment unroutable the moment a request carried a tool. A model the catalog does not know is
-  kept, because dropping it would punish a request for our file being incomplete; a *pinned* model
-  the catalog does not know fails here rather than at the provider, which is a typo caught for the
-  price of a string comparison instead of a round trip.
+  deployment unroutable the moment a request carried a tool. A glob that matches nothing stays
+  empty (a pool with no models). An *exact* pin the catalog does not know is kept: live
+  `/v1/models` lists names the YAML overlay has not priced yet (agy's `gemini-3.1-pro` is the
+  example), and emptying the chain would 400 a request the provider would have served. A typo
+  still fails at the provider.
 
   **The audit row is one per request, not one per attempt.** `attempts` and `chosen` carry the
   failover story: `attempts: 2, chosen: together/...` is the row that explains why a healthy-looking

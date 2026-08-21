@@ -5,9 +5,11 @@ The platform has exactly three wire surfaces. Everything else is internal.
 1. **AEP** (Agent Event Protocol) — the session event stream. North-facing:
    clients render it; the harness emits it; the log stores it.
 2. **Platform REST** — control plane: auth, sessions CRUD, billing, keys.
-3. **Model-plane HTTP** — south-facing: the gateway's provider adapters speak
-   each provider's dialect; the gateway itself also *serves* an
-   OpenAI-compatible endpoint so any existing tool can point at it.
+3. **Model-plane HTTP** — south-facing, the gateway's provider adapters speak
+   each provider's dialect; north-facing, the gateway also *serves* OpenAI
+   Chat Completions, Anthropic Messages, and Gemini generateContent so
+   existing tools (Grok Build, Claude Code, Antigravity CLI) can point at it
+   (`docs/11`).
 
 Plus two adopted protocols we conform to rather than define: **MCP** (rmcp)
 for tools, **ACP** (agent-client-protocol) for editors. The CLI/harness maps

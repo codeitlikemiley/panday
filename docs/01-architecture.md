@@ -12,6 +12,7 @@ flowchart TB
         IDE[Editors via ACP<br/>Zed · JetBrains · VS Code · nvim]
         WEB[Web / Desktop<br/>phase 6]
         SDKC[Customer apps<br/>via panday-sdk / REST]
+        AGENTS[Claude Code · Grok Build · agy]
     end
 
     subgraph plane[Platform plane — panday-platform]
@@ -42,6 +43,7 @@ flowchart TB
     IDE -->|ACP| HARN
     WEB --> plane
     SDKC --> plane
+    AGENTS --> GW
     plane --> HARN
     HARN --> PLUG
     HARN --> SBX
@@ -81,8 +83,10 @@ flowchart TB
    namespaced processes (bubblewrap-class) → Firecracker microVMs for cloud
    multi-tenant (`14-sandbox.md`).
 7. **We speak the open protocols at every boundary** — MCP in (tools), ACP up
-   (editors), OpenAI-compatible down (model backends), SKILL.md sideways
-   (skills) (`16-plugins.md`).
+   (editors), SKILL.md sideways (skills), OpenAI-compatible down (model
+   backends), and inbound as Chat Completions, Anthropic Messages, and Gemini
+   generateContent so Claude Code, Grok Build, and Antigravity CLI can point
+   here (`11-gateway.md`, `16-plugins.md`).
 8. **Subscriptions and the API are one metering pipeline** — gateway and
    sandbox emit usage events into an internal ledger that is the source of
    truth; Stripe is a projection of it (`17-platform.md`).

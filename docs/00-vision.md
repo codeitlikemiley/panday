@@ -25,8 +25,10 @@ The 2026 landscape settled three questions in our favor:
 
 - **The protocols are open.** MCP for tools (official Rust SDK, `rmcp`), ACP
   for editor↔agent (official Rust crate), OpenAI-compatible HTTP for model
-  backends, SKILL.md-style markdown for skills. We adopt all four and compete
-  on runtime quality, not protocol lock-in.
+  backends, SKILL.md-style markdown for skills. Inbound, the gateway also
+  speaks Anthropic Messages and Gemini generateContent so Claude Code and
+  Antigravity CLI can point here by changing a base URL. We adopt those
+  dialects and compete on runtime quality, not protocol lock-in.
 - **The models are fungible.** Commercial APIs, open weights behind vLLM, and
   GGUF on a laptop all speak the same interface. A gateway + router that
   treats them uniformly is the position of maximum leverage.

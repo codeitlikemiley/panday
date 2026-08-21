@@ -24,11 +24,17 @@ Message the user with the blocked list rather than filling the gap.
 - **Claude subscription:** read Claude Code's Keychain item `Claude Code-credentials` or
   `~/.claude/.credentials.json`. Call `https://api.anthropic.com` with `Authorization: Bearer`
   plus `anthropic-beta: claude-code-20250219,oauth-2025-04-20`. Never write those stores.
-- **Not a proxy.** Do not send traffic through OpenCodex, LiteLLM, or `localhost:8080` as the
-  model. Those are other products. Panday talks to the provider.
+- **Not an OpenCodex/LiteLLM hop.** Outbound calls go to the provider (`api.x.ai`,
+  `api.anthropic.com`, …). Do not send traffic through OpenCodex, LiteLLM, or
+  `localhost:8080` as the model.
+- **Inbound, the gateway is the compatible front door.** Claude Code, Grok Build, and
+  Antigravity CLI (`agy`) point at `panday-gateway` (`docs/11` §Pointing agents). That is
+  not "use OpenCodex as upstream".
 - **Env:** `PANDAY_BASE_URL` is an optional OpenAI-compatible *upstream* (llama-server, Together).
   `PANDAY_COMPAT_BASE_URL` is a deprecated alias. Inspect-ai talks *to* panday via
-  `PANDAY_GATEWAY_URL`.
+  `PANDAY_GATEWAY_URL`. Claude Code uses `ANTHROPIC_BASE_URL` (no `/v1`, plus `--bare`).
+  `agy` uses `GOOGLE_GEMINI_BASE_URL` (no `/v1beta`) and `GEMINI_API_KEY` in the process
+  environment — it does not read `.env`.
 - **Model names** are `provider/model`: `xai/grok-4.6`, `anthropic/claude-sonnet-5`,
   `openai/gpt-5.6-sol`. Never `together/xai/…`.
 

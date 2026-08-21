@@ -96,8 +96,10 @@ Phase 6 not started.
 **Laptop-provable leftover clauses closed 2026-08-20** (do not re-run them to look busy):
 
 - Subscription OAuth in `panday_sdk::oauth`: Grok CLI `~/.grok/auth.json` → `xai/grok-4.6` against
-  `https://api.x.ai`; Claude Code Keychain / `~/.claude/.credentials.json` against Anthropic. Not a
-  third-party proxy. Model ids are `provider/model`. Env: `PANDAY_BASE_URL` (alias
+  `https://api.x.ai`; Claude Code Keychain / `~/.claude/.credentials.json` against Anthropic. Outbound
+  is not a third-party proxy. Inbound, Claude Code / Grok Build / Antigravity CLI (`agy`) point at
+  `panday-gateway` — how: `docs/11` §Pointing agents (`--bare`, no `/v1` / `/v1beta` on those
+  base URLs). Model ids are `provider/model`. Env: `PANDAY_BASE_URL` (alias
   `PANDAY_COMPAT_BASE_URL`) is an *upstream*; inspect-ai talks *to* panday via `PANDAY_GATEWAY_URL`.
 - Live M13.2: `a_live_model_fixes_it_unattended` ok (27s, no `ANTHROPIC_API_KEY`). `panday chat -m
   xai/grok-4.6` replied `pong` twice.

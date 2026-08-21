@@ -103,7 +103,9 @@ Trunk CSR.
 `prefers-color-scheme` is not a mid-page flip: the console is dark.
 
 **Never shown:** access tokens, refresh tokens, raw prompts in the recent-call
-list. OAuth is a boolean plus expiry class.
+list. OAuth is a boolean plus expiry class. "Expired" means the access token
+is past `expires_at` at boot — the Max/Pro subscription can still be valid.
+Restart the gateway after a CLI login/refresh.
 
 ## Also serves: OpenAI-, Anthropic-, and Gemini-compatible ingress
 
@@ -121,9 +123,15 @@ A client talking *to* panday must send a model the router can place: `provider/m
 
 The solo gateway on a laptop has no auth: any bearer / `x-api-key` / `x-goog-api-key` is accepted.
 
+Wire fields some upstreams 400 on are stripped on the way out, not rejected inbound:
+
+- Claude 5 / Fable 5 / Mythos: drop `temperature` and `top_p` on the Anthropic wire (`temperature is deprecated`).
+- Grok (`grok*`): drop `stop` (`does not support parameter stop`).
+- Gemini ingress: drop inbound `stopSequences` so they never become Grok `stop`.
+
 ### Pointing agents at a running gateway
 
-Listen is `PANDAY_GATEWAY_ADDR` (this laptop: `127.0.0.1:8088`). Subscription OAuth is read from Grok CLI and Claude Code at boot; `GEMINI_API_KEY` registers the Gemini outbound adapter.
+Default listen is `127.0.0.1:8080` (`PANDAY_GATEWAY_ADDR`). Examples below use `8088` because this laptop's 8080 is already taken. Subscription OAuth is read from Grok CLI and Claude Code at boot; `GEMINI_API_KEY` on the *gateway* process registers the Gemini *outbound* adapter. That key is independent of the dummy key a client sends *to* us.
 
 **Curl (OpenAI):**
 
@@ -133,8 +141,6 @@ curl -sS http://127.0.0.1:8088/v1/chat/completions \
   -H 'Authorization: Bearer unused' \
   -d '{"model":"xai/grok-4.6","messages":[{"role":"user","content":"reply with the single word pong"}],"max_tokens":64}'
 ```
-
-Do not send `temperature` to Claude 5 / Fable 5 — those models reject it. Omit the field.
 
 **Curl (Anthropic Messages — what Claude Code sends):**
 
@@ -146,14 +152,22 @@ curl -sS http://127.0.0.1:8088/v1/messages \
   -d '{"model":"claude-sonnet-5","max_tokens":64,"messages":[{"role":"user","content":"reply with the single word pong"}]}'
 ```
 
-**Claude Code:**
+**Claude Code** talks Anthropic Messages. Three things have to be true together:
+
+1. `ANTHROPIC_BASE_URL` is the gateway origin **without** `/v1` — Claude Code appends `/v1/messages`.
+2. `ANTHROPIC_API_KEY` is set (any dummy on the solo gateway).
+3. The process is launched with `--bare`. Without `--bare`, Claude Code prefers the Max/Keychain subscription and talks to `api.anthropic.com` directly, so panday never sees the call.
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8088
 export ANTHROPIC_API_KEY=unused
-# optional: ANTHROPIC_MODEL=claude-sonnet-5
-# do not append /v1 — Claude Code adds /v1/messages
+# optional: ANTHROPIC_MODEL=claude-sonnet-5   # or xai/grok-4.6
+claude --bare --print "reply with the single word pong"
 ```
+
+Proven on this laptop: `--bare --print` returned `pong` for both `ANTHROPIC_MODEL=xai/grok-4.6` and `claude-sonnet-5`. Interactive (no `--bare`) is not the proven path.
+
+`--disallowedTools` consumes subsequent argv as tool names — do not put the prompt after it. A console flag of OAuth "expired" is the *access token* past `expires_at` at gateway boot, not the Max/Pro subscription; restart the gateway after a CLI login/refresh.
 
 **Grok Build** — add *outside* the OpenCodex managed block in `~/.grok/config.toml`:
 
@@ -168,7 +182,9 @@ name = "panday grok-4.6"
 
 Then `/model panday`.
 
-**Antigravity CLI (`agy`)** — Gemini `generateContent`, not OpenAI. All three of these are required together. `agy` does **not** read `.env` files; the key must be in the process environment.
+**Antigravity CLI (`agy`)** — Gemini `generateContent`, not OpenAI and not Gemini CLI. Install the CLI only (`brew install --cask antigravity-cli` → `agy`), not the desktop app or IDE.
+
+All three of these are required together. `agy` does **not** read `.env` files; the key must be in the process environment (`~/.zshrc`, a wrapper, or the shell you launch `agy` from).
 
 `~/.gemini/antigravity-cli/settings.json`:
 
@@ -184,9 +200,11 @@ export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8088
 agy --print "reply with the single word pong"
 ```
 
-`modelProvider: "gemini"` without `GEMINI_API_KEY` is the error `agy` prints at startup. The dummy `unused` is enough for this solo gateway (no auth). `GOOGLE_GEMINI_BASE_URL` must not include `/v1beta` — `agy` appends `/v1beta/models/{model}:generateContent`.
+`modelProvider: "gemini"` without `GEMINI_API_KEY` is the error `agy` prints at startup (`modelProvider is set to "gemini" but GEMINI_API_KEY is not set`). That is not a malformed settings file. The dummy `unused` is enough for this solo gateway (no auth). `GOOGLE_GEMINI_BASE_URL` must not include `/v1beta` — `agy` appends `/v1beta/models/{model}:generateContent`.
 
-If this gateway has no `GEMINI_API_KEY` of its own (outbound Google), those Gemini model names route with `auto` (Grok/Claude OAuth). To call Google itself, start the gateway with `GEMINI_API_KEY` set.
+`agy --model` is ignored: the CLI always sends its Gemini default (`gemini-3.1-pro` / `gemini-3.1-pro-high`). The gateway qualifies that as `gemini/…`. If this process has no Gemini outbound adapter, those names route with `auto` (Grok/Claude OAuth). You cannot pin Grok from agy's flag. `agy --version` does not check `GEMINI_API_KEY`; `--print` and interactive do.
+
+Proven on this laptop: `agy --print` exited 0; traffic hit `POST /v1beta/models/gemini/gemini-3.1-pro:generateContent` and the workhorse (`xai/grok-4.6`) served it. An agentic run may not echo a one-word prompt back — the proof is the request on the gateway, not the string.
 
 **Playground:** `GET http://127.0.0.1:8088/playground` — same Chat Completions path as curl.
 
@@ -207,8 +225,9 @@ Outbound Gemini (this process *calling* Google) is `GEMINI_API_KEY` plus optiona
 ## Non-goals
 
 No business logic (harness owns turns), no transcript storage (log owns it),
-no UI. The gateway is stateless apart from cache + circuit state → scales
-horizontally behind any LB.
+no customer billing UI (that's Phase 6). The operator console at `GET /` is
+in-process, not a product surface. The gateway is stateless apart from cache
++ circuit state → scales horizontally behind any LB.
 
 ## Milestones
 
@@ -315,6 +334,11 @@ horizontally behind any LB.
 
   *Not done:* the literal aider smoke test needs aider installed. `curl` and the
   raw-HTTP suite exercise the same surface.
+
+  **Follow-on: Anthropic Messages and Gemini generateContent.** Claude Code
+  posts `POST /v1/messages`; Antigravity CLI (`agy`) posts Gemini
+  `generateContent` at `/v1beta/models/{model}:generateContent`. Same IR and
+  router as Chat Completions. How to point those CLIs is in §Pointing agents.
 - **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core. ✅ *(shipped: `panday_gateway::cache`, `panday_gateway::circuit`, wired in `Gateway::chat`; `tests/cache_and_breakers.rs`, `tests/overhead.rs`.)*
 
   **Measured, release build, single-threaded runtime, 1000 back-to-back requests
