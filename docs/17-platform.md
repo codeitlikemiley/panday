@@ -11,6 +11,9 @@ Account ──< Member (role) >── User (OIDC identities)
 Account ──< Workspace ──< Session (log lives with harness; index here)
 Account ── Subscription ── Plan ──< Entitlement
 Account ──< ApiKey (hashed, scoped, pnd_live_/pnd_test_)
+            ↑ these are *our* keys for inbound callers.
+            Provider API keys and Grok/Claude OAuth live in docs/25 — envelope-encrypted,
+            retrievable, never this table.
 Account ──< LedgerEntry (append-only)          ← the truth
 Account ──< CreditGrant (purchases, plan refresh, promos)
 ```

@@ -14,7 +14,9 @@ crib patterns from rig's sans-IO design, and `async-openai` remains a fine
 dependency for one adapter. But the SDK's *job* here is to be the typed face
 of OUR platform — model IR, AEP sessions, entitlement-aware errors — which no
 general-purpose crate models. The provider-adapter layer we'd reuse is the
-easy 20%.
+easy 20%. The upstream credential vault (`panday_sdk::vault`, docs/25) lives
+here because OAuth import already does: types + envelope + store, not adapter
+policy.
 
 ## Layer 1 — Model IR (`panday-types::model`)
 

@@ -48,6 +48,10 @@ input that the model *will* sometimes obey.
 - Secrets live in a vault table (or OS keychain locally), injected into
   sandbox env **only** when a tool's manifest declares the need and the
   permission engine approves; never rendered into model context.
+  **Upstream provider credentials** (API keys, subscription OAuth) are a
+  different store: envelope-encrypted, retrieved only into adapter headers
+  (`docs/25-credentials.md`). They are not hashed like `pnd_` keys and not
+  injected into the sandbox.
 - Redaction hooks scrub known secret patterns from tool output before the
   reducer (belt) and the gateway can run tenant DLP rules (suspenders).
 - Egress proxy blocks requests whose bodies match active secret values

@@ -54,6 +54,9 @@ Rules that keep a workspace this size sane:
 | time | time or chrono | pick ONE (we pick `time`), enforce with clippy |
 | tracing | tracing + opentelemetry | span per event, see 21 |
 | hashing | sha2 | content-addressed artifact refs; `docs/03` specifies sha256 |
+| AEAD | chacha20poly1305 | XChaCha20-Poly1305 for upstream credentials (docs/25). Retrievable secrets; not a hash |
+| wipe | zeroize | decrypted buffers and the vault KEK |
+| rng | rand | nonces and KEK generation (OsRng) |
 | regex | regex | `grep` native tool, reducer error-line matching |
 | config | toml | `plugin.toml` (docs/16); the spec names the file, so the format is product surface |
 | signing | ed25519-dalek | `.plugin` archive signatures and registry verification (docs/16) |

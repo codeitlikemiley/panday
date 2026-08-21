@@ -76,6 +76,11 @@ toml = "1"
 ed25519-dalek = { version = "3", features = ["rand_core"] }
 # Content-addressed artifact refs — docs/03 specifies sha256.
 sha2 = "0.11"
+# Upstream credential vault (docs/25). Retrievable secrets: AEAD, not a hash.
+# `std` on chacha20poly1305 pulls `alloc` + `getrandom`; we do not enable `heapless`.
+chacha20poly1305 = "0.10"
+zeroize = { version = "1", features = ["derive"] }
+rand = "0.8"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
 # Proc-macro toolchain for `#[tool]` (docs/10 M10.4). `syn`/`quote`/`proc-macro2` are

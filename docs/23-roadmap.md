@@ -15,6 +15,10 @@ OAuth, live M13.2, json-bench 200/200 on `xai/grok-4.6`, that model's catalog
 row `provenance: measured`, M20.1 canaries in agent-bench (41 tasks). What
 remains is named in each phase's status, not guessed.
 
+**Operator track (docs/25), started 2026-08-21:** twelve milestones (M25.1–25.12)
+to pool upstream API keys and Grok/Claude/Codex subscriptions behind the gateway.
+Additive — not Phase 5/6, does not skip training or Stripe. M25.1 is the sealed vault.
+
 ## Phase 0 — Spine (~weeks 1–4)
 
 The vocabulary and the door. `panday-types` events + model IR (✅ seeded in

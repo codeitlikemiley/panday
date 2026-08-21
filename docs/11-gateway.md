@@ -35,9 +35,11 @@ risk + dialect drift belongs to us):
 | `local` | openai_compat pinned to loopback | the offline tier; no auth. Registered only when that URL answers (default `http://127.0.0.1:8081`, or `PANDAY_LOCAL_BASE_URL`) |
 
 Subscription tokens are imported read-only by `panday_sdk::oauth` from the official CLIs' stores
-and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A client
-talking *to* panday ingress must send the full `provider/model` id (`OpenAiCompatClient::for_gateway`);
-stripping `xai/` makes the router honestly refuse `grok-4.6`.
+and refreshed in memory. Never write `~/.grok/auth.json` or Claude Code credentials. A pool of
+several keys or subscriptions is `docs/25-credentials.md` — one credential per provider at boot
+is the current wiring; the vault is M25.1. A client talking *to* panday ingress must send the
+full `provider/model` id (`OpenAiCompatClient::for_gateway`); stripping `xai/` makes the router
+honestly refuse `grok-4.6`.
 
 Adapter contract: `fn chat(req: ChatRequest) -> impl Stream<StreamItem>` plus
 `capabilities() -> Caps` (max context, tool support, cache style, modalities).

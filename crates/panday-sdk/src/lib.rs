@@ -19,6 +19,7 @@ pub mod oauth;
 pub mod providers;
 pub mod sessions;
 pub mod telemetry;
+pub mod vault;
 
 pub use gateway::{connect, GatewayTransport};
 pub use middleware::{ModelClientExt, Retry, RetryPolicy, Timeout};
