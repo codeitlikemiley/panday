@@ -81,7 +81,8 @@ session's TCC grants, which made the repository unreadable for hours.
 - **Never `gh pr merge --delete-branch` on a PR that another PR is stacked on.** Deleting the base
   branch auto-closes the child, and a closed PR whose base is gone can be neither reopened nor
   retargeted — the work has to be rebased and re-filed under a new number. Delete base branches by
-  hand once their children have landed. (This is how #13 was lost; see §3.)
+  hand once their children have landed. (This is how PR #13 was lost: it had to be rebased onto the
+  squashed `main` and re-filed as #16.)
 - **`git fetch` against `origin` fails silently-ish** because the remote is SSH and SSH is broken
   (§4.2). A stale `origin/main` will happily let you rebase onto the wrong base. Fetch the same way
   you push: `git -c credential.helper='!gh auth git-credential' fetch https://github.com/codeitlikemiley/panday.git main`.
@@ -90,11 +91,11 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `8f1feb7` — *M25.3: transport keeps Retry-After and ratelimit headers (#12)*
+**HEAD (`main`):** `893f88a` — *M11.8: one status table for all three ingresses (#15)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
-**101 milestones total: 86 shipped ✅, 15 remaining.** Recount it rather than trusting this line —
+**103 milestones total: 89 shipped ✅, 14 remaining.** Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
 count too.
 
@@ -103,7 +104,7 @@ count too.
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
-| 25-credentials | 3 / 12 shipped (M25.1 vault, M25.2 `panday creds`, M25.4 pooled adapter). M25.9 partial. M25.3 is PR #12; M25.5–M25.12 are the next work. |
+| 25-credentials | 4 / 12 shipped (M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter). M25.9 partial. M25.5–M25.12 are the next work. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
 API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is
@@ -168,49 +169,39 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight — one merged, two stacked PRs open
+## 3. In-flight — nothing
 
-`git status` on `main` is clean; nothing is sitting uncommitted.
+`git status` on `main` is clean and no PR is open. The three that were in flight all landed:
 
-| PR | Branch | Milestone | State |
-|---|---|---|---|
-| [#12](https://github.com/codeitlikemiley/panday/pull/12) | `m25.3-headers` | M25.3 | **Merged** as `8f1feb7`. |
-| [#16](https://github.com/codeitlikemiley/panday/pull/16) | `m11.7-retry-after-egress` | M11.7 | Open, based on `main`. Head `8913807`. |
-| [#15](https://github.com/codeitlikemiley/panday/pull/15) | `m11.8-one-error-mapper` | M11.8 | Open, based on `m11.7-retry-after-egress`. Head `ad99214`. |
+| Commit | Milestone | What it changed |
+|---|---|---|
+| `8f1feb7` | M25.3 | The transport stops dropping response headers. `post_sse` returns `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was hardcoded to 0. |
+| `a823b69` | M11.7 | Every ingress now *tells the client* the wait. Before this, every 429 the gateway ever emitted was a bare status. |
+| `893f88a` | M11.8 | One status table for all three ingresses. |
 
-**Merge #16 before #15**, and **do not pass `--delete-branch` to a PR something else is stacked on.**
-Merging #12 that way deleted `m25.3-headers`, which auto-closed the PR targeting it (#13, now dead
-and unreopenable — a closed PR whose base branch is gone can be neither reopened nor retargeted).
-M11.7 had to be rebased onto the squashed `main` and re-filed as #16. Delete a base branch by hand
-after its children have landed.
+Four findings from that run are worth carrying, because each is a shape that will recur:
 
-- **#12 / M25.3** — the transport stops dropping response headers. `post_sse` returns
-  `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was
-  hardcoded to 0. Two defects were found and fixed *before* it was pushed, and both are worth knowing
-  because the same shapes will recur: a plain `min()` over a pool treated the 0 sentinel ("no header")
-  as the soonest wait and erased every real one, and filling `retry_after_ms` activated a
-  previously-dead retry arm that slept an unbounded upstream-controlled value outside the timeout
-  layer. `MAX_HONOURED_RETRY_AFTER` (60s) now caps what we will sleep.
-- **#16 / M11.7** — the gateway *tells the client* the wait. Until this, every 429 it ever emitted was
-  a bare status: the value was computed and dropped at the HTTP boundary, and panday's own
-  `RateLimiter` had been discarding its own window remainder the same way. Note for anyone touching
-  error handling: **there are three independent error mappers** — `ingress::error_response`,
-  `messages::anthropic_error`, `gemini_api::gemini_error` — that share no code and have already
-  drifted. Fixing one is not fixing the ingress — a change to `error_response` alone reaches neither
-  Claude Code nor Antigravity.
-- **#15 / M11.8** — closes that drift. Status was 503/404/404 for `ModelUnavailable`, 403/502/502 for
-  `PermissionDenied`, 402/402/502 for a budget refusal. The `PermissionDenied` row was the dangerous
-  one: 403 is terminal and 502 is retryable, so a client with ordinary backoff would hammer a refusal
-  it can never satisfy — on the two routes agents actually use. Status now comes from one
-  `ingress::status_for`; envelopes stay per-dialect. Two table-driven tests hold the line, and both
-  fail against #16, which is what makes them a guard rather than decoration.
+- **0 is a sentinel, not a value.** `retry_after_ms == 0` means "no upstream stated a wait". A plain
+  `min()` over a credential pool therefore collapsed to 0 the moment one member stayed silent,
+  erasing every real wait its siblings reported. Unknowns must abstain from an aggregate, not win it.
+- **Filling a field can arm dead code.** `retry_after_ms` had always been 0, so `Retry`'s
+  server-stated-delay arm had never run. Populating it activated an unbounded, upstream-controlled
+  `sleep` sitting outside the timeout layer. `MAX_HONOURED_RETRY_AFTER` (60s) now caps it.
+- **There are three error mappers, not one** — `ingress::error_response`, `messages::anthropic_error`,
+  `gemini_api::gemini_error`. They share no code, and a change to the first reaches neither Claude
+  Code nor Antigravity. They had silently drifted on status: 503/404/404 for `ModelUnavailable`,
+  403/502/502 for `PermissionDenied` (403 is terminal, 502 is retryable — clients would hammer a
+  refusal they can never satisfy). M11.8 put status behind one `ingress::status_for` and added two
+  table-driven parity tests. **Status is protocol; only the envelope is dialect.**
+- **A guard that would not have failed before the fix is decoration.** Both parity tests fail against
+  the commit preceding them. That is the bar.
 
-  **Still open, and now the interesting one:** `ModelUnavailable` conflates two failures — an
-  exhausted chain (503 is right) and a rule with no usable target, which includes a caller pinning a
-  model this deployment will never serve. 503 tells that caller to come back later about a request
-  that can only ever fail; all three upstream APIs would answer 404. Splitting the variant touches
-  the error vocabulary in `docs/10` and the generated clients, so it is a milestone, not a rider.
-  Written up under docs/11 M11.8.
+**Still open, no milestone number yet:** `ModelUnavailable` conflates two failures — an exhausted
+chain (503 is right) and a rule with no usable target, which includes a caller pinning a model this
+deployment will never serve. 503 tells that caller to come back later about a request that can only
+ever fail; all three upstream APIs would answer 404. Splitting the variant touches the error
+vocabulary in `docs/10` and the generated clients, so it is a milestone, not a rider. Written up
+under docs/11 M11.8.
 
 ---
 
@@ -332,7 +323,7 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 item 1 still needs hardware, a third party, training data, or a judgement only the builder can make —
 but M25.5 onward needs none of that. Do not invent rates or p95s for the blocked items.
 
-0. **Merge #16, then #15** (§3), then continue the operator track in spec order: **M25.5** sticky
+0. **Continue the operator track** in spec order: **M25.5** sticky
    `session_id` + per-credential breakers, **M25.6** operator ceiling / local counters / remaining %
    on `/accounts`, **M25.7** overlay the ratelimit headers M25.3 now keeps onto those counters,
    **M25.8** `most_remaining` selector, **M25.9** finish vault-as-boot-source, **M25.10** prove Codex
