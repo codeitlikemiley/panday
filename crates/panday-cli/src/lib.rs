@@ -16,13 +16,20 @@
 
 pub mod acp;
 pub mod acp_server;
+pub mod creds;
 pub mod plugin_install;
+
+pub use creds::{
+    add_from_claude, add_from_codex, add_from_grok, add_from_stdin, format_list,
+    open_operator_vault, run_creds,
+};
 
 use panday_gateway::adapters::{anthropic::Anthropic, openai_compat::OpenAiCompat};
 pub use panday_gateway::CollectUsage;
 use panday_gateway::{Gateway, ProviderAdapter};
 use panday_harness::ReplayOptions;
 use panday_router::{ModelCatalog, PolicyRouter};
+pub use panday_sdk::vault::Kind;
 use panday_sdk::{ModelClient, PandayError};
 use panday_types::id::{AccountId, RequestId};
 use panday_types::model::{
@@ -217,6 +224,9 @@ pub enum Command {
         /// Rewrites the *origin* of every artifact URL, never the path or the hash.
         mirror: Option<String>,
     },
+    /// `panday creds add|list|revoke` (docs/25 M25.2). Operator outbound secrets.
+    /// The secret is never accepted on argv.
+    Creds(CredsAction),
     Help,
     Version,
 }
@@ -238,6 +248,29 @@ pub enum ModelAction {
         index: String,
         key_file: String,
     },
+}
+
+/// `panday creds` (docs/25 M25.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CredsAction {
+    Add {
+        provider: String,
+        label: Option<String>,
+        kind: Kind,
+        source: CredsSource,
+    },
+    List,
+    Revoke {
+        id: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredsSource {
+    Stdin,
+    Grok,
+    Claude,
+    Codex,
 }
 
 /// Hand-rolled because it parses one subcommand and two flags.
@@ -266,6 +299,7 @@ where
         "acp" => return parse_acp(it),
         "plugin" => return parse_plugin(it),
         "models" => return parse_models(it),
+        "creds" => return parse_creds(it),
         other => return Err(format!("unknown command `{other}` (try `panday help`)")),
     }
 
@@ -355,6 +389,156 @@ fn parse_models<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command
         catalog_key,
         mirror,
     })
+}
+
+fn parse_creds<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let action = it
+        .next()
+        .ok_or("panday creds needs an action: add, list, revoke")?;
+    match action.as_str() {
+        "help" | "--help" | "-h" => Ok(Command::Help),
+        "list" => {
+            for arg in it {
+                match arg.as_str() {
+                    "--help" | "-h" => return Ok(Command::Help),
+                    other if other.starts_with('-') => {
+                        return Err(format!("unknown flag `{other}` (try `panday help`)"))
+                    }
+                    other => return Err(format!("creds list takes no arguments, got `{other}`")),
+                }
+            }
+            Ok(Command::Creds(CredsAction::List))
+        }
+        "revoke" => {
+            let mut id = None;
+            while let Some(arg) = it.next() {
+                match arg.as_str() {
+                    "--help" | "-h" => return Ok(Command::Help),
+                    other if other.starts_with('-') => {
+                        return Err(format!("unknown flag `{other}` (try `panday help`)"))
+                    }
+                    other if id.is_none() => id = Some(other.to_string()),
+                    other => return Err(format!("revoke takes one id, also got `{other}`")),
+                }
+            }
+            Ok(Command::Creds(CredsAction::Revoke {
+                id: id.ok_or("panday creds revoke needs a credential id")?,
+            }))
+        }
+        "add" => parse_creds_add(it),
+        other => Err(format!("unknown creds action `{other}`")),
+    }
+}
+
+fn parse_creds_add<'a, I: Iterator<Item = &'a String>>(mut it: I) -> Result<Command, String> {
+    let mut provider = None;
+    let mut label = None;
+    let mut kind = None;
+    let mut source = None;
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--provider" => {
+                let v = next_value(&mut it, "--provider")?;
+                let v = v.trim().to_string();
+                if v.is_empty() {
+                    return Err("--provider must be non-empty".into());
+                }
+                provider = Some(v);
+            }
+            "--label" => label = Some(next_value(&mut it, "--label")?),
+            "--kind" => {
+                let v = next_value(&mut it, "--kind")?;
+                kind = Some(Kind::parse(&v).ok_or_else(|| {
+                    format!("unknown kind `{v}`; expected api_key or oauth")
+                })?);
+            }
+            "--from-grok" => set_creds_source(&mut source, CredsSource::Grok)?,
+            "--from-claude" => set_creds_source(&mut source, CredsSource::Claude)?,
+            "--from-codex" => set_creds_source(&mut source, CredsSource::Codex)?,
+            "--help" | "-h" => return Ok(Command::Help),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown flag `{other}` (try `panday help`)"))
+            }
+            other => {
+                return Err(format!(
+                    "secret is stdin, not argv (pipe it; `ps` must never see the token). unexpected `{other}`"
+                ))
+            }
+        }
+    }
+
+    let (provider, kind, source) = match source {
+        None | Some(CredsSource::Stdin) => {
+            let provider = provider.ok_or(
+                "panday creds add needs --provider <name> (or --from-grok / --from-claude / --from-codex)",
+            )?;
+            (provider, kind.unwrap_or(Kind::ApiKey), CredsSource::Stdin)
+        }
+        Some(CredsSource::Grok) => {
+            check_implied_import("xai", Kind::Oauth, provider.as_deref(), kind, "--from-grok")?;
+            ("xai".into(), Kind::Oauth, CredsSource::Grok)
+        }
+        Some(CredsSource::Claude) => {
+            check_implied_import(
+                "anthropic",
+                Kind::Oauth,
+                provider.as_deref(),
+                kind,
+                "--from-claude",
+            )?;
+            ("anthropic".into(), Kind::Oauth, CredsSource::Claude)
+        }
+        Some(CredsSource::Codex) => {
+            check_implied_import(
+                "openai",
+                Kind::Oauth,
+                provider.as_deref(),
+                kind,
+                "--from-codex",
+            )?;
+            ("openai".into(), Kind::Oauth, CredsSource::Codex)
+        }
+    };
+
+    Ok(Command::Creds(CredsAction::Add {
+        provider,
+        label,
+        kind,
+        source,
+    }))
+}
+
+fn set_creds_source(slot: &mut Option<CredsSource>, next: CredsSource) -> Result<(), String> {
+    if slot.is_some() {
+        return Err("only one of --from-grok, --from-claude, --from-codex".into());
+    }
+    *slot = Some(next);
+    Ok(())
+}
+
+fn check_implied_import(
+    want_provider: &str,
+    want_kind: Kind,
+    provider: Option<&str>,
+    kind: Option<Kind>,
+    flag: &str,
+) -> Result<(), String> {
+    if let Some(p) = provider {
+        if p != want_provider {
+            return Err(format!("{flag} is provider {want_provider}, not `{p}`"));
+        }
+    }
+    if let Some(k) = kind {
+        if k != want_kind {
+            return Err(format!(
+                "{flag} is kind {}, not {}",
+                want_kind.as_str(),
+                k.as_str()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn next_value<'a, I: Iterator<Item = &'a String>>(
@@ -677,7 +861,11 @@ pub fn help() -> String {
          panday session [--url <base>] [--session <id>] [--after-seq <n>] <prompt>\n  \
          panday acp [--workspace <dir>] [--profile <name>]   (an editor spawns this)\n  \
          panday plugin install <name>@<version> [--registry <url>] [--trust <key>] [--yes]\n  \
-         panday models list|pull <id>|verify [id]|rm <id> [--catalog <path|url>] [--catalog-key <hex>] [--mirror <url>]\n\n\
+         panday models list|pull <id>|verify [id]|rm <id> [--catalog <path|url>] [--catalog-key <hex>] [--mirror <url>]\n  \
+         panday creds add --provider <name> [--label <name>] [--kind api_key|oauth]\n  \
+         panday creds add --from-grok|--from-claude|--from-codex [--label <name>]\n  \
+         panday creds list\n  \
+         panday creds revoke <id>\n\n\
          FLAGS:\n  \
          -m, --model    a concrete `provider/model`, or `auto` to let the router decide (default)\n  \
          -h, --help     show this\n\n\
@@ -691,12 +879,21 @@ pub fn help() -> String {
          --verbose      full tool arguments and observations, unelided\n  \
          --summary      one line: turns, tools, tokens, how it ended\n  \
          --diff <log>   diff this replay against another log's (e.g. before/after a reducer change)\n\n\
+         CREDENTIALS:\n  \
+         --provider     outbound provider (xai, anthropic, openai, gemini, …). Secret is stdin, never argv.\n  \
+         --kind         api_key (default) or oauth; --from-* is always oauth\n  \
+         --label        operator name (not a secret)\n  \
+         --from-grok    copy ~/.grok/auth.json into the vault (read-only)\n  \
+         --from-claude  copy Claude Code login into the vault (read-only)\n  \
+         --from-codex   copy ~/.codex/auth.json into the vault (read-only)\n\n\
          ENVIRONMENT:\n  \
          ANTHROPIC_API_KEY        enables `anthropic` (console key). Else Claude Code login is used.\n  \
          PANDAY_BASE_URL          any OpenAI-compatible base (registers `together`; alias PANDAY_COMPAT_BASE_URL)\n  \
          PANDAY_COMPAT_API_KEY    its key, if the base needs one\n  \
          PANDAY_LOCAL_BASE_URL    llama-server base (default {})\n  \
          PANDAY_MODEL_DIR         where GGUFs live (default ~/.panday/models)\n  \
+         PANDAY_VAULT_KEY         64 hex chars for the vault KEK; else ~/.panday/master.key\n  \
+         PANDAY_VAULT_DB          vault sqlite path (default ~/.panday/credentials.sqlite)\n  \
          Grok CLI login           ~/.grok/auth.json enables `xai` (model id xai/grok-4.6)\n\n\
          Every call goes through the gateway: routed by policy, metered per call.",
         Config::LOCAL_DEFAULT
@@ -1123,6 +1320,17 @@ mod tests {
     #[test]
     fn help_documents_plugin_install() {
         assert!(help().contains("panday plugin install"), "{}", help());
+    }
+
+    #[test]
+    fn help_documents_creds() {
+        let h = help();
+        assert!(h.contains("panday creds"), "{h}");
+        assert!(h.contains("--from-grok"), "{h}");
+        assert!(h.contains("--from-claude"), "{h}");
+        assert!(h.contains("--from-codex"), "{h}");
+        assert!(h.contains("PANDAY_VAULT_KEY"), "{h}");
+        assert!(h.contains("PANDAY_VAULT_DB"), "{h}");
     }
 
     #[test]

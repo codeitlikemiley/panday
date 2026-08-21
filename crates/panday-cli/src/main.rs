@@ -2,6 +2,7 @@
 //! testable in-process"). All behaviour lives in the library.
 
 use panday_cli::{chat_request, help, parse_args, CollectUsage, Command, Config, Stdout};
+use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -61,6 +62,25 @@ async fn run() -> ExitCode {
             let mut out = Stdout;
             return match panday_cli::run_session(&cmd, &mut out).await {
                 Ok(_) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("panday: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        // Operator outbound vault (docs/25 M25.2). No gateway: stdin or a read-only
+        // CLI import, then SQLite ciphertext. Must run before chat so a TTY check
+        // is about the secret pipe, not a prompt.
+        cmd @ Command::Creds(_) => {
+            let stdin = std::io::stdin();
+            let is_tty = stdin.is_terminal();
+            return match panday_cli::run_creds(&cmd, stdin, is_tty).await {
+                Ok(text) => {
+                    if !text.is_empty() {
+                        println!("{}", text.trim_end());
+                    }
+                    ExitCode::SUCCESS
+                }
                 Err(e) => {
                     eprintln!("panday: {e}");
                     ExitCode::FAILURE

@@ -107,7 +107,18 @@ A one-credential gateway must keep today's failover behaviour.
   `list` has last4 and no secret, master.key is `0600`.)*
 
 - **M25.2** `panday creds` CLI: add (stdin), `--from-grok|--from-claude|--from-codex`,
-  list, revoke. Argv must not accept the token.
+  list, revoke. Argv must not accept the token. ✅ *(shipped: `panday creds` in
+  `panday-cli`. `add` without `--from-*` reads stdin — trim the pipe, then one
+  line. A TTY is refused (`pipe it`); a positional after `add` is rejected so
+  `ps` never sees the token. `--from-grok` copies `panday_sdk::oauth::grok_cli()`
+  (`~/.grok/auth.json`) as `provider=xai` `kind=oauth`. `--from-claude` copies
+  `claude_code()` as `anthropic` oauth. `--from-codex` reads `tokens.access_token`
+  from `~/.codex/auth.json` (override `CODEX_HOME` or `PANDAY_CODEX_AUTH`) as
+  `openai` oauth. All three are read-only against official CLI stores — two grok
+  imports are two rows. `list` prints `id  provider  kind  label  last4  state`,
+  never the secret. `revoke <id>` wipes ciphertext via `CredentialStore::revoke`.
+  KEK: `PANDAY_VAULT_KEY` else `~/.panday/master.key`. DB: `PANDAY_VAULT_DB` else
+  `~/.panday/credentials.sqlite`.)*
 
 - **M25.3** Transport keeps headers. `Retry-After` fills `RateLimited.retry_after_ms`
   (today it is always 0). Success path exposes ratelimit headers.

@@ -30,6 +30,11 @@ cargo build --release
 ./target/release/panday chat -m xai/grok-4.6 "why is this test failing?"
 #    Or ANTHROPIC_API_KEY / Claude Code login, or PANDAY_BASE_URL for any
 #    OpenAI-compatible server.
+#    Outbound secrets (Grok/Claude/Codex OAuth, API keys) go in the vault with
+#    `panday creds` — pipe the token, or `--from-grok` / `--from-claude` / `--from-codex`.
+#    Never argv. See docs/25.
+#    ./target/release/panday creds add --from-grok --label laptop
+#    ./target/release/panday creds list
 
 # 2. Offline: a local model, a jailed workspace, nothing leaving the machine.
 #    Needs an OpenAI-compatible server on loopback (llama-server, mistral.rs, …).
