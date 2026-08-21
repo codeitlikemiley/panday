@@ -20,6 +20,21 @@ version: 1
 
 models:
   # --- frontier -----------------------------------------------------------------------------
+  # Anthropic's most capable generally-available model (API id `claude-fable-5`).
+  # Mythos 5 is the same weights with fewer safeguards, invitation-only — not listed.
+  - id: anthropic/claude-fable-5
+    context: 1000000
+    json: 0.99
+    tools: 0.99
+    vision: true
+    max_subagents: 4
+    price:
+      input_per_mtok_micros: 10000000
+      output_per_mtok_micros: 50000000
+      cache_read_pct: 10
+      cache_write_pct: 125
+      cache_write_1h_pct: 200
+
   - id: anthropic/claude-opus-5
     context: 1000000
     json: 0.99

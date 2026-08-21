@@ -31,7 +31,7 @@ confidence gates whether we trust it.
 ```yaml
 version: 1
 pools:
-  frontier:   [anthropic/claude-opus-*, openai/gpt-5.6-sol]
+  frontier:   [anthropic/claude-fable-*, anthropic/claude-opus-*, openai/gpt-5.6-sol]
   workhorse:  [anthropic/claude-sonnet-*, openai/gpt-5.6-terra, xai/grok-*, together/qwen3.5-*-instruct]
   cheap:      [openai/gpt-5.6-luna, together/qwen3.5-9b, local/qwen3.5-4b]
   local-only: [local/qwen3.5-4b, local/gpt-oss-20b]

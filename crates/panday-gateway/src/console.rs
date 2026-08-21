@@ -236,6 +236,7 @@ mod tests {
         let catalog = panday_router::ModelCatalog::shipped();
         let rows = callable_models(&catalog, &["anthropic".into(), "xai".into()]);
         let ids: Vec<&str> = rows.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"anthropic/claude-fable-5"), "{ids:?}");
         assert!(ids.contains(&"anthropic/claude-opus-5"), "{ids:?}");
         assert!(ids.contains(&"anthropic/claude-sonnet-5"), "{ids:?}");
         assert!(ids.contains(&"xai/grok-4.6"), "{ids:?}");

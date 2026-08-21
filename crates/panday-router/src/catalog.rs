@@ -398,6 +398,7 @@ models:
         let c = ModelCatalog::shipped();
         assert!(!c.is_empty());
         for id in [
+            "anthropic/claude-fable-5",
             "anthropic/claude-opus-5",
             "anthropic/claude-sonnet-5",
             "openai/gpt-5.6-sol",
