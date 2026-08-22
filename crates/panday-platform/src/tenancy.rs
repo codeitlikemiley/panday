@@ -6,8 +6,9 @@
 //!
 //! ## Why this exists before the first query does
 //!
-//! Postgres is M3.5, so there is no SQL to lint yet — which is exactly when a lint is
-//! worth writing. The first unscoped query is the one that gets written while someone
+//! This was armed before there was any SQL to lint — which is exactly when a lint is
+//! worth writing. There are now 49 `sqlx::query` sites and 8 migrations here, so it
+//! guards something real. The first unscoped query is the one that gets written while someone
 //! is debugging something else, and by the time there are fifty queries a lint becomes
 //! a migration project instead of a guardrail. Armed now, it costs one test run and
 //! the first violation fails a build.

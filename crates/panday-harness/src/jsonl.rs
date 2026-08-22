@@ -1,8 +1,10 @@
 //! An append-only file event store — the on-disk form of the log (M21.3).
 //!
 //! `panday replay` is specified as taking a `<session_id>` and looking the log
-//! up in the store (docs/21 §The replay tool). Postgres is M3.5 and SQLite is
-//! M18.1, so in Phase 2 there is nowhere to look a session up *from*. Rather
+//! up in the store (docs/21 §The replay tool). When this landed there was
+//! nowhere to look a session up *from*; SQLite (M18.1) and the PG
+//! `session_events` sink (M18.6) have since shipped, so that form is unblocked
+//! and merely unwritten. Rather
 //! than ship a replay tool with no reachable input, this is the smallest store
 //! that makes the fold observable: one JSON envelope per line, in `seq` order,
 //! which is already the shape of the golden fixtures.

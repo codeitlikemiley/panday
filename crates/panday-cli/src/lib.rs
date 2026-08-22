@@ -175,9 +175,11 @@ pub enum Command {
         prompt: String,
     },
     /// docs/21 §The replay tool. Specified as `panday replay <session_id>`,
-    /// which needs a store to look the session up in; Postgres is M3.5 and
-    /// SQLite M18.1, so v1 takes the log file directly (`JsonlStore`). The
-    /// spec is amended to match rather than the divergence buried here.
+    /// which needs a store to look the session up in. There was none when this
+    /// landed; SQLite (M18.1) and the PG `session_events` sink (M18.6) have
+    /// since shipped, so the session-id form is unblocked and merely unwritten.
+    /// v1 takes the log file directly (`JsonlStore`). The spec is amended to
+    /// match rather than the divergence buried here.
     Replay {
         log: String,
         at_seq: Option<u64>,

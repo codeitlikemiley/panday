@@ -11,8 +11,9 @@
 //! This one exists because an eval suite replays identical requests hundreds of
 //! times, and paying for that twice is silly.
 //!
-//! It is **not Postgres**. The spec names a PG unlogged table, and PG is M3.5 —
-//! so this is the trait plus an in-memory implementation, and the binaries wire
+//! It is **not Postgres**. The spec names a PG unlogged table and no milestone
+//! owned building one until M11.10 — so this is the trait plus an in-memory
+//! implementation, and the binaries wire
 //! whichever they have (docs/01: libraries take traits). The eligibility rules,
 //! the key normalization and the tenant scoping are the parts with the bugs in
 //! them, and they live here either way.
