@@ -206,6 +206,8 @@ async fn put_secret<S: CredentialStore>(
         label: label.unwrap_or("").trim().to_string(),
         last4: String::new(),
         state: State::Active,
+        ceiling: None,
+        window_secs: None,
     };
     let id = meta.id;
     store.put(meta, secret).await.map_err(|e| e.to_string())?;

@@ -23,6 +23,44 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS credentials (
     updated_at TEXT NOT NULL
 )";
 
+/// Add columns that postdate the original table.
+///
+/// The repo's first schema migration, and deliberately the dullest kind: check
+/// `PRAGMA table_info` and add what is missing. Not `ALTER TABLE … ` with the
+/// error swallowed — "add it and ignore the failure" cannot tell a
+/// column-already-exists from a disk that has gone read-only, and a vault that
+/// silently half-migrates is worse than one that refuses to open.
+///
+/// Existing rows keep their ciphertext: the AEAD's AAD is `id || provider ||
+/// kind` and neither new column is part of it (docs/25 M25.9).
+async fn migrate(pool: &SqlitePool) -> Result<(), VaultError> {
+    let existing: Vec<String> = sqlx::query("PRAGMA table_info(credentials)")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| VaultError::Io(e.to_string()))?
+        .iter()
+        .map(|r| r.get::<String, _>("name"))
+        .collect();
+    for (column, ddl) in [
+        (
+            "ceiling",
+            "ALTER TABLE credentials ADD COLUMN ceiling INTEGER",
+        ),
+        (
+            "window_secs",
+            "ALTER TABLE credentials ADD COLUMN window_secs INTEGER",
+        ),
+    ] {
+        if !existing.iter().any(|c| c == column) {
+            sqlx::query(ddl)
+                .execute(pool)
+                .await
+                .map_err(|e| VaultError::Io(e.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
 pub struct SqliteStore {
     kek: Kek,
     pool: SqlitePool,
@@ -50,6 +88,7 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(|e| VaultError::Io(e.to_string()))?;
+        migrate(&pool).await?;
         Ok(Self { kek, pool })
     }
 
@@ -64,6 +103,7 @@ impl SqliteStore {
             .execute(&pool)
             .await
             .map_err(|e| VaultError::Io(e.to_string()))?;
+        migrate(&pool).await?;
         Ok(Self { kek, pool })
     }
 }
@@ -74,6 +114,7 @@ fn now_rfc3339() -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".into())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn meta_from_row(
     id: String,
     provider: String,
@@ -81,6 +122,8 @@ fn meta_from_row(
     label: String,
     last4: String,
     state: String,
+    ceiling: Option<i64>,
+    window_secs: Option<i64>,
 ) -> Result<CredentialMeta, VaultError> {
     Ok(CredentialMeta {
         id: id
@@ -91,6 +134,10 @@ fn meta_from_row(
         label,
         last4,
         state: State::parse(&state).ok_or_else(|| VaultError::Io(format!("bad state {state}")))?,
+        // Negative is not a ceiling. A hand-edited row should not become a
+        // silently huge one via `as u64`.
+        ceiling: ceiling.and_then(|v| u64::try_from(v).ok()),
+        window_secs: window_secs.and_then(|v| u64::try_from(v).ok()),
     })
 }
 
@@ -102,8 +149,9 @@ impl CredentialStore for SqliteStore {
         let now = now_rfc3339();
         let res = sqlx::query(
             "INSERT INTO credentials
-                (id, provider, kind, label, last4, state, nonce, ciphertext, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (id, provider, kind, label, last4, state, nonce, ciphertext, created_at,
+                 updated_at, ceiling, window_secs)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(meta.id.to_string())
         .bind(&meta.provider)
@@ -115,6 +163,8 @@ impl CredentialStore for SqliteStore {
         .bind(&ciphertext)
         .bind(&now)
         .bind(&now)
+        .bind(meta.ceiling.map(|v| v as i64))
+        .bind(meta.window_secs.map(|v| v as i64))
         .execute(&self.pool)
         .await;
         match res {
@@ -143,6 +193,10 @@ impl CredentialStore for SqliteStore {
             row.get("label"),
             row.get("last4"),
             row.get("state"),
+            // Not selected, and not needed: the AAD is `id || provider || kind`,
+            // so a ceiling cannot affect whether this row decrypts.
+            None,
+            None,
         )?;
         if meta.state == State::Revoked {
             return Err(VaultError::Revoked);
@@ -154,7 +208,7 @@ impl CredentialStore for SqliteStore {
 
     async fn list(&self) -> Result<Vec<CredentialMeta>, VaultError> {
         let rows = sqlx::query(
-            "SELECT id, provider, kind, label, last4, state FROM credentials ORDER BY label",
+            "SELECT id, provider, kind, label, last4, state, ceiling, window_secs\n             FROM credentials ORDER BY label",
         )
         .fetch_all(&self.pool)
         .await
@@ -168,6 +222,8 @@ impl CredentialStore for SqliteStore {
                     row.get("label"),
                     row.get("last4"),
                     row.get("state"),
+                    row.get("ceiling"),
+                    row.get("window_secs"),
                 )
             })
             .collect()
@@ -195,6 +251,30 @@ impl CredentialStore for SqliteStore {
         }
     }
 
+    async fn set_grant(
+        &self,
+        id: &CredentialId,
+        ceiling: Option<u64>,
+        window_secs: Option<u64>,
+    ) -> Result<(), VaultError> {
+        // Touches only the two bookkeeping columns. The ciphertext is not read,
+        // not rewritten, and not resealed.
+        let res = sqlx::query(
+            "UPDATE credentials SET ceiling = ?, window_secs = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(ceiling.map(|v| v as i64))
+        .bind(window_secs.map(|v| v as i64))
+        .bind(now_rfc3339())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| VaultError::Io(e.to_string()))?;
+        if res.rows_affected() == 0 {
+            return Err(VaultError::NotFound);
+        }
+        Ok(())
+    }
+
     async fn revoke(&self, id: &CredentialId) -> Result<(), VaultError> {
         let n = sqlx::query(
             "UPDATE credentials
@@ -217,7 +297,7 @@ impl CredentialStore for SqliteStore {
 impl SqliteStore {
     async fn list_one(&self, id: &CredentialId) -> Result<CredentialMeta, VaultError> {
         let row = sqlx::query(
-            "SELECT id, provider, kind, label, last4, state FROM credentials WHERE id = ?",
+            "SELECT id, provider, kind, label, last4, state, ceiling, window_secs\n             FROM credentials WHERE id = ?",
         )
         .bind(id.to_string())
         .fetch_optional(&self.pool)
@@ -231,6 +311,8 @@ impl SqliteStore {
             row.get("label"),
             row.get("last4"),
             row.get("state"),
+            row.get("ceiling"),
+            row.get("window_secs"),
         )
     }
 }
@@ -250,6 +332,8 @@ mod tests {
             label: String::new(),
             last4: String::new(),
             state: State::Active,
+            ceiling: None,
+            window_secs: None,
         }
     }
 
