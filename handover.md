@@ -91,7 +91,7 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `893f88a` — *M11.8: one status table for all three ingresses (#15)*
+**HEAD (`main`):** `a80b207` — *M25.8: most_remaining selector and the opt-in funnel (#20)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
@@ -104,7 +104,7 @@ count too.
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
-| 25-credentials | 4 / 12 shipped (M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter). M25.9 partial. M25.5–M25.12 are the next work. |
+| 25-credentials | **8 / 12 shipped** (M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel). M25.9 partial. **M25.9 and M25.10 are the next work**; M25.11/M25.12 are skip-unless-asked. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
 API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is
@@ -319,18 +319,24 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 
 ## 6. Suggested next steps, in order
 
-**This is no longer true: the operator track is laptop-buildable and unfinished.** Everything below
-item 1 still needs hardware, a third party, training data, or a judgement only the builder can make —
-but M25.5 onward needs none of that. Do not invent rates or p95s for the blocked items.
+**Two operator-track milestones are still laptop-buildable.** Everything below item 1 needs hardware,
+a third party, training data, or a judgement only the builder can make. Do not invent rates or p95s
+for those.
 
-0. **Continue the operator track** in spec order: **M25.5** sticky
-   `session_id` + per-credential breakers, **M25.6** operator ceiling / local counters / remaining %
-   on `/accounts`, **M25.7** overlay the ratelimit headers M25.3 now keeps onto those counters,
-   **M25.8** `most_remaining` selector, **M25.9** finish vault-as-boot-source, **M25.10** prove Codex
-   import against the OpenAI adapter *or* write the note saying it does not work. M25.11 (hosted
-   Postgres ciphertext) and M25.12 (Keychain-wrapped KEK — needs `keyring`, so §1.2 applies) are
-   skip-unless-asked. There is also one open question with no milestone number yet: `ModelUnavailable`
-   answers 503 for a model this deployment will never serve, where 404 is the honest answer (§3).
+0. **Finish the operator track.** M25.1–M25.8 are shipped — pooling, per-credential breakers, sticky
+   sessions, grants, header overlay and the `most_remaining` funnel all landed. What is left:
+   **M25.9** make the vault the boot source of truth (env keys become rows when it is empty; this is
+   also where the per-credential *ceiling* persistence M25.6 deliberately deferred belongs, because
+   the vault has no migration framework yet and that schema change is M25.9's to make), and
+   **M25.10** prove Codex import against the OpenAI adapter *or* write the note saying it does not
+   work. M25.11 (hosted Postgres ciphertext) and M25.12 (Keychain-wrapped KEK — needs `keyring`, so
+   §1.2 applies) are skip-unless-asked.
+
+   Two open questions carry no milestone number yet, both surfaced by the work above and both written
+   into the specs rather than only here: `ModelUnavailable` answers 503 for a model this deployment
+   will never serve, where 404 is honest (docs/11 M11.8); and under `most_remaining` a credential
+   known to be at 2% is still preferred over an unmeasured one, because ordering ranks only what it
+   measures and the threshold — not the ordering — is what handles emptiness (docs/25 M25.8).
 1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
 2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
