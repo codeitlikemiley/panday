@@ -38,8 +38,10 @@ Credential
 AAD for the AEAD is `id || provider || kind`. Ciphertext from one row cannot be
 copied onto another.
 
-KEK: 32 bytes. First of `PANDAY_VAULT_KEY` (hex) or `~/.panday/master.key` (raw,
-mode `0600`, created on first use). Never logged. Keychain wrap is M25.12.
+KEK: 32 bytes, resolved by `Kek::resolve` in this order — `PANDAY_VAULT_KEY`
+(hex), then an existing `~/.panday/master.key` (raw, mode `0600`), then the
+macOS Keychain **if** `PANDAY_VAULT_KEYCHAIN=1`, else a freshly created file.
+Never logged. The file beats the keychain deliberately: see M25.12.
 
 Laptop store: SQLite `~/.panday/credentials.sqlite`. No plaintext column. A
 revoked row keeps `id`/`label`/`last4` so usage history still names it, and the
@@ -427,4 +429,53 @@ A one-credential gateway must keep today's failover behaviour.
 - **M25.11** Hosted Postgres ciphertext (same envelope). Not tenant BYOK.
 
 - **M25.12** Keychain-wrapped KEK. Ask before adding `keyring`. Skip if file+env
-  is enough.
+  is enough. ✅ *(shipped: `Kek::resolve`, `PANDAY_VAULT_KEYCHAIN`, and a
+  macOS-only `keyring` dependency. `keyring` approved by the user 2026-08-22 per
+  CLAUDE.md §5.)*
+
+  **Precedence, and the order matters more than anything else here — a lost KEK
+  is an unreadable vault, permanently:**
+
+  1. `PANDAY_VAULT_KEY`. An explicit override wins; that is what it is for.
+  2. **An existing `~/.panday/master.key`, before the keychain, always.** If a
+     vault was sealed under the file's key, preferring a keychain entry would
+     hand back a *different* key and make every row undecryptable. `resolve`
+     never consumes or deletes the file it read — migration is something an
+     operator does deliberately, not something a library does on boot.
+  3. The keychain, **only** when `PANDAY_VAULT_KEYCHAIN=1`.
+  4. Otherwise generate, and store wherever step 3 decided.
+
+  **The opt-in is not timidity.** `keyring` can fall back to an in-memory store
+  when no backend is present. That store reads back correctly inside one process
+  and is empty at the next boot — so a silent default would lose vaults on
+  exactly the machines least able to notice, and no same-process check can catch
+  it. An operator who asks for the keychain gets a loud error when it is
+  unavailable; one who does not ask is never exposed to it.
+
+  **Writes are verified through a fresh entry.** If the keychain accepts the KEK
+  and then will not return it, `resolve` refuses rather than sealing a vault
+  against a key that may not survive a restart.
+
+  **macOS only, at the dependency level.** `keyring` is a
+  `cfg(target_os = "macos")` dependency, so it is not compiled elsewhere at all
+  and a Linux build cannot reach a mock store even by accident. The `keychain`
+  feature of `apple-native-keyring-store` is named directly because `keyring`
+  enables that backend without choosing a store, and the crate refuses to build
+  without one; `protected` is the data-protection variant and needs an
+  entitlement we do not have.
+
+  **The cost, recorded rather than discovered later.** `keyring` adds **41
+  components to `sbom.cdx.json`** — an entire D-Bus/secret-service stack
+  (`zbus`, `zvariant`, `secret-service`, `async-executor`), AES/HKDF/HMAC
+  crates, and `uds_windows`. **None of them compile here:** `cargo tree` shows
+  the Apple store as the only backend built. They appear because `Cargo.lock`
+  records optional dependencies regardless of which features are enabled, and
+  the SBOM is generated from the lockfile. `cargo deny` is clean on all of it.
+  Accepted deliberately (2026-08-22) — the alternative is an SBOM generator that
+  filters by compiled target, which is a different piece of work and changes how
+  every future SBOM reads.
+
+  Migration from an existing file is deliberately **not** automatic: read the
+  hex out of `master.key`, set it as `PANDAY_VAULT_KEY` once to confirm the
+  vault opens, then store it in the keychain and move the file aside. Doing that
+  silently on boot is how people lose vaults.

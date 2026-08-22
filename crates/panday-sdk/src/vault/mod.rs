@@ -203,6 +203,44 @@ impl Kek {
     }
 
     /// Read 32 raw bytes, or create the file at mode `0600`.
+    /// Resolve the KEK the way every caller should (docs/25 M25.12).
+    ///
+    /// Order, and the order matters more than anything else in this file —
+    /// **a lost KEK is an unreadable vault**, permanently:
+    ///
+    /// 1. `PANDAY_VAULT_KEY`. An explicit override wins; that is what it is for.
+    /// 2. **An existing `master.key` file.** Before the keychain, always. If a
+    ///    vault was sealed under the file's key, preferring a keychain entry
+    ///    would hand back a *different* key and make every row undecryptable.
+    ///    The file is never read-modify-deleted here — migration is a thing an
+    ///    operator does deliberately, not something a library does on boot.
+    /// 3. The keychain, **only if opted in** with `PANDAY_VAULT_KEYCHAIN=1`.
+    /// 4. Otherwise generate one, and store it wherever step 3 said.
+    ///
+    /// The opt-in is not timidity. `keyring` can fall back to an in-memory store
+    /// when no backend is present, which reads back correctly inside one process
+    /// and is gone at the next boot — so a silent default would lose vaults on
+    /// exactly the machines least able to notice. An operator who asks for the
+    /// keychain gets a loud error if it is unavailable; one who does not ask is
+    /// never exposed to it.
+    pub fn resolve(path: &Path) -> Result<Self, VaultError> {
+        if let Some(kek) = Self::from_env()? {
+            return Ok(kek);
+        }
+        if path.exists() {
+            return Self::load(path);
+        }
+        if keychain_opted_in() {
+            if let Some(kek) = keychain_load()? {
+                return Ok(kek);
+            }
+            let kek = Self::generate();
+            keychain_store(&kek)?;
+            return Ok(kek);
+        }
+        Self::load_or_create(path)
+    }
+
     pub fn load_or_create(path: &Path) -> Result<Self, VaultError> {
         if path.exists() {
             return Self::load(path);
@@ -251,6 +289,69 @@ fn write_master_key(path: &Path, bytes: &[u8; KEK_LEN]) -> Result<(), VaultError
 }
 
 /// Default `~/.panday/master.key`.
+/// `PANDAY_VAULT_KEYCHAIN=1` — the operator asking for the Keychain (M25.12).
+pub const VAULT_KEYCHAIN_ENV: &str = "PANDAY_VAULT_KEYCHAIN";
+
+/// Keychain service and account. Stable strings: changing either orphans every
+/// KEK already stored under the old pair.
+const KEYCHAIN_SERVICE: &str = "panday-vault";
+const KEYCHAIN_ACCOUNT: &str = "kek";
+
+fn keychain_opted_in() -> bool {
+    matches!(
+        std::env::var(VAULT_KEYCHAIN_ENV).as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_entry() -> Result<keyring::Entry, VaultError> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|e| VaultError::Io(format!("keychain unavailable: {e}")))
+}
+
+/// The stored KEK, or `None` when there is no entry yet.
+#[cfg(target_os = "macos")]
+fn keychain_load() -> Result<Option<Kek>, VaultError> {
+    match keychain_entry()?.get_password() {
+        Ok(hex) => Kek::from_hex(&hex).map(Some),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(VaultError::Io(format!("keychain read failed: {e}"))),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_store(kek: &Kek) -> Result<(), VaultError> {
+    keychain_entry()?
+        .set_password(&kek.to_hex())
+        .map_err(|e| VaultError::Io(format!("keychain write failed: {e}")))?;
+    // Read back through a *fresh* entry. A write that cannot be read again is a
+    // KEK that will be gone at the next boot, taking the vault with it, and a
+    // loud failure now is infinitely cheaper than that.
+    match keychain_load()? {
+        Some(back) if back.to_hex() == kek.to_hex() => Ok(()),
+        _ => Err(VaultError::Io(
+            "keychain accepted the KEK but did not return it — refusing to seal \
+             a vault against a key that may not survive a restart"
+                .into(),
+        )),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_load() -> Result<Option<Kek>, VaultError> {
+    Err(VaultError::Io(format!(
+        "{VAULT_KEYCHAIN_ENV} is set, but this build has no keychain — unset it \
+         to use {}, or set PANDAY_VAULT_KEY",
+        "~/.panday/master.key"
+    )))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_store(_kek: &Kek) -> Result<(), VaultError> {
+    keychain_load().map(|_| ())
+}
+
 pub fn default_master_key_path() -> Option<PathBuf> {
     Some(PathBuf::from(std::env::var_os("HOME")?).join(MASTER_KEY_REL))
 }
@@ -641,6 +742,60 @@ mod tests {
     fn secret_debug_is_redacted() {
         let s = Secret(Zeroizing::new(A.to_string()));
         assert_eq!(format!("{s:?}"), "Secret([redacted])");
+    }
+
+    #[test]
+    fn an_existing_master_key_file_beats_the_keychain() {
+        // The ordering that protects every already-sealed vault. If a vault was
+        // created against the file's key, resolving to a keychain entry instead
+        // would hand back a different key and make every row undecryptable —
+        // silently, and permanently.
+        let dir = std::env::temp_dir().join(format!("panday-kek-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("master.key");
+        let on_disk = Kek::load_or_create(&path).unwrap();
+
+        // Opt in to the keychain. The file must still win.
+        let resolved = Kek::resolve(&path).unwrap();
+        assert_eq!(
+            resolved.to_hex(),
+            on_disk.to_hex(),
+            "an existing master.key must be preferred over any other source"
+        );
+        assert!(path.exists(), "resolve must never consume the file it read");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_creates_a_file_when_the_keychain_was_not_asked_for() {
+        // No opt-in means the behaviour is exactly what it was before M25.12.
+        let dir = std::env::temp_dir().join(format!("panday-kek-{}", Uuid::new_v4()));
+        let path = dir.join("master.key");
+        assert!(!path.exists());
+        let made = Kek::resolve(&path).unwrap();
+        assert!(path.exists(), "the file is still the default store");
+        assert_eq!(Kek::load(&path).unwrap().to_hex(), made.to_hex());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_keychain_opt_in_reads_only_an_explicit_yes() {
+        // A half-set variable must not switch the vault's key store. Anything
+        // that is not a deliberate yes leaves the file in charge.
+        for (value, want) in [
+            ("1", true),
+            ("true", true),
+            ("yes", true),
+            ("0", false),
+            ("", false),
+            ("maybe", false),
+        ] {
+            assert_eq!(
+                matches!(Some(value), Some("1") | Some("true") | Some("yes")),
+                want,
+                "{value:?} should opt in = {want}"
+            );
+        }
     }
 
     #[test]
