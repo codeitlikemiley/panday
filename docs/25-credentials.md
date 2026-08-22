@@ -349,10 +349,43 @@ A one-credential gateway must keep today's failover behaviour.
   chain walks on. The metric outcome is `exhausted`.
 
 - **M25.9** Gateway boot loads the vault. Env keys become rows if the vault is
-  empty (back-compat). OAuth import is "insert if absent", not "the only cred".
-  **Partial:** `CredHub::seed_from_process` loads Grok/Claude
-  OAuth, `*_API_KEY` + `PANDAY_*_API_KEYS`, then vault rows (skip duplicate
-  last4). The console can add more without restart. `panday creds` is M25.2.
+  empty (back-compat). OAuth import is "insert if absent", not "the only cred". ✅
+  *(shipped: the `ceiling`/`window_secs` columns and their migration,
+  `CredentialStore::set_grant`, empty-vault seeding in
+  `CredHub::seed_from_process`, and `creds::persist_grant` behind the console
+  form.)*
+
+  **Seeding happens only when the vault is empty.** Adopting whatever env and
+  the CLI stores supplied is what lets the *next* boot find those credentials
+  even if the variable is gone. Doing it to a populated vault would resurrect a
+  credential the operator had revoked, every time they restarted with a stale
+  variable still exported.
+
+  **A vault row's ceiling beats the env default.** `PANDAY_<PROVIDER>_CEILING`
+  declares one number for a whole provider; a row declares one for *this*
+  credential. The specific statement wins, and it is also the one the operator
+  made most recently and most deliberately — on the console, against a
+  credential they were looking at.
+
+  **Grants are matched by `(provider, last4)`, not by member id.** Pool member
+  ids are regenerated on every boot, so an id written today matches nothing
+  tomorrow. `last4` is stored in the clear by design, stable for the life of the
+  secret, and unique within a provider because the pool refuses a duplicate.
+
+  **The migration checks before it alters.** `PRAGMA table_info`, then add what
+  is missing — not `ALTER TABLE` with the error swallowed, which cannot tell
+  "column already exists" from "the disk went read-only", and a vault that
+  silently half-migrates is worse than one that refuses to open. This is the
+  repo's first schema migration and the pattern the next one should copy.
+
+  **Existing rows are untouched.** The AEAD's AAD is `id || provider || kind`
+  and neither new column is part of it, so every row still decrypts and nothing
+  is resealed. `set_grant` is deliberately separate from `put` for the same
+  reason: editing a ceiling must not handle the secret at all.
+
+  Persistence is best-effort. A laptop with no writable `~/.panday` still gets
+  the in-process grant; it just does not survive a restart, exactly as before.
+  `panday creds` is M25.2.
 
 - **M25.10** Codex importer proven against the openai adapter, or a note that it
   does not work and skip.

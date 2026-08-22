@@ -134,6 +134,15 @@ pub struct CredentialMeta {
     pub label: String,
     pub last4: String,
     pub state: State,
+    /// Operator-declared calls per window (docs/25 M25.6), persisted here from
+    /// M25.9 so it survives a restart. `None` means nobody has declared one.
+    ///
+    /// Deliberately **not** part of the AEAD's AAD, which stays
+    /// `id || provider || kind`: a ceiling is operator bookkeeping, not part of
+    /// the secret's identity, and binding it would mean every row's ciphertext
+    /// had to be resealed each time someone edited a number on the console.
+    pub ceiling: Option<u64>,
+    pub window_secs: Option<u64>,
 }
 
 /// Decrypted secret. `Debug` is redacted; the inner buffer is zeroized on drop.
@@ -346,6 +355,19 @@ pub trait CredentialStore: Send + Sync {
     async fn get_secret(&self, id: &CredentialId) -> Result<Secret, VaultError>;
     async fn list(&self) -> Result<Vec<CredentialMeta>, VaultError>;
     async fn set_state(&self, id: &CredentialId, state: State) -> Result<(), VaultError>;
+
+    /// Record the operator's declared grant against a row (docs/25 M25.9).
+    ///
+    /// Separate from `put` because it must not touch the ciphertext: a ceiling
+    /// is bookkeeping, and resealing the secret every time someone edits a
+    /// number on the console would be a needless handling of the one value in
+    /// this table worth protecting.
+    async fn set_grant(
+        &self,
+        id: &CredentialId,
+        ceiling: Option<u64>,
+        window_secs: Option<u64>,
+    ) -> Result<(), VaultError>;
     async fn revoke(&self, id: &CredentialId) -> Result<(), VaultError>;
 }
 
@@ -436,6 +458,19 @@ impl CredentialStore for MemoryStore {
         Ok(())
     }
 
+    async fn set_grant(
+        &self,
+        id: &CredentialId,
+        ceiling: Option<u64>,
+        window_secs: Option<u64>,
+    ) -> Result<(), VaultError> {
+        let mut rows = self.rows.lock().expect("vault mutex");
+        let row = rows.get_mut(&id.0).ok_or(VaultError::NotFound)?;
+        row.meta.ceiling = ceiling;
+        row.meta.window_secs = window_secs;
+        Ok(())
+    }
+
     async fn revoke(&self, id: &CredentialId) -> Result<(), VaultError> {
         let mut rows = self.rows.lock().expect("vault mutex");
         let row = rows.get_mut(&id.0).ok_or(VaultError::NotFound)?;
@@ -461,6 +496,8 @@ mod tests {
             label: String::new(),
             last4: String::new(),
             state: State::Active,
+            ceiling: None,
+            window_secs: None,
         }
     }
 
@@ -527,6 +564,48 @@ mod tests {
         let m = meta("xai");
         let err = store.put(m, "").await.unwrap_err();
         assert!(matches!(err, VaultError::EmptySecret));
+    }
+
+    #[tokio::test]
+    async fn a_grant_survives_without_touching_the_secret() {
+        // The point of `set_grant` being separate from `put`: editing a ceiling
+        // must not reseal the one value in this table worth protecting.
+        let store = MemoryStore::new(Kek::generate());
+        let m = meta("xai");
+        let id = m.id;
+        store.put(m, A).await.unwrap();
+        assert_eq!(store.list().await.unwrap()[0].ceiling, None);
+
+        store.set_grant(&id, Some(500), Some(18_000)).await.unwrap();
+        let row = &store.list().await.unwrap()[0];
+        assert_eq!(row.ceiling, Some(500));
+        assert_eq!(row.window_secs, Some(18_000));
+        assert_eq!(
+            store.get_secret(&id).await.unwrap().expose(),
+            A,
+            "the secret must still decrypt after a bookkeeping edit"
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_a_grant_is_distinct_from_never_declaring_one() {
+        let store = MemoryStore::new(Kek::generate());
+        let m = meta("xai");
+        let id = m.id;
+        store.put(m, A).await.unwrap();
+        store.set_grant(&id, Some(10), Some(60)).await.unwrap();
+        store.set_grant(&id, None, None).await.unwrap();
+        assert_eq!(store.list().await.unwrap()[0].ceiling, None);
+    }
+
+    #[tokio::test]
+    async fn setting_a_grant_on_a_missing_row_is_an_error_not_a_silent_noop() {
+        let store = MemoryStore::new(Kek::generate());
+        let err = store
+            .set_grant(&CredentialId::new(), Some(1), None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, VaultError::NotFound));
     }
 
     #[tokio::test]

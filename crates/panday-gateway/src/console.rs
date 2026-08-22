@@ -250,6 +250,17 @@ async fn set_ceiling(State(state): State<ConsoleState>, Form(form): Form<Ceiling
         Err(_) => None,
     };
     state.hub.set_grant(&form.id, grant);
+    // Persist so the number survives a restart (docs/25 M25.9). Matched by
+    // last4, because pool member ids are regenerated every boot.
+    if let Some(m) = state.hub.accounts().into_iter().find(|m| m.id == form.id) {
+        crate::creds::persist_grant(
+            &m.provider,
+            &m.last4,
+            grant.map(|g| g.ceiling),
+            grant.map(|g| g.window.as_secs()),
+        )
+        .await;
+    }
     accounts_redirect()
 }
 
