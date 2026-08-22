@@ -91,11 +91,11 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `e33ed04` — *M25.10: the Codex importer is proven, not skipped (#23)*
+**HEAD (`main`):** `163832f` — *M11.9: 404 for a model this deployment cannot serve (#26)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
-**103 milestones total: 95 shipped ✅, 8 remaining.** Recount it rather than trusting this line —
+**104 milestones total: 96 shipped ✅, 8 remaining.** Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
 count too.
 
@@ -197,21 +197,26 @@ vault so the next boot finds it.
 - **A guard that would not have failed before the fix is decoration.** Every
   parity and regression test added here fails against the commit preceding it.
   That is the bar worth keeping.
+- **A grep for the type will not find an assertion on the status.** M11.9 changed
+  which HTTP status an error maps to, and two tests asserting `503` were
+  invisible to every search for `ModelUnavailable` — one of them in
+  `panday-platform`'s smoke suite, which runs in the **integration lane, not the
+  local gate**, and would have gone red on CI after the local run said green.
+  Changing a mapping means auditing what asserts on the *output*, not only what
+  matches on the *input*.
 - **Half a measurement is not a measurement.** M25.3 kept
   `x-ratelimit-remaining-*` and not the matching `-limit-*`, which cannot make a
   percentage; and a 429 only proved the Codex token authenticates once a control
   request showed a bad token returns 401 instead. Same error twice: a number
   without its denominator, and a result without its control.
 
-**Two questions carry no milestone number**, both written into the specs rather
-than only here:
+**One question carries no milestone number**, written into the spec rather than
+only here: under `most_remaining`, a credential known to be at 2% is still
+preferred over an unmeasured one, because ordering ranks only what it measures
+and the threshold — not the ordering — handles emptiness (docs/25 M25.8).
 
-- `ModelUnavailable` conflates an exhausted chain with a model this deployment
-  will never serve, and answers 503 where 404 is honest. Splitting the variant
-  touches docs/10's error vocabulary and the generated clients (docs/11 M11.8).
-- Under `most_remaining`, a credential known to be at 2% is still preferred over
-  an unmeasured one, because ordering ranks only what it measures and the
-  threshold — not the ordering — handles emptiness (docs/25 M25.8).
+*(The other one is closed. `ModelUnavailable` conflating an exhausted chain with
+a model this deployment cannot serve became **M11.9**: 503 and 404 respectively.)*
 
 ---
 
