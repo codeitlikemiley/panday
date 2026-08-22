@@ -294,7 +294,9 @@ pub const VAULT_KEYCHAIN_ENV: &str = "PANDAY_VAULT_KEYCHAIN";
 
 /// Keychain service and account. Stable strings: changing either orphans every
 /// KEK already stored under the old pair.
+#[cfg(target_os = "macos")]
 const KEYCHAIN_SERVICE: &str = "panday-vault";
+#[cfg(target_os = "macos")]
 const KEYCHAIN_ACCOUNT: &str = "kek";
 
 fn keychain_opted_in() -> bool {
@@ -342,8 +344,7 @@ fn keychain_store(kek: &Kek) -> Result<(), VaultError> {
 fn keychain_load() -> Result<Option<Kek>, VaultError> {
     Err(VaultError::Io(format!(
         "{VAULT_KEYCHAIN_ENV} is set, but this build has no keychain — unset it \
-         to use {}, or set PANDAY_VAULT_KEY",
-        "~/.panday/master.key"
+         to use ~/.panday/master.key, or set PANDAY_VAULT_KEY"
     )))
 }
 
