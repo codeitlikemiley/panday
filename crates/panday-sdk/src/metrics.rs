@@ -482,6 +482,14 @@ pub struct Metrics {
     pub model_errors: Family<Counter>,
     pub model_latency_seconds: Family<Histogram>,
     pub circuit_open: Family<Gauge>,
+    /// Upstream calls by provider and outcome (docs/25 M25.6).
+    ///
+    /// Labelled by provider, **not** by credential. Credential ids are unbounded
+    /// in principle — an operator can add and revoke keys all day — and a series
+    /// per credential would make the cardinality of this metric a function of
+    /// how often they do. The per-credential numbers live on `GET /accounts`,
+    /// where they are read by a human and cost nothing to retire.
+    pub upstream_calls: Family<Counter>,
     // "sandbox-seconds by tier" — the second metered good (docs/17, M14.7)
     pub sandbox_seconds: Family<Counter>,
     // "turn stop-reasons distribution"
@@ -589,6 +597,11 @@ impl Metrics {
                 "panday_circuit_open",
                 "1 while a provider's circuit is open (M11.6)",
                 &["provider"],
+            ),
+            upstream_calls: Family::counter(
+                "panday_upstream_calls_total",
+                "calls to an upstream credential, by provider and outcome (M25.6)",
+                &["provider", "outcome"],
             ),
             sandbox_seconds: Family::counter(
                 "panday_sandbox_seconds_total",

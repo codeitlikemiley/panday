@@ -17,6 +17,7 @@ use panday_sdk::{ItemStream, PandayError};
 use panday_types::id::SessionId;
 use panday_types::model::ChatRequest;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// How the next request picks its first credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +45,60 @@ impl Rotate {
     }
 }
 
+/// An operator-declared grant for one credential (docs/25 M25.6).
+///
+/// Counted in **calls**, not tokens or spend. `UsageRecord` carries no
+/// `credential_id`, so tokens cannot be attributed to a credential yet; and a
+/// flat-rate seat has no per-call price, so spend would be meaningless for
+/// exactly the credentials pooling exists to manage. Calls is also how
+/// subscription grants are actually expressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Grant {
+    /// Calls permitted per window.
+    pub ceiling: u64,
+    /// The window the ceiling applies to. Providers differ — a few hours for a
+    /// subscription seat, a month for an API key — so it is declared per
+    /// credential rather than assumed.
+    pub window: std::time::Duration,
+}
+
+/// What one credential has spent against its grant, right now.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MemberUsage {
+    pub id: String,
+    pub used: u64,
+    /// `None` when the operator has declared no ceiling. Distinct from a
+    /// ceiling of 0: unknown is not the same as exhausted, and a card that
+    /// renders "100% remaining" for a credential nobody has measured is a lie.
+    pub ceiling: Option<u64>,
+    pub window_secs: Option<u64>,
+    pub remaining_pct: Option<f64>,
+    /// Set when a 429 arrives with nothing left in the window (docs/25).
+    /// Cleared when the window rolls.
+    pub exhausted: bool,
+}
+
+/// Live counters for one credential's window.
+#[derive(Debug, Default)]
+struct Meter {
+    used: u64,
+    window_started: Option<Instant>,
+    exhausted: bool,
+}
+
+impl Meter {
+    /// Rolls the window if it has elapsed, then returns the live counters.
+    fn roll(&mut self, grant: Option<Grant>) {
+        let Some(grant) = grant else { return };
+        let started = *self.window_started.get_or_insert_with(Instant::now);
+        if started.elapsed() >= grant.window {
+            self.used = 0;
+            self.exhausted = false;
+            self.window_started = Some(Instant::now());
+        }
+    }
+}
+
 /// Public row. Never contains the secret.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemberMeta {
@@ -57,6 +112,9 @@ pub struct MemberMeta {
 struct Member {
     meta: MemberMeta,
     adapter: Arc<dyn ProviderAdapter>,
+    /// Operator-declared, absent until someone declares it (docs/25 M25.6).
+    grant: Option<Grant>,
+    meter: Meter,
 }
 
 /// One credential to try: its stable id, and the adapter holding its secret.
@@ -101,6 +159,8 @@ impl PooledAdapter {
                 members
                     .into_iter()
                     .map(|adapter| Member {
+                        grant: None,
+                        meter: Meter::default(),
                         meta: MemberMeta {
                             id: uuid::Uuid::new_v4().to_string(),
                             provider: String::new(),
@@ -156,10 +216,12 @@ impl PooledAdapter {
             last4: last4.to_string(),
         };
         let out = meta.clone();
-        self.members
-            .lock()
-            .expect("pool members")
-            .push(Member { meta, adapter });
+        self.members.lock().expect("pool members").push(Member {
+            meta,
+            adapter,
+            grant: None,
+            meter: Meter::default(),
+        });
         out
     }
 
@@ -212,6 +274,89 @@ impl PooledAdapter {
             .map(|m| (m.meta.id.clone(), m.adapter.clone()))
             .collect();
         (rotate, start, adapters)
+    }
+
+    /// Declare (or clear) a credential's grant. Operator action — console form
+    /// or boot from env (docs/25 M25.6).
+    pub fn set_grant(&self, id: &str, grant: Option<Grant>) -> bool {
+        let mut members = self.members.lock().expect("pool members");
+        let Some(m) = members.iter_mut().find(|m| m.meta.id == id) else {
+            return false;
+        };
+        m.grant = grant;
+        // A re-declared ceiling starts a fresh window: the operator is telling us
+        // the old number was wrong, and carrying its count forward would report a
+        // percentage of a ceiling that never applied.
+        m.meter = Meter::default();
+        true
+    }
+
+    pub fn grant(&self, id: &str) -> Option<Grant> {
+        let members = self.members.lock().expect("pool members");
+        members
+            .iter()
+            .find(|m| m.meta.id == id)
+            .and_then(|m| m.grant)
+    }
+
+    /// What every credential has spent against its grant.
+    ///
+    /// Takes `&self` but *does* mutate: reading rolls any window that has
+    /// elapsed. It has to — a pool that goes quiet would otherwise keep
+    /// reporting the last window's count until the next call arrived, which is
+    /// exactly when an operator is most likely to be looking at it.
+    pub fn usage(&self) -> Vec<MemberUsage> {
+        let mut members = self.members.lock().expect("pool members");
+        members
+            .iter_mut()
+            .map(|m| {
+                m.meter.roll(m.grant);
+                let ceiling = m.grant.map(|g| g.ceiling);
+                MemberUsage {
+                    id: m.meta.id.clone(),
+                    used: m.meter.used,
+                    ceiling,
+                    window_secs: m.grant.map(|g| g.window.as_secs()),
+                    // Saturating at 0: a provider that let us past our own
+                    // declared ceiling should read as "none left", not negative.
+                    remaining_pct: ceiling
+                        .filter(|c| *c > 0)
+                        .map(|c| 1.0 - (m.meter.used.min(c) as f64 / c as f64)),
+                    exhausted: m.meter.exhausted,
+                }
+            })
+            .collect()
+    }
+
+    /// Count one attempt against a credential, and publish the outcome.
+    fn record_call(&self, id: &str, outcome: &'static str, rate_limited: bool) {
+        panday_sdk::metrics::metrics()
+            .upstream_calls
+            .inc(&[self.metric_provider(), outcome]);
+        let mut members = self.members.lock().expect("pool members");
+        let Some(m) = members.iter_mut().find(|m| m.meta.id == id) else {
+            return;
+        };
+        m.meter.roll(m.grant);
+        m.meter.used = m.meter.used.saturating_add(1);
+        // "429 with remaining 0 → exhausted until reset" (docs/25). Only a 429
+        // proves it: our own count reaching the ceiling means *we* think it is
+        // spent, which is a guess until the provider agrees.
+        if rate_limited {
+            if let Some(g) = m.grant {
+                if m.meter.used >= g.ceiling {
+                    m.meter.exhausted = true;
+                }
+            }
+        }
+    }
+
+    fn metric_provider(&self) -> &str {
+        if self.provider.is_empty() {
+            self.dialect_name
+        } else {
+            &self.provider
+        }
     }
 
     /// Breaker state for one credential, for the console and for tests.
@@ -332,10 +477,13 @@ impl ProviderAdapter for PooledAdapter {
             match member.chat(req.clone()).await {
                 Ok(stream) => {
                     self.breakers.record_success(id);
+                    self.record_call(id, "ok", false);
                     return Ok(stream);
                 }
                 Err(e) if e.is_retryable() => {
                     self.breakers.record_failure(id);
+                    let limited = matches!(e, PandayError::RateLimited { .. });
+                    self.record_call(id, if limited { "rate_limited" } else { "error" }, limited);
                     if let PandayError::RateLimited {
                         retry_after_ms: wait,
                     } = &e
@@ -354,8 +502,16 @@ impl ProviderAdapter for PooledAdapter {
                     last_retryable = Some(e);
                 }
                 // A 400 is the request's fault, not the credential's. Counting
-                // it would let one malformed caller open every key in the pool.
-                Err(e) => return Err(e),
+                // it would let one malformed caller open every key in the pool —
+                // and it must not spend the operator's grant either, for the same
+                // reason. It is still published, labelled `rejected`, because an
+                // operator watching a provider needs to see it.
+                Err(e) => {
+                    panday_sdk::metrics::metrics()
+                        .upstream_calls
+                        .inc(&[self.metric_provider(), "rejected"]);
+                    return Err(e);
+                }
             }
         }
         if tried == 0 {
@@ -446,6 +602,22 @@ impl CredHub {
         out
     }
 
+    /// Live grant counters for every credential in every pool (docs/25 M25.6).
+    pub fn usage(&self) -> Vec<MemberUsage> {
+        let mut out = Vec::new();
+        for p in [&self.xai, &self.anthropic, &self.openai, &self.gemini] {
+            out.extend(p.usage());
+        }
+        out
+    }
+
+    /// Declare a grant against whichever pool holds this credential.
+    pub fn set_grant(&self, id: &str, grant: Option<Grant>) -> bool {
+        [&self.xai, &self.anthropic, &self.openai, &self.gemini]
+            .into_iter()
+            .any(|p| p.set_grant(id, grant))
+    }
+
     pub fn pool(&self, provider: &str) -> Option<Arc<PooledAdapter>> {
         match provider {
             "xai" => Some(self.xai.clone()),
@@ -474,6 +646,45 @@ impl Default for CredHub {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// `PANDAY_<PROVIDER>_CEILING` — calls permitted per window, e.g. `1000`.
+/// `PANDAY_<PROVIDER>_WINDOW` — the window, e.g. `5h`, `30d`, `90m`, `3600`.
+///
+/// Declared in env rather than only in the console because a ceiling is
+/// *configuration*: it must survive a restart. Per-credential persistence in
+/// the sealed vault belongs to M25.9, which owns making the vault the boot
+/// source of truth; until then env is the durable declaration and the console
+/// is a runtime override.
+pub fn env_grant(provider: &str) -> Option<Grant> {
+    let up = provider.to_ascii_uppercase();
+    let ceiling: u64 = std::env::var(format!("PANDAY_{up}_CEILING"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    let window = std::env::var(format!("PANDAY_{up}_WINDOW"))
+        .ok()
+        .and_then(|v| parse_window(&v))
+        // A ceiling with no window is a monthly grant far more often than it is
+        // anything else, and refusing to guess would leave the operator with a
+        // declared ceiling that silently does nothing.
+        .unwrap_or(std::time::Duration::from_secs(30 * 24 * 3600));
+    Some(Grant { ceiling, window })
+}
+
+/// `90` (seconds), `90s`, `15m`, `5h`, `30d`.
+pub fn parse_window(raw: &str) -> Option<std::time::Duration> {
+    let raw = raw.trim();
+    let (digits, mult) = match raw.chars().last()? {
+        's' => (&raw[..raw.len() - 1], 1),
+        'm' => (&raw[..raw.len() - 1], 60),
+        'h' => (&raw[..raw.len() - 1], 3600),
+        'd' => (&raw[..raw.len() - 1], 86_400),
+        _ => (raw, 1),
+    };
+    let n: u64 = digits.trim().parse().ok()?;
+    (n > 0).then(|| std::time::Duration::from_secs(n.saturating_mul(mult)))
 }
 
 #[cfg(test)]
@@ -655,6 +866,178 @@ mod tests {
         assert!(err.is_retryable());
         assert_eq!(a.calls(), 1);
         assert_eq!(b.calls(), 1);
+    }
+
+    // ── M25.6: grants, counters, remaining % ─────────────────────────────────
+
+    fn grant(ceiling: u64, secs: u64) -> Grant {
+        Grant {
+            ceiling,
+            window: std::time::Duration::from_secs(secs),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_undeclared_ceiling_reports_unknown_not_full() {
+        // The whole point of the number is to inform a decision. Rendering
+        // "100% left" for a credential nobody has measured invites exactly the
+        // decision it exists to prevent.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        drain_text(&adapter).await.unwrap();
+        let u = &adapter.usage()[0];
+        assert_eq!(u.used, 1, "calls are still counted without a ceiling");
+        assert_eq!(u.ceiling, None);
+        assert_eq!(u.remaining_pct, None);
+    }
+
+    #[tokio::test]
+    async fn remaining_falls_as_the_grant_is_spent() {
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        assert!(adapter.set_grant(&id, Some(grant(4, 3600))));
+
+        for expected in [0.75, 0.50, 0.25, 0.0] {
+            drain_text(&adapter).await.unwrap();
+            let got = adapter.usage()[0].remaining_pct.unwrap();
+            assert!(
+                (got - expected).abs() < f64::EPSILON,
+                "expected {expected}, got {got}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn overshooting_the_ceiling_reads_as_none_left_not_negative() {
+        // A declared ceiling is the operator's estimate; the provider may well
+        // let us past it. Reporting -50% would be arithmetic, not information.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(2, 3600)));
+        for _ in 0..5 {
+            drain_text(&adapter).await.unwrap();
+        }
+        assert_eq!(adapter.usage()[0].remaining_pct, Some(0.0));
+        assert_eq!(adapter.usage()[0].used, 5, "the real count is still shown");
+    }
+
+    #[test]
+    fn a_meter_rolls_only_after_its_window_elapses() {
+        use std::time::Duration;
+        // Tested on `Meter` directly rather than through the pool: `usage()`
+        // rolls as a side effect of reading, so a pool-level test cannot see
+        // the pre-roll state it is trying to assert on.
+        let mut m = Meter {
+            used: 7,
+            window_started: Some(Instant::now()),
+            exhausted: true,
+        };
+        m.roll(Some(grant(10, 3600)));
+        assert_eq!(m.used, 7, "an unelapsed window keeps its count");
+        assert!(m.exhausted, "and stays exhausted");
+
+        // `sleep` guarantees a *lower* bound, so this cannot fire early — the
+        // assertion is that the window elapsed, not that it elapsed on time.
+        // A five-fold margin over a 1ms window keeps it off the flake list.
+        std::thread::sleep(Duration::from_millis(5));
+        m.roll(Some(Grant {
+            ceiling: 10,
+            window: Duration::from_millis(1),
+        }));
+        assert_eq!(m.used, 0, "an elapsed window starts clean");
+        assert!(
+            !m.exhausted,
+            "exhausted clears with the window it applied to"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_meter_with_no_grant_never_rolls() {
+        // No declared ceiling means no window to roll; the raw count still
+        // accumulates so the console can show activity.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        for _ in 0..3 {
+            drain_text(&adapter).await.unwrap();
+        }
+        assert_eq!(adapter.usage()[0].used, 3);
+        assert_eq!(adapter.usage()[0].remaining_pct, None);
+    }
+
+    #[tokio::test]
+    async fn redeclaring_a_ceiling_starts_a_fresh_window() {
+        // Carrying the old count forward would report a percentage of a ceiling
+        // that never applied to it.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(10, 3600)));
+        for _ in 0..3 {
+            drain_text(&adapter).await.unwrap();
+        }
+        assert_eq!(adapter.usage()[0].used, 3);
+        adapter.set_grant(&id, Some(grant(100, 3600)));
+        assert_eq!(adapter.usage()[0].used, 0);
+        assert_eq!(adapter.usage()[0].remaining_pct, Some(1.0));
+    }
+
+    #[tokio::test]
+    async fn only_a_429_marks_a_credential_exhausted() {
+        // Our own count reaching the ceiling means *we* think it is spent. That
+        // is a guess until the provider agrees.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(1, 3600)));
+        for _ in 0..3 {
+            drain_text(&adapter).await.unwrap();
+        }
+        assert!(
+            !adapter.usage()[0].exhausted,
+            "past our own ceiling is not proof the provider agrees"
+        );
+
+        let b = Spy::new("openai_compat", Script::RateLimited(0));
+        let limited = pool(vec![b]);
+        let bid = limited.list()[0].id.clone();
+        limited.set_grant(&bid, Some(grant(1, 3600)));
+        let _ = drain_text(&limited).await;
+        assert!(
+            limited.usage()[0].exhausted,
+            "a 429 at the ceiling is proof"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_request_does_not_spend_the_grant() {
+        // Same reason a 400 does not walk the pool or trip a breaker: it is the
+        // caller's fault, and one malformed client must not burn an operator's
+        // subscription.
+        let a = Spy::new("openai_compat", Script::BadRequest);
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(10, 3600)));
+        for _ in 0..4 {
+            let _ = drain_text(&adapter).await;
+        }
+        assert_eq!(adapter.usage()[0].used, 0);
+        assert_eq!(adapter.usage()[0].remaining_pct, Some(1.0));
+    }
+
+    #[test]
+    fn windows_parse_in_the_units_an_operator_types() {
+        use std::time::Duration;
+        assert_eq!(parse_window("90"), Some(Duration::from_secs(90)));
+        assert_eq!(parse_window("90s"), Some(Duration::from_secs(90)));
+        assert_eq!(parse_window(" 15m "), Some(Duration::from_secs(900)));
+        assert_eq!(parse_window("5h"), Some(Duration::from_secs(18_000)));
+        assert_eq!(parse_window("30d"), Some(Duration::from_secs(2_592_000)));
+        assert_eq!(parse_window(""), None);
+        assert_eq!(parse_window("soon"), None);
+        // Zero is not a window; it would make every call its own period.
+        assert_eq!(parse_window("0d"), None);
     }
 
     // ── M25.5: sticky sessions ───────────────────────────────────────────────

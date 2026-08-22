@@ -29,6 +29,8 @@ Credential
   label         operator string (console; never a secret)
   last4         last four characters of the secret, stored in the clear
   state         active | exhausted | invalid | revoked
+  ceiling       Option<u64>     — operator-declared CALLS per window (M25.6)
+  window        Option<Duration>— the window that ceiling applies to (M25.6)
   nonce         24 bytes
   ciphertext    XChaCha20-Poly1305 of the secret
 ```
@@ -104,6 +106,18 @@ We do not scrape their UIs.
 from our own usage records. `remaining_pct = 1 - used/ceiling`. Header remaining
 overlays the short window when present; the ceiling owns the period. 429 with
 remaining 0 → `exhausted` until reset.
+
+The ceiling is in **calls**. Not tokens: `UsageRecord` carries no
+`credential_id`, so tokens cannot be attributed to a credential yet. Not spend:
+a flat-rate seat has no per-call price, so a spend ceiling would be meaningless
+for exactly the credentials pooling exists to manage. Calls is also the unit
+subscription grants are actually sold in. The window is declared **per
+credential**, because a subscription seat resets in hours and an API key in
+months, and one global period would be wrong for one of them.
+
+An undeclared ceiling gives `remaining_pct = None`, not 1.0. Unknown is not
+"plenty left", and a console showing a full bar for a credential nobody has
+measured invites exactly the decision the number exists to inform.
 
 Funnel (M25.8): pick the cred with most remaining; if every cred for a provider
 is below threshold, omit that provider from this request's chain.
@@ -215,7 +229,44 @@ A one-credential gateway must keep today's failover behaviour.
   walks to the next member, and "never rotate mid-stream" is unchanged.
 
 - **M25.6** Operator ceiling, local counters, remaining %, console cards.
-  Prometheus `panday_upstream_calls_total{provider,outcome}` only.
+  Prometheus `panday_upstream_calls_total{provider,outcome}` only. ✅ *(shipped:
+  `pool::Grant` / `MemberUsage`, `CredHub::usage` / `set_grant`, `env_grant`,
+  `POST /console/accounts/ceiling`, and the used/remaining columns on
+  `GET /accounts`.)*
+
+  **The unit is calls and the window is per credential** — see §Remaining % for
+  why tokens and spend both fail here, and why one global period would be wrong
+  for either a subscription seat or an API key.
+
+  **Declared in env, overridable in the console.** `PANDAY_<PROVIDER>_CEILING`
+  and `PANDAY_<PROVIDER>_WINDOW` (`5h`, `30d`, `90m`, or bare seconds) are read
+  at boot and applied to every credential that boot found — env keys, CLI OAuth
+  and vault rows alike. A ceiling is *configuration*: it has to survive a
+  restart, and the console alone would lose it. Per-credential persistence in
+  the sealed vault belongs to **M25.9**, which owns making the vault the boot
+  source of truth; adding an unguarded `ALTER TABLE` here would have put a
+  schema migration in the wrong milestone.
+
+  **Counters are in-process and reset when the window rolls.** Re-declaring a
+  ceiling starts a fresh window, because carrying the old count forward would
+  report a percentage of a ceiling that never applied.
+
+  **Only a 429 sets `exhausted`.** Our own count reaching the ceiling means *we*
+  think it is spent, which is a guess until the provider agrees — the operator's
+  declared number can be wrong in either direction. A rejected request (400)
+  spends nothing: it is the caller's fault, the same reason it does not walk the
+  pool or count against a breaker.
+
+  **The metric is labelled by provider, never by credential.** Credential ids are
+  unbounded in principle — an operator adds and revokes keys all day — so a
+  series per credential would make this metric's cardinality a function of how
+  often they do. Outcomes are `ok`, `rate_limited`, `error`, `rejected`. The
+  per-credential numbers live on `GET /accounts`, where a human reads them and
+  retiring one costs nothing.
+
+  **Selection is unchanged.** This milestone measures; it does not yet steer.
+  Picking the credential with the most remaining, and omitting a provider whose
+  credentials are all below threshold, is **M25.8**.
 
 - **M25.7** Overlay OpenAI / Anthropic / xAI remaining headers. Missing headers
   leave local counters in charge. OAuth subscriptions without headers stay on

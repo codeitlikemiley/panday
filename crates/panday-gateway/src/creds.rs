@@ -1,7 +1,7 @@
 //! Boot + console helpers for the credential pools (docs/25).
 
 use crate::adapters::pool::{
-    anthropic_key_adapter, anthropic_oauth_adapter, env_keys, last4, openai_key_adapter,
+    anthropic_key_adapter, anthropic_oauth_adapter, env_grant, env_keys, last4, openai_key_adapter,
     xai_key_adapter, xai_oauth_adapter, CredHub, Rotate,
 };
 use panday_sdk::vault::{
@@ -139,6 +139,23 @@ impl CredHub {
                         secret.expose(),
                     );
                 }
+            }
+        }
+
+        // Grants last, so every credential this boot found — env, CLI OAuth, and
+        // vault rows alike — starts with the operator's declared ceiling rather
+        // than only the ones that happened to be added first (docs/25 M25.6).
+        for (provider, pool) in [
+            ("xai", &hub.xai),
+            ("anthropic", &hub.anthropic),
+            ("openai", &hub.openai),
+            ("gemini", &hub.gemini),
+        ] {
+            let Some(grant) = env_grant(provider) else {
+                continue;
+            };
+            for m in pool.list() {
+                pool.set_grant(&m.id, Some(grant));
             }
         }
 

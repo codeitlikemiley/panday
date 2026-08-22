@@ -65,6 +65,11 @@ mod tests {
                 kind: "oauth".into(),
                 label: "grok-cli-1".into(),
                 last4: "aaaa".into(),
+                used: 12,
+                ceiling: Some(100),
+                window_secs: Some(18_000),
+                remaining_pct: Some(0.88),
+                exhausted: false,
             }],
             rotate: "failover".into(),
             models: vec![ModelRow {
