@@ -92,7 +92,7 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `163832f` — *M11.9: 404 for a model this deployment cannot serve (#26)*
+**HEAD (`main`):** `fa046cc` — *M25.12: Keychain-wrapped KEK, opt-in and macOS-only (#28)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
@@ -198,6 +198,14 @@ vault so the next boot finds it.
 - **A guard that would not have failed before the fix is decoration.** Every
   parity and regression test added here fails against the commit preceding it.
   That is the bar worth keeping.
+- **Verifying on the platform you are on is not verifying.** M25.12 is
+  `cfg(target_os = "macos")` throughout, and the local gate only ever compiled
+  the macOS half — so the Linux branch reached CI having never been built. Five
+  of six jobs passed; the one that failed was the only one that had looked at it.
+  `x86_64-unknown-linux-gnu` is installed but a cross-check still fails (`ring`
+  wants `x86_64-linux-gnu-gcc`, and there is no C cross-toolchain here), so for
+  `cfg`-gated code **CI is the only authority for the other platform** — plan for
+  a round trip rather than expecting the local gate to be sufficient.
 - **A grep for the type will not find an assertion on the status.** M11.9 changed
   which HTTP status an error maps to, and two tests asserting `503` were
   invisible to every search for `ModelUnavailable` — one of them in
