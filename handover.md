@@ -91,11 +91,11 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `a80b207` — *M25.8: most_remaining selector and the opt-in funnel (#20)*
+**HEAD (`main`):** `e33ed04` — *M25.10: the Codex importer is proven, not skipped (#23)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
-**103 milestones total: 89 shipped ✅, 14 remaining.** Recount it rather than trusting this line —
+**103 milestones total: 95 shipped ✅, 8 remaining.** Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
 count too.
 
@@ -104,7 +104,7 @@ count too.
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
-| 25-credentials | **8 / 12 shipped** (M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel). M25.9 partial. **M25.9 and M25.10 are the next work**; M25.11/M25.12 are skip-unless-asked. |
+| 25-credentials | **10 / 12 shipped** — the whole laptop-buildable track. M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven. Only M25.11 (hosted Postgres ciphertext) and M25.12 (Keychain KEK — needs `keyring`, so §1.2's ask-first rule applies) remain, both skip-unless-asked. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
 API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is
@@ -171,37 +171,47 @@ catalog for a tuned GGUF (M18.2).
 
 ## 3. In-flight — nothing
 
-`git status` on `main` is clean and no PR is open. The three that were in flight all landed:
+`git status` on `main` is clean and no PR is open.
 
-| Commit | Milestone | What it changed |
-|---|---|---|
-| `8f1feb7` | M25.3 | The transport stops dropping response headers. `post_sse` returns `SseResponse { headers, body }`; a 429's `Retry-After` fills `RateLimited.retry_after_ms`, which was hardcoded to 0. |
-| `a823b69` | M11.7 | Every ingress now *tells the client* the wait. Before this, every 429 the gateway ever emitted was a bare status. |
-| `893f88a` | M11.8 | One status table for all three ingresses. |
+The operator track (`docs/25`) is finished end to end: pool several credentials
+per provider → measure what each has left, from both the operator's declared
+grant and the provider's own response headers → prefer the fullest → optionally
+omit a provider whose credentials are all spent → persist the lot in the sealed
+vault so the next boot finds it.
 
-Four findings from that run are worth carrying, because each is a shape that will recur:
+**Five findings from building it, kept because each is a shape that will recur:**
 
-- **0 is a sentinel, not a value.** `retry_after_ms == 0` means "no upstream stated a wait". A plain
-  `min()` over a credential pool therefore collapsed to 0 the moment one member stayed silent,
-  erasing every real wait its siblings reported. Unknowns must abstain from an aggregate, not win it.
-- **Filling a field can arm dead code.** `retry_after_ms` had always been 0, so `Retry`'s
-  server-stated-delay arm had never run. Populating it activated an unbounded, upstream-controlled
-  `sleep` sitting outside the timeout layer. `MAX_HONOURED_RETRY_AFTER` (60s) now caps it.
-- **There are three error mappers, not one** — `ingress::error_response`, `messages::anthropic_error`,
-  `gemini_api::gemini_error`. They share no code, and a change to the first reaches neither Claude
-  Code nor Antigravity. They had silently drifted on status: 503/404/404 for `ModelUnavailable`,
-  403/502/502 for `PermissionDenied` (403 is terminal, 502 is retryable — clients would hammer a
-  refusal they can never satisfy). M11.8 put status behind one `ingress::status_for` and added two
-  table-driven parity tests. **Status is protocol; only the envelope is dialect.**
-- **A guard that would not have failed before the fix is decoration.** Both parity tests fail against
-  the commit preceding them. That is the bar.
+- **A sentinel is not a value.** `retry_after_ms == 0` means "no upstream said",
+  and a plain `min()` over a pool collapsed to it the moment one member stayed
+  silent — erasing every real wait its siblings reported. Unknowns must abstain
+  from an aggregate, never win it.
+- **Filling a field can arm dead code.** `retry_after_ms` had always been 0, so
+  the retry middleware's server-stated-delay arm had never run. Populating it
+  activated an unbounded, upstream-controlled `sleep` sitting outside the
+  timeout layer.
+- **There are three error mappers, not one** — `ingress::error_response`,
+  `messages::anthropic_error`, `gemini_api::gemini_error`. They shared no code
+  and had drifted on status. Fixing the one you happen to open reaches neither
+  Claude Code nor Antigravity. Status now comes from `ingress::status_for`, and
+  two parity tests hold the line.
+- **A guard that would not have failed before the fix is decoration.** Every
+  parity and regression test added here fails against the commit preceding it.
+  That is the bar worth keeping.
+- **Half a measurement is not a measurement.** M25.3 kept
+  `x-ratelimit-remaining-*` and not the matching `-limit-*`, which cannot make a
+  percentage; and a 429 only proved the Codex token authenticates once a control
+  request showed a bad token returns 401 instead. Same error twice: a number
+  without its denominator, and a result without its control.
 
-**Still open, no milestone number yet:** `ModelUnavailable` conflates two failures — an exhausted
-chain (503 is right) and a rule with no usable target, which includes a caller pinning a model this
-deployment will never serve. 503 tells that caller to come back later about a request that can only
-ever fail; all three upstream APIs would answer 404. Splitting the variant touches the error
-vocabulary in `docs/10` and the generated clients, so it is a milestone, not a rider. Written up
-under docs/11 M11.8.
+**Two questions carry no milestone number**, both written into the specs rather
+than only here:
+
+- `ModelUnavailable` conflates an exhausted chain with a model this deployment
+  will never serve, and answers 503 where 404 is honest. Splitting the variant
+  touches docs/10's error vocabulary and the generated clients (docs/11 M11.8).
+- Under `most_remaining`, a credential known to be at 2% is still preferred over
+  an unmeasured one, because ordering ranks only what it measures and the
+  threshold — not the ordering — handles emptiness (docs/25 M25.8).
 
 ---
 
@@ -319,24 +329,18 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 
 ## 6. Suggested next steps, in order
 
-**Two operator-track milestones are still laptop-buildable.** Everything below item 1 needs hardware,
-a third party, training data, or a judgement only the builder can make. Do not invent rates or p95s
-for those.
+**Nothing is laptop-buildable any more.** All eight remaining milestones need
+hardware, a third party, training data, a dependency decision, or a judgement
+only the builder can make. That is a real state, not a stalling one — the last
+thing that could be built here was built. Do not invent rates or p95s to make
+the list look shorter.
 
-0. **Finish the operator track.** M25.1–M25.8 are shipped — pooling, per-credential breakers, sticky
-   sessions, grants, header overlay and the `most_remaining` funnel all landed. What is left:
-   **M25.9** make the vault the boot source of truth (env keys become rows when it is empty; this is
-   also where the per-credential *ceiling* persistence M25.6 deliberately deferred belongs, because
-   the vault has no migration framework yet and that schema change is M25.9's to make), and
-   **M25.10** prove Codex import against the OpenAI adapter *or* write the note saying it does not
-   work. M25.11 (hosted Postgres ciphertext) and M25.12 (Keychain-wrapped KEK — needs `keyring`, so
-   §1.2 applies) are skip-unless-asked.
+0. **The two skip-unless-asked credentials milestones**, if you want them:
+   **M25.11** hosted Postgres ciphertext (same envelope, not tenant BYOK) needs a
+   Postgres to put it in; **M25.12** Keychain-wrapped KEK needs the `keyring`
+   crate, so §1.2's ask-first dependency rule applies before a line is written.
+   Neither is on the critical path — file+env KEK already works.
 
-   Two open questions carry no milestone number yet, both surfaced by the work above and both written
-   into the specs rather than only here: `ModelUnavailable` answers 503 for a model this deployment
-   will never serve, where 404 is honest (docs/11 M11.8); and under `most_remaining` a credential
-   known to be at 2% is still preferred over an unmeasured one, because ordering ranks only what it
-   measures and the threshold — not the ordering — is what handles emptiness (docs/25 M25.8).
 1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
 2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
