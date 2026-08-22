@@ -10,9 +10,11 @@
 
 use super::anthropic::Anthropic;
 use super::openai_compat::OpenAiCompat;
+use crate::circuit::CredentialBreakers;
 use crate::{AdapterCaps, ProviderAdapter};
 use panday_sdk::providers::RemoteModel;
 use panday_sdk::{ItemStream, PandayError};
+use panday_types::id::SessionId;
 use panday_types::model::ChatRequest;
 use std::sync::{Arc, Mutex};
 
@@ -57,6 +59,11 @@ struct Member {
     adapter: Arc<dyn ProviderAdapter>,
 }
 
+/// One credential to try: its stable id, and the adapter holding its secret.
+/// The id travels with the adapter because every outcome is recorded against
+/// that credential's own breaker (docs/25 M25.5).
+type PoolMember = (String, Arc<dyn ProviderAdapter>);
+
 /// Several credentials behind one registry name. Interior-mutable so the
 /// operator console can add/revoke without restarting the process.
 pub struct PooledAdapter {
@@ -65,6 +72,10 @@ pub struct PooledAdapter {
     rotate: Mutex<Rotate>,
     cursor: Mutex<usize>,
     members: Mutex<Vec<Member>>,
+    /// One breaker per credential (docs/25 M25.5). Without this, a single dead
+    /// key's failures accumulate against the `(provider, model)` breaker and
+    /// eventually open the route for every healthy sibling too.
+    breakers: CredentialBreakers,
 }
 
 impl PooledAdapter {
@@ -75,6 +86,7 @@ impl PooledAdapter {
             rotate: Mutex::new(Rotate::Failover),
             cursor: Mutex::new(0),
             members: Mutex::new(Vec::new()),
+            breakers: CredentialBreakers::default(),
         })
     }
 
@@ -100,6 +112,7 @@ impl PooledAdapter {
                     })
                     .collect(),
             ),
+            breakers: CredentialBreakers::default(),
         }
     }
 
@@ -154,19 +167,39 @@ impl PooledAdapter {
         let mut members = self.members.lock().expect("pool members");
         let before = members.len();
         members.retain(|m| m.meta.id != id);
+        // Ids are per-member and freshly generated, but clearing the history
+        // keeps a revoked credential from leaving a tripped breaker behind for
+        // an id that no longer exists (docs/25 M25.5).
+        self.breakers.reset(id);
         before != members.len()
     }
 
-    fn snapshot(&self) -> (Rotate, usize, Vec<Arc<dyn ProviderAdapter>>) {
+    /// The members to try, in order, plus where to start.
+    ///
+    /// Ids come back with the adapters because the caller records each outcome
+    /// against that credential's breaker (docs/25 M25.5).
+    fn snapshot(&self, session: Option<SessionId>) -> (Rotate, usize, Vec<PoolMember>) {
         let rotate = *self.rotate.lock().expect("pool rotate");
         let members = self.members.lock().expect("pool members");
         let n = members.len();
         let start = if n == 0 {
             0
         } else {
-            match rotate {
-                Rotate::Failover => 0,
-                Rotate::RoundRobin => {
+            match (rotate, session) {
+                // Failover means "always start at member 0"; a session does not
+                // change that, and under Failover the pool is already sticky.
+                (Rotate::Failover, _) => 0,
+                // Sticky per session (M25.5). Round-robin exists to spread load,
+                // but spreading it *within* one conversation makes every turn
+                // land on a different account — a cold prompt cache each time,
+                // and usage smeared across subscriptions for no gain. Hashing
+                // the session spreads by conversation instead of by request.
+                //
+                // From the UUID bytes, not `DefaultHasher`: that hasher's output
+                // is explicitly not stable across releases, and a sticky choice
+                // that silently moves on a toolchain bump is not sticky.
+                (Rotate::RoundRobin, Some(id)) => (id.0.as_u128() % n as u128) as usize,
+                (Rotate::RoundRobin, None) => {
                     let mut c = self.cursor.lock().expect("pool cursor");
                     let i = *c % n;
                     *c = c.wrapping_add(1);
@@ -174,8 +207,16 @@ impl PooledAdapter {
                 }
             }
         };
-        let adapters = members.iter().map(|m| m.adapter.clone()).collect();
+        let adapters = members
+            .iter()
+            .map(|m| (m.meta.id.clone(), m.adapter.clone()))
+            .collect();
         (rotate, start, adapters)
+    }
+
+    /// Breaker state for one credential, for the console and for tests.
+    pub fn credential_state(&self, id: &str) -> crate::circuit::State {
+        self.breakers.state(id)
     }
 }
 
@@ -262,7 +303,7 @@ impl ProviderAdapter for PooledAdapter {
     }
 
     async fn chat(&self, req: ChatRequest) -> Result<ItemStream, PandayError> {
-        let (_rotate, start, members) = self.snapshot();
+        let (_rotate, start, members) = self.snapshot(req.metadata.session);
         if members.is_empty() {
             return Err(PandayError::Provider {
                 upstream: if self.provider.is_empty() {
@@ -278,11 +319,23 @@ impl ProviderAdapter for PooledAdapter {
         let mut last_retryable: Option<PandayError> = None;
         let mut all_rate_limited = true;
         let mut soonest_retry_after_ms: Option<u64> = None;
+        let mut tried = 0usize;
         for i in 0..n {
-            let member = &members[(start + i) % n];
+            let (id, member) = &members[(start + i) % n];
+            // A credential whose breaker is open is skipped without being
+            // called: that is the whole point of the breaker, and trying it
+            // anyway would spend the caller's latency proving what we know.
+            if !self.breakers.allow(id) {
+                continue;
+            }
+            tried += 1;
             match member.chat(req.clone()).await {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => {
+                    self.breakers.record_success(id);
+                    return Ok(stream);
+                }
                 Err(e) if e.is_retryable() => {
+                    self.breakers.record_failure(id);
                     if let PandayError::RateLimited {
                         retry_after_ms: wait,
                     } = &e
@@ -300,8 +353,24 @@ impl ProviderAdapter for PooledAdapter {
                     }
                     last_retryable = Some(e);
                 }
+                // A 400 is the request's fault, not the credential's. Counting
+                // it would let one malformed caller open every key in the pool.
                 Err(e) => return Err(e),
             }
+        }
+        if tried == 0 {
+            // Every credential is breaker-open. Retryable, so the model chain
+            // walks to another provider rather than reporting this as the
+            // caller's problem.
+            return Err(PandayError::Provider {
+                upstream: if self.provider.is_empty() {
+                    self.dialect_name.to_string()
+                } else {
+                    self.provider.clone()
+                },
+                message: "every credential in this pool is circuit-open".into(),
+                retryable: true,
+            });
         }
         if all_rate_limited && last_retryable.is_some() {
             return Err(PandayError::RateLimited {
@@ -530,6 +599,35 @@ mod tests {
         )
     }
 
+    /// A pool whose credential breakers trip fast, so a test does not need
+    /// twenty calls to open one.
+    fn pool_with_quick_breakers(members: Vec<Arc<Spy>>) -> PooledAdapter {
+        let mut p = pool(members);
+        p.breakers = crate::circuit::CredentialBreakers::new(crate::circuit::BreakerConfig {
+            window: 4,
+            min_samples: 2,
+            error_rate: 0.5,
+            cooldown: std::time::Duration::from_secs(30),
+        });
+        p
+    }
+
+    async fn drain_session(
+        adapter: &dyn ProviderAdapter,
+        session: SessionId,
+    ) -> Result<String, PandayError> {
+        let mut r = req();
+        r.metadata.session = Some(session);
+        let mut stream = adapter.chat(r).await?;
+        let mut text = String::new();
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Delta { text: t } = item? {
+                text.push_str(&t);
+            }
+        }
+        Ok(text)
+    }
+
     #[tokio::test]
     async fn rate_limited_member_walks_to_the_next_key() {
         let a = Spy::new("openai_compat", Script::RateLimited(0));
@@ -557,6 +655,176 @@ mod tests {
         assert!(err.is_retryable());
         assert_eq!(a.calls(), 1);
         assert_eq!(b.calls(), 1);
+    }
+
+    // ── M25.5: sticky sessions ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn one_session_lands_on_the_same_credential_every_turn() {
+        // Round-robin exists to spread load across accounts. Spreading it
+        // *within* one conversation gives every turn a cold prompt cache and
+        // smears one user's usage across subscriptions for no gain.
+        let a = Spy::new("openai_compat", Script::Ok("from-a"));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let c = Spy::new("openai_compat", Script::Ok("from-c"));
+        let adapter = pool(vec![a.clone(), b.clone(), c.clone()]);
+        adapter.set_rotate(Rotate::RoundRobin);
+
+        let session = SessionId::new();
+        let first = drain_session(&adapter, session).await.unwrap();
+        for _ in 0..6 {
+            assert_eq!(
+                drain_session(&adapter, session).await.unwrap(),
+                first,
+                "a session must not hop credentials between turns"
+            );
+        }
+        // All seven turns went to one member.
+        let calls = [a.calls(), b.calls(), c.calls()];
+        assert!(
+            calls.contains(&7) && calls.iter().filter(|c| **c == 0).count() == 2,
+            "expected one member to take all 7 turns, got {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn different_sessions_still_spread_across_credentials() {
+        // Sticky must not collapse into "everyone gets member 0" — that would
+        // trade load-spreading away entirely rather than moving it from
+        // per-request to per-conversation.
+        let a = Spy::new("openai_compat", Script::Ok("from-a"));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        adapter.set_rotate(Rotate::RoundRobin);
+
+        // Enough distinct sessions that both members being used is overwhelming
+        // (a fair hash misses only 1-in-2^39), and deterministic per session.
+        for _ in 0..40 {
+            drain_session(&adapter, SessionId::new()).await.unwrap();
+        }
+        assert!(
+            a.calls() > 0 && b.calls() > 0,
+            "sessions should distribute: a={} b={}",
+            a.calls(),
+            b.calls()
+        );
+    }
+
+    #[tokio::test]
+    async fn failover_ignores_the_session_because_it_is_already_sticky() {
+        // Failover's contract is "always start at member 0". A session must not
+        // quietly redefine that.
+        let a = Spy::new("openai_compat", Script::Ok("from-a"));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        for _ in 0..5 {
+            assert_eq!(
+                drain_session(&adapter, SessionId::new()).await.unwrap(),
+                "from-a"
+            );
+        }
+        assert_eq!(b.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_sticky_session_still_walks_when_its_credential_is_rate_limited() {
+        // Sticky is a preference, not a pin: a 429 must still fail over.
+        let a = Spy::new("openai_compat", Script::RateLimited(0));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        adapter.set_rotate(Rotate::RoundRobin);
+        assert_eq!(
+            drain_session(&adapter, SessionId::new()).await.unwrap(),
+            "from-b"
+        );
+    }
+
+    // ── M25.5: per-credential breakers ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn a_failing_credential_is_dropped_without_being_called_again() {
+        let bad = Spy::new("openai_compat", Script::Retryable);
+        let good = Spy::new("openai_compat", Script::Ok("from-good"));
+        let adapter = pool_with_quick_breakers(vec![bad.clone(), good.clone()]);
+
+        for _ in 0..4 {
+            assert_eq!(drain_text(&adapter).await.unwrap(), "from-good");
+        }
+        let after_open = bad.calls();
+        for _ in 0..4 {
+            assert_eq!(drain_text(&adapter).await.unwrap(), "from-good");
+        }
+        assert_eq!(
+            bad.calls(),
+            after_open,
+            "an open credential must stop being dialled, not just fail faster"
+        );
+        assert_eq!(
+            adapter.credential_state(&adapter.list()[0].id),
+            crate::circuit::State::Open
+        );
+    }
+
+    #[tokio::test]
+    async fn one_dead_credential_does_not_open_its_healthy_siblings() {
+        // The reason per-credential breakers exist: with only the
+        // (provider, model) breaker, a dead key's failures accumulate against
+        // the whole route and eventually take the healthy keys down with it.
+        let bad = Spy::new("openai_compat", Script::Retryable);
+        let good = Spy::new("openai_compat", Script::Ok("from-good"));
+        let adapter = pool_with_quick_breakers(vec![bad.clone(), good.clone()]);
+
+        for _ in 0..8 {
+            assert_eq!(drain_text(&adapter).await.unwrap(), "from-good");
+        }
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        assert_eq!(
+            adapter.credential_state(&ids[0]),
+            crate::circuit::State::Open
+        );
+        assert_eq!(
+            adapter.credential_state(&ids[1]),
+            crate::circuit::State::Closed,
+            "the healthy sibling must stay closed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pool_with_every_credential_open_is_retryable_so_the_chain_walks() {
+        let a = Spy::new("openai_compat", Script::Retryable);
+        let b = Spy::new("openai_compat", Script::Retryable);
+        let adapter = pool_with_quick_breakers(vec![a.clone(), b.clone()]);
+
+        for _ in 0..4 {
+            let _ = drain_text(&adapter).await;
+        }
+        let calls_before = a.calls() + b.calls();
+        let err = drain_text(&adapter).await.expect_err("all open");
+        assert!(
+            err.is_retryable(),
+            "must stay retryable so the model chain fails over: {err}"
+        );
+        assert_eq!(
+            a.calls() + b.calls(),
+            calls_before,
+            "nothing should be dialled once every credential is open"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bad_request_does_not_count_against_the_credential() {
+        // A 400 is the caller's fault. Counting it would let one malformed
+        // client open every key in the pool for everybody else.
+        let a = Spy::new("openai_compat", Script::BadRequest);
+        let adapter = pool_with_quick_breakers(vec![a.clone()]);
+        for _ in 0..6 {
+            let _ = drain_text(&adapter).await;
+        }
+        assert_eq!(
+            adapter.credential_state(&adapter.list()[0].id),
+            crate::circuit::State::Closed
+        );
+        assert_eq!(a.calls(), 6, "every attempt should still have been made");
     }
 
     #[tokio::test]

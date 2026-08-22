@@ -88,10 +88,10 @@ for Grok 429s → `RateLimited` (retryable) → the chain walks to Claude. A 400
 not walk keys (same rule as model failover, docs/11). Never rotate mid-stream.
 
 **Shipped:** rotation is `failover` (always start at member 0)
-or `round_robin` (each new request starts one member further). Set at
-`GET /accounts` or `PANDAY_ROTATE`. Sticky-per-`session_id` (M25.5),
-per-credential breakers, and `UsageRecord.credential_id` are **not** shipped
-here — breakers are still `(provider, model)`.
+or `round_robin` (each new request starts one member further, or one member per
+*session* — see M25.5). Set at `GET /accounts` or `PANDAY_ROTATE`. Breakers are
+per-credential as well as `(provider, model)`. `UsageRecord.credential_id` is
+still **not** shipped.
 
 ## Remaining % (two numbers)
 
@@ -170,7 +170,49 @@ A one-credential gateway must keep today's failover behaviour.
   `PANDAY_ROTATE`. Vault rows load at boot when `~/.panday` exists. Mock-proven;
   not live two-account dogfood. Sticky session is M25.5.)*
 
-- **M25.5** Per-credential breakers + sticky `session_id`.
+- **M25.5** Per-credential breakers + sticky `session_id`. ✅ *(shipped:
+  `panday_gateway::circuit::CredentialBreakers`, and session-hashed member
+  selection in `PooledAdapter::snapshot`.)*
+
+  **Per-credential breakers.** Before this, one dead key's failures accumulated
+  against the `(provider, model)` breaker until it opened — taking every healthy
+  sibling in the pool down with it, which is the exact failure pooling exists to
+  prevent. Each credential now has its own breaker, keyed by `MemberMeta::id`
+  (stable, never the secret). An open credential is *skipped without being
+  dialled*; when every one is open the pool returns a **retryable** error so the
+  model chain still walks to another provider rather than reporting the caller's
+  request as broken.
+
+  The state machine is shared with the route breakers rather than copied — the
+  half-open reservation and the probe-decides-alone rule are subtle enough that a
+  second implementation would drift. Credential breakers deliberately do **not**
+  write docs/21's `circuit_open` gauge: it is labelled by provider, so one dead
+  key out of four would report the whole provider as open. Console visibility for
+  them is M25.6.
+
+  A 400 does not count against a credential. It is the request's fault, and
+  counting it would let one malformed client open every key in the pool for
+  everybody else — the same rule that already stops a 400 walking the pool.
+
+  **Sticky sessions.** `round_robin` now picks its starting member from
+  `session_id` when the request carries one, instead of advancing the cursor.
+  Round-robin exists to spread load across accounts; spreading it *within* one
+  conversation gives every turn a cold prompt cache and smears one user's usage
+  across subscriptions for no gain. Sticky moves the spreading from per-request
+  to per-conversation, which is what was wanted in the first place.
+
+  Two decisions worth keeping:
+
+  - **`failover` ignores the session.** Its contract is "always start at member
+    0", and under it the pool is already sticky. Letting a session redefine that
+    would quietly change M25.4's meaning, so sticky is a refinement of
+    `round_robin` rather than a third `Rotate` mode — no new config surface.
+  - **The index comes from the UUID bytes, not `DefaultHasher`.** That hasher's
+    output is explicitly not stable across releases, and a sticky choice that
+    moves on a toolchain bump is not sticky.
+
+  Sticky is a preference, not a pin: a 429 on the session's credential still
+  walks to the next member, and "never rotate mid-stream" is unchanged.
 
 - **M25.6** Operator ceiling, local counters, remaining %, console cards.
   Prometheus `panday_upstream_calls_total{provider,outcome}` only.
