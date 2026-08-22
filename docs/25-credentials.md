@@ -137,7 +137,11 @@ is below threshold, omit that provider from this request's chain.
 
 Fixture secrets are `sk-test-aaaa` / `sk-test-bbbb`. `MockTransport` scripts
 status + headers + SSE. No `~/.grok`, no Keychain, no real tokens in CI.
-Property: Σ tokens per `credential_id` == Σ usage frames that named it.
+Property: Σ tokens per `credential_id` == Σ usage frames that named it —
+**pending, and not currently enforceable**: `UsageRecord` carries no
+`credential_id` (see §How a call is served), so there is nothing for this to
+range over. It is stated here as the contract the field must satisfy when it
+lands, not as a guard that exists.
 A one-credential gateway must keep today's failover behaviour.
 
 ## Milestones

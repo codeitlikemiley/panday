@@ -361,7 +361,9 @@ in-process, not a product surface. The gateway is stateless apart from cache
   that must be run deliberately.
 
   **The exact cache is not Postgres yet.** The spec names a PG unlogged table and
-  PG is M3.5, so what shipped is the `ExactCache` trait plus an in-memory
+  **no milestone owns building one** — this previously cited "M3.5", which is
+  ledger-rebuild-from-log and never owned the PG lane. Tracked now as M11.10.
+  What shipped is the `ExactCache` trait plus an in-memory
   implementation (bounded, TTL, expire-on-read), and the binaries wire whichever
   they have. The parts with the bugs in them — eligibility, key normalization,
   tenant scoping — are the same either way.
@@ -528,3 +530,20 @@ in-process, not a product surface. The gateway is stateless apart from cache
   `ModelNotFound` is not retryable. `model_not_found` joins the `ErrorResponse`
   type enum in the OpenAPI document, and `/v1/chat/completions` now declares the
   404 it could always have returned.
+
+- **M11.10** Postgres-backed exact cache, replacing the in-memory one where a
+  deployment has a database.
+
+  Carved out because `docs/11` §Exact cache has always specified "hash(normalized
+  request) → response, **PG unlogged table**" while only `MemoryExactCache`
+  exists, and the deferral was attributed to "M3.5" — a milestone that is
+  ledger-rebuild-from-log and never owned the Postgres lane. Two closed
+  milestones were being cited for work nobody had started, so a reader chasing
+  the pointer concluded it had shipped.
+
+  The seam is already right: `ExactCache` is a trait and the binaries wire
+  whichever implementation they have, so this is an additional impl plus a
+  migration, not a refactor. The parts with the bugs in them — eligibility, key
+  normalization, tenant scoping — are shared and already tested. Not started, and
+  not urgent: the in-memory cache is correct, it just does not survive a restart
+  or span replicas.

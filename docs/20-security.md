@@ -225,8 +225,10 @@ run belong inside a T2 jail (docs/14), where the worst case is a lost temp direc
   false positive costs a redaction rather than a broken turn).
 - **M20.3** Tenant-scoping CI lint; cache key audit; trace scrubbing defaults. ✅ *(shipped in three places: `panday_platform::tenancy` + `crates/panday-platform/tests/tenant_scoping.rs` (the lint), `CacheKey` at M11.6 (the cache-key audit's finding, built in), `crates/panday-sdk/tests/scrub_audit.rs` at M21.5 (scrubbing defaults).)*
 
-  **The lint is armed before the first query exists.** Postgres is M3.5, so today the
-  scan finds no SQL — which is exactly when this is worth writing. The first unscoped
+  **The lint was armed before the first query existed.** When this was written the
+  scan found no SQL at all — which is exactly when it is worth writing. It now
+  walks 49 `sqlx::query` sites and 8 migrations in `panday-platform`, so the
+  guard is live rather than theoretical. The first unscoped
   query is the one written while someone is debugging something else, and by the time
   there are fifty queries a lint becomes a migration project instead of a guardrail.
 

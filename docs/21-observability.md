@@ -70,8 +70,11 @@ week. This tool is why state-must-fold-from-log is an invariant and not a
 preference (ADR-002).
 
 **Amended at M21.3: `<log>`, not `<session_id>`.** A session id needs a store
-to resolve it against, and there is none yet — Postgres is M3.5, SQLite is
-M18.1. Rather than ship a replay tool whose only argument is unreachable, v1
+to resolve it against, and at M21.3 there was none. That is no longer true —
+SQLite shipped at M18.1 and the Postgres `session_events` sink at M18.6 — so
+replay-by-session-id is unblocked and simply unwritten. (It was previously
+attributed here to "M3.5"; M3.5 is ledger-rebuild-from-log and never owned a
+store.) Rather than ship a replay tool whose only argument is unreachable, v1
 takes an append-only JSONL log (`panday_harness::JsonlStore`, one envelope per
 line in `seq` order — already the shape of the golden fixtures). The `<session_id>`
 form is a lookup in front of the same renderer and lands with the store; nothing

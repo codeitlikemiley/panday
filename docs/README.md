@@ -4,8 +4,8 @@
 > Rust is what iron does on its own; a panday is what someone does with it
 > deliberately. Every crate is prefixed `panday-`.
 
-This repository is the blueprint and the seed of a full AI infrastructure
-platform: an agent harness, an LLM gateway with a model router, a tiered
+This repository is the specification *and* the implementation of a full AI
+infrastructure platform: an agent harness, an LLM gateway with a model router, a tiered
 sandbox, a plugin system (skills + MCP + ACP), a token-economy layer, a
 subscription platform with metered billing, an offline/local tier, and a
 path to training your own task models.
@@ -15,7 +15,7 @@ path to training your own task models.
 | Path | What it is |
 |---|---|
 | `docs/` | The documentation set — 21 specs, ADRs, threat model, roadmap. The source of truth. Renders with `mdbook serve docs`. |
-| `crates/` | A compiling cargo workspace seeded with the core types and traits the specs define. `cargo check` is green. |
+| `crates/` | The implementation. `cargo nextest run --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` are green on every commit; `docs/` is updated in the same commit whenever the code diverges from a spec. |
 
 ## How to use this repo
 

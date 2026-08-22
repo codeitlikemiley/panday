@@ -23,7 +23,7 @@ my-plugin/
 `hooks: [pre_tool]`. Install-time consent; the sandbox tiers enforce
 (T1 WIT world for WASM, MCP servers run as T2 children with that policy).
 Distribution: `.plugin` archive, ed25519-signed; registry tiers
-`verified | community | unlisted`, with the marketplace being a phase-4
+`verified | community | unlisted`, with the marketplace being a phase-6
 storefront over the same registry API.
 
 ## Skills
@@ -239,7 +239,7 @@ of one adapter — the best distribution-per-line-of-code in the plan.
   `panday acp` defaults to the `dev` profile rather than `unleashed`: an editor session
   has a human in it, and the point of the gate is that they see the question. The jail's
   environment is five toolchain variables, never the parent environment (docs/20 T4).
-- **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 4. ✅ *(shipped: `panday_plugins::archive`, `panday_platform::registry` (+ its `http` router), `panday plugin install`; suites in `crates/panday-plugins/tests/archive.rs`, `crates/panday-platform/tests/registry.rs`, `crates/panday-cli/tests/plugin_install.rs`.)*
+- **M16.6** Registry service (publish/fetch/verify) + `panday plugin install`; marketplace UI deferred to phase 6. ✅ *(shipped: `panday_plugins::archive`, `panday_platform::registry` (+ its `http` router), `panday plugin install`; suites in `crates/panday-plugins/tests/archive.rs`, `crates/panday-platform/tests/registry.rs`, `crates/panday-cli/tests/plugin_install.rs`.)*
 
   **The order is the security property**: fetch → verify → consent → extract.
 

@@ -84,6 +84,26 @@ session's TCC grants, which made the repository unreadable for hours.
   retargeted — the work has to be rebased and re-filed under a new number. Delete base branches by
   hand once their children have landed. (This is how PR #13 was lost: it had to be rebased onto the
   squashed `main` and re-filed as #16.)
+- **Check who `gh` is with `gh api user -q .login`, not `gh auth status`.** The
+  active account drifts back to `hexuria`, which has read but no write here, and
+  every `gh pr create` then fails with `must be a collaborator`. Parsing local
+  status output gave the wrong answer twice on 2026-08-23; asking GitHub who you
+  are does not.
+- **`cfg`-gated code cannot be verified locally, so plan a CI round trip.**
+  `x86_64-unknown-linux-gnu` is installed, but cross-compiling still fails —
+  `ring` wants `x86_64-linux-gnu-gcc` and there is no C cross-toolchain here.
+  M25.12 was written entirely under `cfg(target_os = "macos")`, the local gate
+  only ever compiled the macOS half, and the Linux branch reached CI having never
+  been built. Five of six jobs passed; the one that failed was the only one that
+  had looked at it.
+- **The integration lane is not in the local gate.** `panday-platform`'s smoke
+  suite runs only in CI's `integration` job, and a status-code change nearly went
+  red there right after a local "all green". Run it by hand when touching
+  anything an HTTP status assertion could observe:
+  `docker compose -f deploy/integration-compose.yml up -d --wait`, then
+  `PANDAY_TEST_DATABASE_URL=… cargo nextest run --run-ignored all -E 'package(panday-platform)'`.
+- **Never `pkill -f "cargo test"`.** It is not scoped to this repo and will reach
+  another project's run on the same machine. Kill by recorded PID.
 - **If `git fetch` fails, start the ssh-agent — do not reach for HTTPS** (§4.2). A failed fetch
   leaves `origin/main` stale, and a stale `origin/main` will happily let you rebase onto the wrong
   base; that near-miss is what made this look like a remote problem rather than a missing agent.
@@ -96,7 +116,9 @@ session's TCC grants, which made the repository unreadable for hours.
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
-**104 milestones total: 97 shipped ✅, 7 remaining.** Recount it rather than trusting this line —
+**107 milestones total: 97 shipped ✅, 10 remaining.** The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
+were always-real items that carried no number, so they were invisible to this
+count. Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
 count too.
 
@@ -236,8 +258,9 @@ a model this deployment cannot serve became **M11.9**: 503 and 404 respectively.
 The T1 hook 10ms flake on `c300fb1` (run `32330143170`) was a **timing flake, not a regression**:
 docs/16 gives a wasm hook a 10ms wall-clock budget, and asserting behaviour against that while a
 shared runner executes 900 other tests measures the runner. Fixed in `5fdf3f7` by splitting
-behaviour (2s) from budget tests, with retries on the budget pair. Current HEAD (`32fbbf2`) is
-green on `ci` / `release` / `deploy`.
+behaviour (2s) from budget tests, with retries on the budget pair. `main` has been green on `ci`
+since (see §2 for the current HEAD; this paragraph used to name `32fbbf2` and went stale within a
+day, so it no longer names one).
 
 ### 4.2 SSH works. Start the agent first.
 
@@ -364,17 +387,26 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 
 ## 6. Suggested next steps, in order
 
-**Nothing is laptop-buildable any more.** All eight remaining milestones need
-hardware, a third party, training data, a dependency decision, or a judgement
-only the builder can make. That is a real state, not a stalling one — the last
-thing that could be built here was built. Do not invent rates or p95s to make
-the list look shorter.
+**A previous version of this section said "nothing is laptop-buildable any
+more". That was wrong**, and it was wrong because it repeated the blocked-list
+framing below instead of checking the tree. Two surveys on 2026-08-23 found the
+opposite: several "blocked" milestones have substantial laptop-buildable slices
+that had never been separated out. Do not invent rates or p95s to make the list
+look shorter — but do not assume a milestone is blocked because this file once
+said so.
 
-0. **The two skip-unless-asked credentials milestones**, if you want them:
-   **M25.11** hosted Postgres ciphertext (same envelope, not tenant BYOK) needs a
-   Postgres to put it in; **M25.12** Keychain-wrapped KEK needs the `keyring`
-   crate, so §1.2's ask-first dependency rule applies before a line is written.
-   Neither is on the critical path — file+env KEK already works.
+0. **M25.11 — hosted Postgres ciphertext. Not blocked; simply unstarted.**
+   `sqlx` with `postgres` is already in `[workspace.dependencies]`, `just dev`
+   runs Postgres on 5442, `deploy/integration-compose.yml` on 5433, and twelve
+   test files already gate on `PANDAY_TEST_DATABASE_URL`. It is roughly
+   `crates/panday-sdk/src/vault/sqlite.rs` with `$1` placeholders and `bytea`,
+   plus a migration. Rows are **operator-global**, not account-scoped —
+   "not tenant BYOK", decided 2026-08-23. Start with a `CredentialStore`
+   conformance suite (there is none; `MemoryStore` and `SqliteStore` are tested
+   separately and may already have diverged), then the impl falls out of it.
+
+   *(M25.12 shipped 2026-08-23 — `keyring` approved, macOS-only, opt-in behind
+   `PANDAY_VAULT_KEYCHAIN=1`.)*
 
 1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.

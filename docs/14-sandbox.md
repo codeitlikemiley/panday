@@ -302,3 +302,17 @@ type error.
   The sink is a trait with a discarding default, for the same reason `UsageSink` is: `panday local`
   has no account, and a loop that needed a billing backend to run a tool would make the offline tier
   impossible.
+
+- **M14.8** Egress proxy, so a non-empty `net` allowlist means something.
+
+  Carved out of M14.2's note, which records that the proxy "is not built" and
+  that "a per-domain allowlist needs the proxy component and is deferred with
+  it" — true, and invisible, because the deferral carried no number.
+
+  The gap it leaves is worth stating plainly: `docs/16` §plugin.toml lets a
+  plugin declare `net: [api.github.com]`, and today the sandbox cannot enforce
+  that. Under `--unshare-net` there is no network at all, so default-deny holds
+  and nothing is *less* safe than it claims — but a manifest field that reads
+  like an allowlist and is in fact an all-or-nothing switch is the kind of thing
+  someone will one day rely on. Until this ships, a non-empty `net` list means
+  "this plugin wants network", not "this plugin may reach exactly these hosts".

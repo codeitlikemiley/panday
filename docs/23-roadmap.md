@@ -8,18 +8,33 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
-**Where numbered work stands (2026-08-20):** 89 milestones, 83 shipped, 3 partial
-(M22.3 host, M22.4 KVM timing, M22.5 air-gapped install), 3 not started (M19.3 /
-M19.5 / M19.7 training). Laptop-provable leftovers are closed: subscription
-OAuth, live M13.2, json-bench 200/200 on `xai/grok-4.6`, that model's catalog
-row `provenance: measured`, M20.1 canaries in agent-bench (41 tasks). What
-remains is named in each phase's status, not guessed.
+**Where numbered work stands (2026-08-23):** **107 milestones, 97 shipped, 10
+open** — M0.2 (this phase-2 exit tracker), M11.10 (PG exact cache), M14.8
+(egress proxy), M19.3 / M19.5 / M19.7 (training, not started), M22.3 / M22.4 /
+M22.5 (partial: host, KVM timing, air-gapped install), and M25.11 (hosted
+Postgres ciphertext).
 
-**Operator track (docs/25), started 2026-08-21:** twelve milestones (M25.1–25.12)
-to pool upstream API keys and Grok/Claude/Codex subscriptions behind the gateway.
-Additive — not Phase 5/6, does not skip training or Stripe. M25.1 vault, M25.2
-`panday creds`, M25.3 transport headers, and live pools + `GET /accounts`
-(M25.4, partial M25.9) are shipped.
+The total rose from 104 on the same day. **No work was added** — three things
+that had always existed were finally given numbers: M0.2 was being *cited* here
+without ever being defined, and the PG cache and egress proxy were deferrals
+recorded in prose that no number owned. An unnumbered deferral is invisible to
+anyone reading the milestone list, which is the failure CLAUDE.md §4 describes.
+Recount rather than trusting this line; it has been stale twice.
+Laptop-provable leftovers are closed: subscription OAuth, live M13.2, json-bench
+200/200 on `xai/grok-4.6`, that model's catalog row `provenance: measured`,
+M20.1 canaries in agent-bench (41 tasks). What remains is named in each phase's
+status, not guessed.
+
+**Operator track (docs/25), 2026-08-21 to 2026-08-23:** twelve milestones
+(M25.1–25.12) to pool upstream API keys and Grok/Claude/Codex subscriptions
+behind the gateway. Additive — not Phase 5/6, does not skip training or Stripe.
+**Eleven of twelve are shipped**: the vault, `panday creds`, transport headers,
+the pooled adapter, per-credential breakers and sticky sessions, operator
+ceilings and remaining %, the provider-header overlay, the `most_remaining`
+selector and its opt-in funnel, vault-as-boot-source, the Codex importer, and
+the Keychain-wrapped KEK. **M25.11** (hosted Postgres ciphertext) is the only
+one left, and it is not blocked — `sqlx`/`postgres` is already a workspace
+dependency and the integration lane already runs Postgres.
 
 ## Phase 0 — Spine (~weeks 1–4)
 
@@ -56,7 +71,13 @@ The product wedge. Harness state machine on fake client (M13.1), native
 tools + T2 sandbox Linux (M14.1–14.2), reducer generic + cargo/git/test
 compressors (M15.1–15.2), real-model loop (M13.2), permissions + Ask flow
 (M13.3), cache-aligned assembly + compaction (M13.4), crash-resume (M13.5),
-event store PG + WS resume (M3.3), macOS T2 (M14.3).
+event store + WS resume (M3.3), macOS T2 (M14.3).
+
+*(This list previously said "event store **PG**". It is not Postgres: the
+implementors of `panday_harness::EventStore` are `MemoryStore`, `JsonlStore` and
+`SqliteStore`, and `panday-harnessd` holds an `Arc<MemoryStore>`. The Postgres
+`session_events` table is M18.6's sync **sink**, not an `EventStore`. M3.3's WS
+resume is real and shipped; the PG backing is not, and no milestone owns it.)*
 
 **Exit:** the agent fixes a real failing test in one of *your* repos,
 unattended, under `dev` profile — and you reach for it by preference the
@@ -96,9 +117,18 @@ observability spine (M21.1–21.2).
 **Exit:** a stranger installs the CLI, connects their editor via ACP, ports
 an existing SKILL.md unmodified, and completes a task offline on a laptop.
 
-**Where that stands (M0.2).** Like Phase 0's exit, this criterion has work in it
-that no component milestone owns — so it is written down here rather than left
-invisible:
+- **M0.2** **Phase 2's exit clauses, which no component milestone owns.**
+  *(Partial: three of four hold as far as CI can hold them. Two things remain
+  that only a human can do — run it in Zed, and run it against a real local
+  model — plus a package-manager recipe.)*
+
+  Same reason M0.1 exists: the criterion has work in it that no numbered
+  milestone covers, so it is written down rather than left invisible. This
+  number was cited here for some time without ever being defined as a bullet,
+  which made Phase 2's exit tracker uncountable and unmarkable — the precise
+  failure CLAUDE.md §4 warns about, hiding behind a number that looked real.
+
+**Where that stands (M0.2):**
 
 | Clause | State |
 |---|---|
