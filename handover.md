@@ -83,9 +83,9 @@ session's TCC grants, which made the repository unreadable for hours.
   retargeted — the work has to be rebased and re-filed under a new number. Delete base branches by
   hand once their children have landed. (This is how PR #13 was lost: it had to be rebased onto the
   squashed `main` and re-filed as #16.)
-- **`git fetch` against `origin` fails silently-ish** because the remote is SSH and SSH is broken
-  (§4.2). A stale `origin/main` will happily let you rebase onto the wrong base. Fetch the same way
-  you push: `git -c credential.helper='!gh auth git-credential' fetch https://github.com/codeitlikemiley/panday.git main`.
+- **If `git fetch` fails, start the ssh-agent — do not reach for HTTPS** (§4.2). A failed fetch
+  leaves `origin/main` stale, and a stale `origin/main` will happily let you rebase onto the wrong
+  base; that near-miss is what made this look like a remote problem rather than a missing agent.
 
 ---
 
@@ -225,20 +225,41 @@ shared runner executes 900 other tests measures the runner. Fixed in `5fdf3f7` b
 behaviour (2s) from budget tests, with retries on the budget pair. Current HEAD (`32fbbf2`) is
 green on `ci` / `release` / `deploy`.
 
-### 4.2 SSH push is broken — use HTTPS
+### 4.2 SSH works. Start the agent first.
 
-The ssh-agent socket was destroyed in the incident. The keys are intact
-(`~/.ssh/id_codeitlikemiley`) but passphrase-protected, and the agent that held them is gone. Push
-as `codeitlikemiley`:
+**This section used to say SSH was broken and to push over HTTPS. That was true
+the day it was written and is not true now.** The keys were always fine; the
+incident killed the *agent*, and `id_codeitlikemiley` is passphrase-protected, so
+without an agent every push failed with `Permission denied (publickey)` — which
+reads like a key problem and is not one.
+
+The passphrase is already in the macOS keychain. One command:
 
 ```sh
-gh auth switch --user codeitlikemiley
-git -c credential.helper='!gh auth git-credential' \
-  push https://github.com/codeitlikemiley/panday.git HEAD:main
-gh auth switch --user hexuria
+ssh-add --apple-load-keychain     # loads id_codeitlikemiley, no prompt
+ssh -T git@github.com             # → "Hi codeitlikemiley!"
 ```
 
-The user can restore SSH with `eval "$(ssh-agent -s)" && ssh-add --apple-use-keychain ~/.ssh/id_codeitlikemiley`.
+Then `git push` and `git fetch` work normally against
+`git@github.com:codeitlikemiley/panday.git`. Verified 2026-08-22.
+
+Make it survive a reboot by adding to `~/.ssh/config` under `Host github.com`:
+
+```
+  AddKeysToAgent yes
+  UseKeychain yes
+```
+
+**Do not switch `gh` to `hexuria` after pushing.** The old ritual here ended with
+`gh auth switch --user hexuria`, which is pointless on this repo: **hexuria has
+read access and no write access** (`Permission to codeitlikemiley/panday.git
+denied to hexuria`). Switching back only guarantees the next `gh pr` call fails
+with a permissions error that looks mysterious. Push and manage PRs as
+`codeitlikemiley` and leave it there.
+
+`~/.ssh/id_codeitlikemiley` is a 4096-bit RSA key from 2019. GitHub still accepts
+RSA with SHA-2 so it is not urgent, but every other key on this machine is
+ed25519 — rotating it is reasonable housekeeping whenever the user wants.
 
 ### 4.3 Machine state after the incident
 
