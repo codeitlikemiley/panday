@@ -69,6 +69,12 @@ impl ResponseHeaders {
             tokens: self
                 .get_u64("x-ratelimit-remaining-tokens")
                 .or_else(|| self.get_u64("anthropic-ratelimit-tokens-remaining")),
+            limit_requests: self
+                .get_u64("x-ratelimit-limit-requests")
+                .or_else(|| self.get_u64("anthropic-ratelimit-requests-limit")),
+            limit_tokens: self
+                .get_u64("x-ratelimit-limit-tokens")
+                .or_else(|| self.get_u64("anthropic-ratelimit-tokens-limit")),
         }
     }
 
@@ -79,10 +85,59 @@ impl ResponseHeaders {
 
 /// Remaining quota the upstream put on the wire. `None` means the header was
 /// absent, not that remaining is zero.
+///
+/// Carries the **limits** as well as the remainders, because a remaining count
+/// on its own is not a percentage: "412 requests left" says nothing about
+/// headroom until you know whether the ceiling is 500 or 500,000. M25.3 kept
+/// only the remainders, which was enough to stop dropping them and not enough
+/// to overlay anything (docs/25 M25.7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RatelimitRemaining {
     pub requests: Option<u64>,
     pub tokens: Option<u64>,
+    pub limit_requests: Option<u64>,
+    pub limit_tokens: Option<u64>,
+}
+
+impl RatelimitRemaining {
+    /// Fraction of the provider's short window still available, by whichever of
+    /// requests or tokens is *scarcer* — a credential with 90% of its requests
+    /// and 3% of its tokens left has 3% of headroom, and reporting the kinder
+    /// number would hide the one about to bite.
+    ///
+    /// `None` unless the upstream sent both a remaining and a limit for at
+    /// least one of them.
+    pub fn headroom_pct(&self) -> Option<f64> {
+        let pair = |rem: Option<u64>, lim: Option<u64>| match (rem, lim) {
+            (Some(r), Some(l)) if l > 0 => Some(r.min(l) as f64 / l as f64),
+            _ => None,
+        };
+        match (
+            pair(self.requests, self.limit_requests),
+            pair(self.tokens, self.limit_tokens),
+        ) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+
+    /// True when the upstream told us anything at all.
+    pub fn is_present(&self) -> bool {
+        self.requests.is_some() || self.tokens.is_some()
+    }
+}
+
+/// Somewhere to report the ratelimit headers a call came back with.
+///
+/// A push, not a getter. The value is produced deep in the adapter and consumed
+/// by whoever owns the *credential* — and only the caller knows which credential
+/// this adapter is. A `last_remaining()` getter would also race: two concurrent
+/// calls on one credential would overwrite each other and the reader could not
+/// tell which answer it got.
+pub trait RemainingSink: Send + Sync {
+    fn observe(&self, remaining: RatelimitRemaining);
 }
 
 /// A successful SSE POST: body stream **and** the headers that arrived with it.
@@ -359,6 +414,52 @@ mod tests {
         let remaining = headers.ratelimit_remaining();
         assert_eq!(remaining.requests, Some(42));
         assert_eq!(remaining.tokens, Some(8_000));
+    }
+
+    #[test]
+    fn headroom_needs_a_limit_as_well_as_a_remainder() {
+        // "412 requests left" is not a percentage until you know the ceiling.
+        let only_remaining =
+            ResponseHeaders::from_pairs([("x-ratelimit-remaining-requests", "412")]);
+        assert_eq!(only_remaining.ratelimit_remaining().headroom_pct(), None);
+        assert!(only_remaining.ratelimit_remaining().is_present());
+
+        let both = ResponseHeaders::from_pairs([
+            ("x-ratelimit-remaining-requests", "250"),
+            ("x-ratelimit-limit-requests", "1000"),
+        ]);
+        assert_eq!(both.ratelimit_remaining().headroom_pct(), Some(0.25));
+    }
+
+    #[test]
+    fn headroom_reports_the_scarcer_of_requests_and_tokens() {
+        // 90% of requests but 3% of tokens is 3% of headroom. Reporting the
+        // kinder number would hide the one that is about to bite.
+        let h = ResponseHeaders::from_pairs([
+            ("anthropic-ratelimit-requests-remaining", "90"),
+            ("anthropic-ratelimit-requests-limit", "100"),
+            ("anthropic-ratelimit-tokens-remaining", "3000"),
+            ("anthropic-ratelimit-tokens-limit", "100000"),
+        ]);
+        assert_eq!(h.ratelimit_remaining().headroom_pct(), Some(0.03));
+    }
+
+    #[test]
+    fn no_ratelimit_headers_at_all_is_absent_not_zero() {
+        // SuperGrok, Claude Max and Codex OAuth send none of these. Absent must
+        // not read as "no headroom left" — the local counters stay in charge.
+        let h = ResponseHeaders::default().ratelimit_remaining();
+        assert!(!h.is_present());
+        assert_eq!(h.headroom_pct(), None);
+    }
+
+    #[test]
+    fn a_zero_limit_does_not_divide_by_zero() {
+        let h = ResponseHeaders::from_pairs([
+            ("x-ratelimit-remaining-tokens", "0"),
+            ("x-ratelimit-limit-tokens", "0"),
+        ]);
+        assert_eq!(h.ratelimit_remaining().headroom_pct(), None);
     }
 
     #[test]

@@ -70,6 +70,7 @@ mod tests {
                 window_secs: Some(18_000),
                 remaining_pct: Some(0.88),
                 exhausted: false,
+                headroom_pct: Some(0.42),
             }],
             rotate: "failover".into(),
             models: vec![ModelRow {

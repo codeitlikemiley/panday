@@ -34,6 +34,12 @@ pub struct AccountRow {
     pub remaining_pct: Option<f64>,
     /// A 429 arrived with nothing left in the window. Clears when it rolls.
     pub exhausted: bool,
+    /// The provider's *own* short-window headroom from its response headers
+    /// (docs/25 M25.7). A different number from `remaining_pct`, which is the
+    /// operator's declared grant over a longer period — so both are shown
+    /// rather than merged. `None` for OAuth subscriptions, which publish no
+    /// such header and which we do not scrape.
+    pub headroom_pct: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

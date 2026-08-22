@@ -60,6 +60,13 @@ impl ProviderAdapter for Anthropic {
         self.client.chat(req).await
     }
 
+    fn set_remaining_sink(
+        &self,
+        sink: std::sync::Arc<dyn panday_sdk::providers::transport::RemainingSink>,
+    ) {
+        self.client.set_remaining_sink(sink);
+    }
+
     async fn list_models(&self) -> Result<Vec<panday_sdk::providers::RemoteModel>, PandayError> {
         self.client.list_models().await
     }

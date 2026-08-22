@@ -270,7 +270,39 @@ A one-credential gateway must keep today's failover behaviour.
 
 - **M25.7** Overlay OpenAI / Anthropic / xAI remaining headers. Missing headers
   leave local counters in charge. OAuth subscriptions without headers stay on
-  M25.6 — do not add a scraper.
+  M25.6 — do not add a scraper. ✅ *(shipped: `RemainingSink`, the `limit_*`
+  half of `RatelimitRemaining`, `RatelimitRemaining::headroom_pct`, and the
+  headroom column on `GET /accounts`.)*
+
+  **M25.3 kept the wrong half of the pair.** It preserved
+  `x-ratelimit-remaining-*` and stopped there — but a remainder is not a
+  percentage: "412 requests left" says nothing about headroom until you know
+  whether the ceiling is 500 or 500,000. The `x-ratelimit-limit-*` /
+  `anthropic-ratelimit-*-limit` headers are parsed too, and `headroom_pct` is
+  `None` unless both arrived.
+
+  **Headroom is reported as the scarcer of requests and tokens.** A credential
+  with 90% of its requests and 3% of its tokens left has 3% of headroom;
+  reporting the kinder number would hide the one about to bite.
+
+  **Two numbers, shown separately, not merged.** `remaining_pct` is the
+  operator's declared grant over their declared period (M25.6). `headroom_pct`
+  is the provider's own short window. They measure different things over
+  different timespans, and averaging them would produce a figure that is true of
+  neither.
+
+  **The seam is a push, not a getter.** The value appears deep inside the
+  adapter, and only the pool knows which *credential* that adapter holds — so
+  the pool hands each member a `RemainingSink` when it joins, and the adapter
+  reports into it. A `last_remaining()` getter would also race: two concurrent
+  calls on one credential would overwrite each other and the reader could not
+  tell which answer it received. The sink holds the pool's shared map rather
+  than the pool, so there is no reference cycle, and a revoked member's headers
+  are dropped with it rather than being inherited by a reused id.
+
+  **Absent stays absent.** SuperGrok, Claude Max and Codex ChatGPT OAuth publish
+  no such header. Those credentials report `headroom_pct: None` and their local
+  counters keep answering. No scraper, per §Non-goals.
 
 - **M25.8** Selector `most_remaining`. Policy: omit a provider below threshold.
 

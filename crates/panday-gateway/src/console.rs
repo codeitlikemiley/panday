@@ -290,6 +290,7 @@ async fn snapshot(state: &ConsoleState) -> Snapshot {
                         window_secs: u.and_then(|u| u.window_secs),
                         remaining_pct: u.and_then(|u| u.remaining_pct),
                         exhausted: u.map(|u| u.exhausted).unwrap_or(false),
+                        headroom_pct: u.and_then(|u| u.headroom_pct),
                     }
                 })
                 .collect()
