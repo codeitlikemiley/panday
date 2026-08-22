@@ -59,8 +59,18 @@ pub enum PandayError {
     BudgetExceeded { balance_micros: i64 },
     #[error("entitlement denied: plan {plan} lacks {needed}")]
     EntitlementDenied { plan: String, needed: String },
+    /// Every target in the chain was attempted and failed. Transient: the
+    /// providers are having a bad time, and the same request may well work in a
+    /// minute. Maps to 503.
     #[error("no model available; tried {tried:?}")]
     ModelUnavailable { tried: Vec<String> },
+    /// This deployment has no target it *could* call for the request — a glob
+    /// with no catalog to expand it, a model id with no provider prefix, or a
+    /// provider with no adapter configured. Nothing was dialled, and nothing
+    /// will be until an operator changes the configuration, so telling the
+    /// caller to come back later would be a lie. Maps to 404 (docs/11 M11.9).
+    #[error("no such model here; considered {considered:?}")]
+    ModelNotFound { considered: Vec<String> },
     #[error("permission denied: {0}")]
     PermissionDenied(String),
     #[error("provider error ({upstream}): {message} (retryable: {retryable})")]

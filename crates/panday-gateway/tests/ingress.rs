@@ -309,16 +309,20 @@ async fn errors_use_the_standard_error_envelope_and_a_sensible_status() {
 }
 
 #[tokio::test]
-async fn an_unroutable_model_is_service_unavailable_not_a_500() {
+async fn an_unroutable_model_is_not_found_not_a_500() {
     let addr = serve(echo("x")).await;
     let (status, body) = post(
         &addr,
         r#"{"model":"nonexistent/model","messages":[{"role":"user","content":"hi"}]}"#,
     )
     .await;
-    assert_eq!(status, 503, "{body}");
+    // 404, not 503: no adapter is configured for that provider, so nothing was
+    // dialled and nothing will be until the deployment changes (docs/11 M11.9).
+    // The original point of this test — never a 500 — still holds.
+    assert_eq!(status, 404, "{body}");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert!(v["error"]["message"].is_string());
+    assert_eq!(v["error"]["type"], "model_not_found");
 }
 
 #[tokio::test]

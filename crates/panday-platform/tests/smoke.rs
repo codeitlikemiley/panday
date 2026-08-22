@@ -56,9 +56,11 @@ async fn a_fresh_key_can_run_a_turn_and_the_ledger_records_it() {
         "messages": [{"role": "user", "content": "say hello"}],
     });
 
-    // 2. The turn. A deployment with no provider configured answers 503, which is a *successful*
-    //    smoke of everything up to the provider — auth, routing, the ingress envelope. Anything
-    //    else means the deployment is broken in a way worth failing on.
+    // 2. The turn. A deployment with no provider configured answers 404 since M11.9 — nothing
+    //    could be dialled, which is a configuration fact rather than an outage — and that is still
+    //    a *successful* smoke of everything up to the provider: auth, routing, the ingress
+    //    envelope. 503 stays accepted for a deployment that has providers but cannot reach them.
+    //    Anything else means the deployment is broken in a way worth failing on.
     let response = client
         .post(&url)
         .header("authorization", format!("Bearer {}", issued.plaintext))
@@ -69,7 +71,7 @@ async fn a_fresh_key_can_run_a_turn_and_the_ledger_records_it() {
     let status = response.status().as_u16();
     let text = response.text().await.unwrap_or_default();
     assert!(
-        status == 200 || status == 503,
+        status == 200 || status == 404 || status == 503,
         "unexpected {status}: {text}"
     );
 
@@ -83,8 +85,8 @@ async fn a_fresh_key_can_run_a_turn_and_the_ledger_records_it() {
         .expect("the deployment answered");
     assert_eq!(unauthenticated.status().as_u16(), 401);
 
-    // 4. The ledger. Only when the call actually reached a provider — a 503 bills nothing, and
-    //    asserting a row for it would make the smoke suite demand a charge for work not done.
+    // 4. The ledger. Only when the call actually reached a provider — a 404 or 503 bills nothing,
+    //    and asserting a row for it would make the smoke suite demand a charge for work not done.
     if status == 200 {
         let entries: (i64,) = sqlx::query_as(
             "SELECT count(*)::bigint FROM ledger_entries WHERE account_id = $1 AND kind = 'usage.model'",

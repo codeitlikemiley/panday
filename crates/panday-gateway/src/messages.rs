@@ -268,6 +268,8 @@ pub(crate) fn anthropic_error(e: PandayError) -> Response {
         // capacity is the problem, which is what an exhausted chain is.
         PandayError::PermissionDenied(_) => "permission_error",
         PandayError::ModelUnavailable { .. } => "overloaded_error",
+        // Anthropic's own type name for a 404.
+        PandayError::ModelNotFound { .. } => "not_found_error",
         _ => "api_error",
     };
     (

@@ -461,8 +461,10 @@ pub(crate) fn retry_after_headers(e: &PandayError) -> axum::http::HeaderMap {
 /// that was a 403 here fell through to 502 on the other two. Nothing asserted
 /// they agreed, so nothing caught it — `every_ingress_agrees_on_status` does now.
 ///
-/// `ModelUnavailable` is 503 per docs/11 M11.5, which reasons about it as the
-/// exhausted-chain case. See the note there about what it also has to cover.
+/// `ModelUnavailable` is 503 and means the chain was tried and failed;
+/// `ModelNotFound` is 404 and means nothing could be tried at all. They were one
+/// variant until M11.9, which is why whichever status it carried was wrong half
+/// the time.
 pub(crate) fn status_for(e: &PandayError) -> axum::http::StatusCode {
     use axum::http::StatusCode;
     match e {
@@ -471,6 +473,10 @@ pub(crate) fn status_for(e: &PandayError) -> axum::http::StatusCode {
             StatusCode::PAYMENT_REQUIRED
         }
         PandayError::ModelUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+        // Nothing was dialled and nothing can be until the configuration
+        // changes. 503 would tell the caller to come back later about a request
+        // that can only ever fail (docs/11 M11.9).
+        PandayError::ModelNotFound { .. } => StatusCode::NOT_FOUND,
         PandayError::PermissionDenied(_) => StatusCode::FORBIDDEN,
         PandayError::Protocol(_) => StatusCode::BAD_REQUEST,
         PandayError::Provider { .. } | PandayError::Other(_) => StatusCode::BAD_GATEWAY,
@@ -492,6 +498,9 @@ pub(crate) fn error_response(e: PandayError) -> Response {
                 "type": match &e {
                     PandayError::RateLimited { .. } => "rate_limit_error",
                     PandayError::Protocol(_) => "invalid_request_error",
+                    // OpenAI's own code for this, so a client that branches on
+                    // the real API branches the same way here.
+                    PandayError::ModelNotFound { .. } => "model_not_found",
                     _ => "api_error",
                 },
             }
@@ -726,6 +735,12 @@ mod tests {
                 "PermissionDenied",
                 PandayError::PermissionDenied("no".into()),
             ),
+            (
+                "ModelNotFound",
+                PandayError::ModelNotFound {
+                    considered: vec!["gemini/nope (no adapter configured)".into()],
+                },
+            ),
             ("Protocol", PandayError::Protocol("bad json".into())),
             (
                 "Provider",
@@ -797,6 +812,9 @@ mod tests {
             },
             PandayError::ModelUnavailable { tried } => PandayError::ModelUnavailable {
                 tried: tried.clone(),
+            },
+            PandayError::ModelNotFound { considered } => PandayError::ModelNotFound {
+                considered: considered.clone(),
             },
             PandayError::PermissionDenied(m) => PandayError::PermissionDenied(m.clone()),
             PandayError::Protocol(m) => PandayError::Protocol(m.clone()),

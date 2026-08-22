@@ -56,6 +56,9 @@
           "402": {
             "$ref": "#/components/responses/Error"
           },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
           },
@@ -401,6 +404,7 @@
                   "authentication_error",
                   "rate_limit_error",
                   "invalid_request_error",
+                  "model_not_found",
                   "api_error"
                 ]
               }
