@@ -348,8 +348,13 @@ impl Gateway {
     pub fn resolve_chain(&self, req: &ChatRequest) -> Result<Vec<Resolved>, PandayError> {
         let resolution = self.resolve(req)?;
         if resolution.usable.is_empty() {
-            return Err(PandayError::ModelUnavailable {
-                tried: resolution.skipped,
+            // Nothing was dialled and nothing can be: every candidate was a
+            // glob with no catalog, a bare id with no provider, or a provider
+            // with no adapter here. Breakers are not consulted in `resolve`, so
+            // this cannot be a transient outage wearing a permanent face
+            // (docs/11 M11.9).
+            return Err(PandayError::ModelNotFound {
+                considered: resolution.skipped,
             });
         }
         Ok(resolution.usable)
@@ -360,7 +365,7 @@ impl Gateway {
         self.resolve_chain(req)?
             .into_iter()
             .next()
-            .ok_or_else(|| PandayError::ModelUnavailable { tried: vec![] })
+            .ok_or_else(|| PandayError::ModelNotFound { considered: vec![] })
     }
 }
 
@@ -550,8 +555,8 @@ impl Gateway {
             // deployment cannot serve at all, which reads differently from one whose providers are
             // failing.
             self.routes.record(audit).await;
-            return Err(PandayError::ModelUnavailable {
-                tried: resolution.skipped,
+            return Err(PandayError::ModelNotFound {
+                considered: resolution.skipped,
             });
         }
         let chain = resolution.usable;
@@ -849,6 +854,7 @@ fn error_kind(e: &PandayError) -> &'static str {
     match e {
         PandayError::RateLimited { .. } => "rate_limited",
         PandayError::ModelUnavailable { .. } => "model_unavailable",
+        PandayError::ModelNotFound { .. } => "model_not_found",
         PandayError::Protocol(_) => "protocol",
         PandayError::BudgetExceeded { .. } => "budget_exceeded",
         PandayError::EntitlementDenied { .. } => "entitlement_denied",
@@ -1152,6 +1158,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_provider_this_deployment_cannot_serve_is_not_found_not_unavailable() {
+        // The distinction M11.9 exists for. Nothing is dialled and nothing can
+        // be until an operator configures an adapter, so "come back later" is a
+        // lie — all three upstream APIs answer 404 here.
+        let g = Gateway::builder(router()).build();
+        let err = g
+            .chat(req("nosuchprovider/whatever"))
+            .await
+            .err()
+            .expect("no adapter for that provider");
+        match &err {
+            PandayError::ModelNotFound { considered } => assert!(
+                !considered.is_empty(),
+                "the caller needs to know what was ruled out: {considered:?}"
+            ),
+            other => panic!("expected ModelNotFound, got {other}"),
+        }
+        assert!(
+            !err.is_retryable(),
+            "a configuration gap does not heal by retrying"
+        );
+        assert_eq!(
+            crate::ingress::status_for(&err),
+            axum::http::StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_chain_is_still_unavailable_not_not_found() {
+        // The other half: these targets exist and were tried. 503 is right, and
+        // a 404 would tell the caller to stop asking for something that works.
+        let g = Gateway::builder(router())
+            .adapter("anthropic", RateLimitedAdapter::new("anthropic", 0))
+            .adapter("openai", RateLimitedAdapter::new("openai", 0))
+            .adapter("xai", RateLimitedAdapter::new("xai", 0))
+            .adapter("gemini", RateLimitedAdapter::new("gemini", 0))
+            .build();
+        let err = g.chat(req("auto")).await.err().expect("every leg 429s");
+        assert!(
+            !matches!(err, PandayError::ModelNotFound { .. }),
+            "targets that exist and failed are not 'not found': {err}"
+        );
+    }
+
+    #[tokio::test]
     async fn an_all_429_chain_reports_the_soonest_stated_wait() {
         // The workhorse pool walks four providers. Two state a wait, two send
         // no header at all — and 0 means "unknown", so it must not win the
@@ -1245,14 +1296,17 @@ mod tests {
         .build();
 
         let err = g.chat(req("auto")).await.map(|_| ()).unwrap_err();
+        // A glob with no catalog is one of the three ways `resolve` finds
+        // nothing callable, and none of them heal on their own — so this is
+        // 404, not a 503 inviting the caller back later (docs/11 M11.9).
         match err {
-            PandayError::ModelUnavailable { tried } => {
+            PandayError::ModelNotFound { considered } => {
                 assert!(
-                    tried.iter().any(|t| t.contains("glob")),
-                    "the error must say WHY it could not call: {tried:?}"
+                    considered.iter().any(|t| t.contains("glob")),
+                    "the error must say WHY it could not call: {considered:?}"
                 );
             }
-            other => panic!("expected ModelUnavailable, got {other}"),
+            other => panic!("expected ModelNotFound, got {other}"),
         }
     }
 

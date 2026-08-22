@@ -496,3 +496,35 @@ in-process, not a product surface. The gateway is stateless apart from cache
   all three upstream APIs would answer 404. Splitting the variant is a change to
   the error vocabulary in docs/10 §Errors and to the generated clients, so it is
   a milestone of its own rather than a rider on this one.
+
+- **M11.9** `ModelUnavailable` splits: 404 for a model this deployment cannot
+  serve, 503 for a chain that was tried and failed. ✅ *(shipped:
+  `PandayError::ModelNotFound { considered }`, `status_for`, and the dialect
+  type strings on all three ingresses.)*
+
+  M11.8 unified the status table and, in doing so, made this visible: one error
+  variant was carrying two different failures, so whichever status it got was
+  wrong half the time.
+
+  | Raised by | Means | Status |
+  |---|---|---|
+  | `Gateway::chat`, chain exhausted | every target was dialled and failed | 503 `model_unavailable` |
+  | `resolve_chain`, no usable target | nothing could be dialled at all | 404 `model_not_found` |
+
+  **The second case is permanent, and that is what makes 404 correct.** A target
+  becomes unusable in `resolve` for exactly three reasons: it is a glob with no
+  catalog to expand it, it has no provider prefix, or its provider has no
+  adapter configured here. None of those heal on their own. Crucially, breakers
+  are **not** consulted in `resolve` — an open breaker on a registered adapter
+  still produces a failed *leg* and therefore a 503, so a transient outage can
+  never be reported as "no such model". `cache_and_breakers` pins that.
+
+  Telling a caller who pinned `gemini/…` on a deployment with no Gemini adapter
+  to "come back later" is a lie: the request can only ever fail until an
+  operator changes the configuration. All three upstream APIs answer 404 here,
+  and now so do we — `model_not_found` on the OpenAI ingress, `not_found_error`
+  on Anthropic's, `NOT_FOUND` in the Gemini envelope's `google.rpc.Code`.
+
+  `ModelNotFound` is not retryable. `model_not_found` joins the `ErrorResponse`
+  type enum in the OpenAPI document, and `/v1/chat/completions` now declares the
+  404 it could always have returned.

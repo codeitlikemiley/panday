@@ -235,7 +235,7 @@ async fn the_recorded_class_is_the_one_the_router_keyed_on() {
 #[tokio::test]
 async fn a_rule_this_deployment_cannot_serve_is_recorded_with_no_attempts() {
     // The signature of a misconfigured deployment rather than a failing provider: the router picked
-    // a chain, and not one leg of it has an adapter here. Without a row, the only evidence is a 503
+    // a chain, and not one leg of it has an adapter here. Without a row, the only evidence is a 404
     // in a log — and the rule that produced it is invisible.
     let router = PolicyRouter::from_yaml(POLICY)
         .unwrap()
@@ -247,7 +247,12 @@ async fn a_rule_this_deployment_cannot_serve_is_recorded_with_no_attempts() {
         .build();
 
     let err = g.chat(req("auto", None)).await.map(|_| ()).unwrap_err();
-    assert!(matches!(err, PandayError::ModelUnavailable { .. }));
+    // No adapter for any target means nothing was dialled and nothing can be
+    // until the configuration changes — not an outage (docs/11 M11.9).
+    assert!(
+        matches!(err, PandayError::ModelNotFound { .. }),
+        "expected ModelNotFound, got {err:?}"
+    );
 
     let rows = audit.take();
     assert_eq!(rows.len(), 1);

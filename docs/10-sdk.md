@@ -136,7 +136,15 @@ hosted product and the embedded SDK cannot drift because they are one crate.
 One `enum PandayError` with stable `code` strings mirroring the wire:
 `rate_limited { retry_after }`, `budget_exceeded { balance }`,
 `entitlement_denied { plan, needed }`, `model_unavailable { tried: Vec<_> }`,
-`permission_denied`, `provider { upstream, retryable }`. Retryability is a
+`model_not_found { considered: Vec<_> }`, `permission_denied`,
+`provider { upstream, retryable }`.
+
+`model_unavailable` and `model_not_found` are deliberately two codes, not one
+with a flag. The first means every target was tried and failed — transient, 503,
+worth retrying. The second means this deployment had no target it *could* call:
+a glob with no catalog, an id with no provider prefix, or a provider with no
+adapter. Nothing was dialled, nothing will be until the configuration changes,
+and 404 is the honest answer (docs/11 M11.9). Retryability is a
 method, not a guess. A 429's `Retry-After` fills `retry_after_ms` (docs/25
 M25.3); missing stays 0 rather than inventing a delay, and 0 therefore reads as
 "unknown" everywhere downstream, never as "retry now". `Retry` honours a stated

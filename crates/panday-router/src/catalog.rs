@@ -38,7 +38,7 @@ pub struct ModelEntry {
     /// Still callable by exact name, never expanded into by a glob.
     ///
     /// Deprecating is how a model leaves a pool without breaking the pinned requests that still name
-    /// it — deleting the row would turn those into `ModelUnavailable` on the next deploy.
+    /// it — deleting the row would turn those into `ModelNotFound` on the next deploy.
     #[serde(default)]
     pub deprecated: bool,
 }

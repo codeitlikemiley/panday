@@ -74,7 +74,7 @@ export interface Usage {
 export interface ErrorResponse {
   error: {
     message: string;
-    type: "authentication_error" | "rate_limit_error" | "invalid_request_error" | "api_error";
+    type: "authentication_error" | "rate_limit_error" | "invalid_request_error" | "model_not_found" | "api_error";
   };
 }
 
