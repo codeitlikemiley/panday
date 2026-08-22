@@ -27,6 +27,15 @@ pub enum Rotate {
     Failover,
     /// Each new request starts one member further on. Still walks on 429.
     RoundRobin,
+    /// Try the credential with the most remaining first (docs/25 M25.8).
+    ///
+    /// "Most remaining" is the **scarcer** of the operator's declared grant
+    /// (M25.6) and the provider's own short-window headroom (M25.7), for the
+    /// same reason headroom itself takes the scarcer of requests and tokens: a
+    /// credential with a fat monthly grant and a nearly-spent minute window is
+    /// about to 429, and picking it because the kinder number looked good would
+    /// be choosing the one most likely to fail.
+    MostRemaining,
 }
 
 impl Rotate {
@@ -34,6 +43,7 @@ impl Rotate {
         match s.trim().to_ascii_lowercase().as_str() {
             "failover" | "fail-over" | "ordered" => Some(Rotate::Failover),
             "round_robin" | "round-robin" | "rr" => Some(Rotate::RoundRobin),
+            "most_remaining" | "most-remaining" | "remaining" => Some(Rotate::MostRemaining),
             _ => None,
         }
     }
@@ -42,6 +52,7 @@ impl Rotate {
         match self {
             Rotate::Failover => "failover",
             Rotate::RoundRobin => "round_robin",
+            Rotate::MostRemaining => "most_remaining",
         }
     }
 }
@@ -106,6 +117,37 @@ pub struct MemberUsage {
     /// number rather than the ratio.
     pub headroom_requests: Option<u64>,
     pub headroom_tokens: Option<u64>,
+}
+
+/// How much of a credential is left, as one number, for ranking.
+///
+/// The **scarcer** of the operator's declared grant (M25.6) and the provider's
+/// short-window headroom (M25.7). `None` when neither is known — which is the
+/// normal case for an OAuth subscription with no declared ceiling, and must not
+/// be confused with zero.
+fn scarcer(grant_pct: Option<f64>, headroom_pct: Option<f64>) -> Option<f64> {
+    match (grant_pct, headroom_pct) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+/// Fraction at or below which a credential is treated as spent for routing.
+///
+/// Defaults to 0.0, meaning **never omit**. The funnel is opt-in on purpose: an
+/// operator's declared ceiling is an estimate, and M25.6 already established
+/// that only a 429 proves a credential is actually spent. Omitting a provider
+/// from a request's chain on the strength of a guess would turn a wrong estimate
+/// into an outage, so an operator has to ask for it with
+/// `PANDAY_REMAINING_THRESHOLD=0.05`.
+pub fn remaining_threshold() -> f64 {
+    std::env::var("PANDAY_REMAINING_THRESHOLD")
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+        .unwrap_or(0.0)
 }
 
 /// Live counters for one credential's window.
@@ -285,12 +327,17 @@ impl PooledAdapter {
     /// against that credential's breaker (docs/25 M25.5).
     fn snapshot(&self, session: Option<SessionId>) -> (Rotate, usize, Vec<PoolMember>) {
         let rotate = *self.rotate.lock().expect("pool rotate");
+        let headers = self.remaining.lock().expect("pool remaining").clone();
         let members = self.members.lock().expect("pool members");
         let n = members.len();
         let start = if n == 0 {
             0
         } else {
             match (rotate, session) {
+                // Ranked, not offset: "most remaining" is an ordering over all
+                // members, which a start index cannot express. Handled by the
+                // caller reordering `adapters`; start stays 0.
+                (Rotate::MostRemaining, _) => 0,
                 // Failover means "always start at member 0"; a session does not
                 // change that, and under Failover the pool is already sticky.
                 (Rotate::Failover, _) => 0,
@@ -312,10 +359,48 @@ impl PooledAdapter {
                 }
             }
         };
-        let adapters = members
+        let mut adapters: Vec<PoolMember> = members
             .iter()
             .map(|m| (m.meta.id.clone(), m.adapter.clone()))
             .collect();
+        if rotate == Rotate::MostRemaining {
+            // Rank by what is left, fullest first; unmeasured credentials go
+            // last. We rank only what we can measure — placing an unknown
+            // *between* two known values would mean inventing a number for it,
+            // and this pool refuses to invent numbers everywhere else.
+            //
+            // The consequence, stated plainly: a credential known to be at 2%
+            // is still tried before one nobody has measured, and will probably
+            // 429 first. Ordering is not the tool for that — the operator's
+            // threshold is, and it *removes* the credential rather than
+            // reshuffling it. Two mechanisms, one job each.
+            //
+            // `sort_by` is stable, so unmeasured credentials keep their
+            // configured order among themselves.
+            let left: std::collections::BTreeMap<String, Option<f64>> = members
+                .iter()
+                .map(|m| {
+                    let ceiling = m.grant.map(|g| g.ceiling);
+                    let grant_pct = ceiling
+                        .filter(|c| *c > 0)
+                        .map(|c| 1.0 - (m.meter.used.min(c) as f64 / c as f64));
+                    let hdr = headers.get(&m.meta.id).copied().unwrap_or_default();
+                    (m.meta.id.clone(), scarcer(grant_pct, hdr.headroom_pct()))
+                })
+                .collect();
+            adapters.sort_by(|a, b| {
+                let (x, y) = (
+                    left.get(&a.0).copied().flatten(),
+                    left.get(&b.0).copied().flatten(),
+                );
+                match (x, y) {
+                    (Some(x), Some(y)) => y.total_cmp(&x),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            });
+        }
         (rotate, start, adapters)
     }
 
@@ -409,6 +494,32 @@ impl PooledAdapter {
         }
     }
 
+    /// Every credential known to be at or below the operator's threshold.
+    ///
+    /// "Known" is load-bearing: a credential nobody has measured is never
+    /// counted as spent, so a pool of undeclared OAuth seats can never funnel
+    /// itself out of existence. Returns false when the threshold is 0 (the
+    /// default), which is what makes the funnel opt-in.
+    pub fn all_below_threshold(&self) -> bool {
+        self.all_below(remaining_threshold())
+    }
+
+    /// The decision, with the threshold passed in.
+    ///
+    /// Split from the env read so a test never has to mutate process-wide
+    /// state: `set_var` races with any concurrent `env::var` in the same test
+    /// binary, which is exactly why edition 2024 made it `unsafe`.
+    pub fn all_below(&self, threshold: f64) -> bool {
+        if threshold <= 0.0 {
+            return false;
+        }
+        let usage = self.usage();
+        !usage.is_empty()
+            && usage.iter().all(|u| {
+                scarcer(u.remaining_pct, u.headroom_pct).is_some_and(|left| left <= threshold)
+            })
+    }
+
     /// Breaker state for one credential, for the console and for tests.
     pub fn credential_state(&self, id: &str) -> crate::circuit::State {
         self.breakers.state(id)
@@ -487,6 +598,10 @@ pub fn from_xai_tokens(tokens: Vec<String>) -> Option<Arc<PooledAdapter>> {
 impl ProviderAdapter for PooledAdapter {
     fn name(&self) -> &'static str {
         self.dialect_name
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.all_below_threshold()
     }
 
     fn capabilities(&self, model: &str) -> AdapterCaps {
@@ -916,6 +1031,163 @@ mod tests {
         assert!(err.is_retryable());
         assert_eq!(a.calls(), 1);
         assert_eq!(b.calls(), 1);
+    }
+
+    // ── M25.8: most_remaining and the funnel ─────────────────────────────────
+
+    #[tokio::test]
+    async fn most_remaining_tries_the_fullest_credential_first() {
+        let a = Spy::new("openai_compat", Script::Ok("from-a"));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        adapter.set_rotate(Rotate::MostRemaining);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        // a is nearly spent, b is fresh.
+        adapter.set_grant(&ids[0], Some(grant(10, 3600)));
+        adapter.set_grant(&ids[1], Some(grant(10, 3600)));
+        for _ in 0..9 {
+            adapter.record_call(&ids[0], "ok", false);
+        }
+        assert_eq!(drain_text(&adapter).await.unwrap(), "from-b");
+    }
+
+    #[tokio::test]
+    async fn the_scarcer_of_grant_and_headroom_decides() {
+        use panday_sdk::providers::transport::RemainingSink;
+        // a has a fat grant but almost no short-window headroom; b is middling
+        // on both. Choosing on the kinder number would pick a, which is the one
+        // about to 429.
+        let a = Spy::new("openai_compat", Script::Ok("from-a"));
+        let b = Spy::new("openai_compat", Script::Ok("from-b"));
+        let adapter = pool(vec![a.clone(), b.clone()]);
+        adapter.set_rotate(Rotate::MostRemaining);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        adapter.set_grant(&ids[0], Some(grant(1000, 3600)));
+        adapter.set_grant(&ids[1], Some(grant(1000, 3600)));
+        for _ in 0..500 {
+            adapter.record_call(&ids[1], "ok", false);
+        }
+        MemberSink {
+            map: adapter.remaining.clone(),
+            id: ids[0].clone(),
+        }
+        .observe(RatelimitRemaining {
+            requests: Some(2),
+            limit_requests: Some(100),
+            ..Default::default()
+        });
+        // a: min(grant 1.0, headroom 0.02) = 0.02. b: min(grant 0.5, ?) = 0.5.
+        assert_eq!(drain_text(&adapter).await.unwrap(), "from-b");
+    }
+
+    #[tokio::test]
+    async fn ranking_uses_only_what_is_measured_and_puts_unknown_last() {
+        // Placing an unknown *between* two known values would mean inventing a
+        // number for it. So it goes last, and the operator's threshold — not
+        // the ordering — is what handles a credential too empty to be worth
+        // trying. This test pins the consequence as well as the rule.
+        let measured = Spy::new("openai_compat", Script::Ok("measured"));
+        let unknown = Spy::new("openai_compat", Script::Ok("unknown"));
+        let adapter = pool(vec![measured.clone(), unknown.clone()]);
+        adapter.set_rotate(Rotate::MostRemaining);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        adapter.set_grant(&ids[0], Some(grant(10, 3600)));
+        assert_eq!(drain_text(&adapter).await.unwrap(), "measured");
+
+        // Still measured-first even when nearly spent. Known-but-low beats
+        // no-information, because we at least know it has something left.
+        for _ in 0..9 {
+            adapter.record_call(&ids[0], "ok", false);
+        }
+        assert_eq!(
+            drain_text(&adapter).await.unwrap(),
+            "measured",
+            "ordering ranks what it knows; emptiness is the threshold's job"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_fullest_of_several_measured_credentials_wins() {
+        let low = Spy::new("openai_compat", Script::Ok("low"));
+        let mid = Spy::new("openai_compat", Script::Ok("mid"));
+        let high = Spy::new("openai_compat", Script::Ok("high"));
+        let adapter = pool(vec![low.clone(), mid.clone(), high.clone()]);
+        adapter.set_rotate(Rotate::MostRemaining);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        for id in &ids {
+            adapter.set_grant(id, Some(grant(100, 3600)));
+        }
+        for _ in 0..90 {
+            adapter.record_call(&ids[0], "ok", false);
+        }
+        for _ in 0..50 {
+            adapter.record_call(&ids[1], "ok", false);
+        }
+        assert_eq!(drain_text(&adapter).await.unwrap(), "high");
+    }
+
+    #[tokio::test]
+    async fn the_funnel_is_off_unless_the_operator_asks_for_it() {
+        // A declared ceiling is an estimate; only a 429 proves a credential is
+        // spent (M25.6). Omitting a provider on the strength of a guess would
+        // turn a wrong estimate into an outage, so the default omits nothing.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(10, 3600)));
+        for _ in 0..10 {
+            adapter.record_call(&id, "ok", false);
+        }
+        assert_eq!(adapter.usage()[0].remaining_pct, Some(0.0));
+        assert!(
+            !adapter.all_below_threshold(),
+            "threshold defaults to 0.0 = never omit"
+        );
+        assert!(
+            adapter.all_below(0.05),
+            "…but the decision itself sees it as spent once asked"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pool_all_below_threshold_reports_itself_exhausted() {
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let b = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a, b]);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        for id in &ids {
+            adapter.set_grant(id, Some(grant(10, 3600)));
+            for _ in 0..10 {
+                adapter.record_call(id, "ok", false);
+            }
+        }
+        assert!(adapter.all_below(0.05));
+        // The env-driven entry point defaults to 0.0, so it stays false.
+        assert!(!ProviderAdapter::is_exhausted(&adapter));
+    }
+
+    #[tokio::test]
+    async fn one_healthy_credential_keeps_the_whole_provider_in_play() {
+        let spent = Spy::new("openai_compat", Script::Ok("hi"));
+        let fresh = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![spent, fresh]);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+        adapter.set_grant(&ids[0], Some(grant(10, 3600)));
+        adapter.set_grant(&ids[1], Some(grant(10, 3600)));
+        for _ in 0..10 {
+            adapter.record_call(&ids[0], "ok", false);
+        }
+        assert!(!adapter.all_below(0.05));
+    }
+
+    #[tokio::test]
+    async fn unmeasured_credentials_can_never_funnel_themselves_out() {
+        // The OAuth-subscription pool: no declared ceiling, no headers. It must
+        // stay callable however aggressive the threshold, because "unknown" is
+        // not evidence of being spent.
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        assert!(!adapter.all_below(0.99));
     }
 
     // ── M25.7: header overlay ────────────────────────────────────────────────
