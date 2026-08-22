@@ -33,6 +33,17 @@ publish = false                 # nothing here goes to a registry (docs/00 §Nam
 exclude = ["fixtures/demo-tool"]
 
 [workspace.dependencies]
+# macOS Keychain for the vault KEK (docs/25 M25.12). Approved 2026-08-22.
+# Default features pull a Linux zbus backend we do not want; a backend-less
+# build can fall back to an in-memory mock, and a KEK written to a mock is a
+# lost KEK and an unreadable vault. Apple store only, and only on macOS.
+keyring = { version = "4", default-features = false, features = ["v1", "apple-native-keyring-store"] }
+# `keyring` enables the Apple backend but not which Apple store to use, and that
+# crate refuses to compile without one. Named directly so the `keychain` feature
+# is unified into keyring's copy; `keychain` is the ordinary login Keychain,
+# `protected` is the data-protection variant that needs an entitlement we do not
+# have.
+apple-native-keyring-store = { version = "1", default-features = false, features = ["keychain"] }
 panday-types = { path = "crates/panday-types" }
 panday-sdk = { path = "crates/panday-sdk" }
 panday-router = { path = "crates/panday-router" }

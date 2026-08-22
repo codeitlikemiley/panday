@@ -20,18 +20,13 @@ pub const VAULT_DB_ENV: &str = "PANDAY_VAULT_DB";
 /// or `~/.codex/auth.json`.
 pub const CODEX_AUTH_ENV: &str = "PANDAY_CODEX_AUTH";
 
-/// Open the operator vault: `PANDAY_VAULT_KEY` else `~/.panday/master.key`;
-/// `PANDAY_VAULT_DB` else `~/.panday/credentials.sqlite`.
+/// Open the operator vault. Key precedence is `Kek::resolve` (docs/25 M25.12);
+/// the database is `PANDAY_VAULT_DB` else `~/.panday/credentials.sqlite`.
 pub async fn open_operator_vault() -> Result<SqliteStore, String> {
-    let kek = match Kek::from_env().map_err(|e| e.to_string())? {
-        Some(k) => k,
-        None => {
-            let path = default_master_key_path().ok_or(
-                "cannot locate ~/.panday/master.key (HOME is unset); set HOME or PANDAY_VAULT_KEY",
-            )?;
-            Kek::load_or_create(&path).map_err(|e| e.to_string())?
-        }
-    };
+    let path = default_master_key_path().ok_or(
+        "cannot locate ~/.panday/master.key (HOME is unset); set HOME or PANDAY_VAULT_KEY",
+    )?;
+    let kek = Kek::resolve(&path).map_err(|e| e.to_string())?;
     let db = std::env::var_os(VAULT_DB_ENV)
         .map(PathBuf::from)
         .or_else(default_vault_db_path)

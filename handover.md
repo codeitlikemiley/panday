@@ -64,7 +64,8 @@ session's TCC grants, which made the repository unreadable for hours.
 ### 1.2 Other standing rules from the user
 
 - **Ask before adding any network-touching dependency.** (Approved so far: reqwest, tokio,
-  serde_yaml_ng, sha2, regex, toml, ed25519-dalek, tar, flate2, tokio-tungstenite, rmcp, trybuild.)
+  serde_yaml_ng, sha2, regex, toml, ed25519-dalek, tar, flate2, tokio-tungstenite, rmcp, trybuild,
+  keyring + apple-native-keyring-store — approved 2026-08-22, macOS-only, for the vault KEK.)
 - **Never publish anything** — no crates.io, no npm. The TypeScript SDK is generated with
   `"private": true` on purpose.
 - **Don't delete folders or files that aren't yours to delete.** After the incident: assume nothing,
@@ -95,7 +96,7 @@ session's TCC grants, which made the repository unreadable for hours.
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
 
-**104 milestones total: 96 shipped ✅, 8 remaining.** Recount it rather than trusting this line —
+**104 milestones total: 97 shipped ✅, 7 remaining.** Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
 count too.
 
@@ -104,7 +105,7 @@ count too.
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
-| 25-credentials | **10 / 12 shipped** — the whole laptop-buildable track. M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven. Only M25.11 (hosted Postgres ciphertext) and M25.12 (Keychain KEK — needs `keyring`, so §1.2's ask-first rule applies) remain, both skip-unless-asked. |
+| 25-credentials | **11 / 12 shipped** — the whole laptop-buildable track. M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). Only **M25.11** (hosted Postgres ciphertext) remains, and it needs a Postgres. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
 API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is

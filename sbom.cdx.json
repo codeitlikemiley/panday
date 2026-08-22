@@ -74,6 +74,25 @@
     },
     {
       "type": "library",
+      "name": "aes",
+      "version": "0.8.4",
+      "purl": "pkg:cargo/aes@0.8.4",
+      "bom-ref": "aes@0.8.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Pure Rust implementation of the Advanced Encryption Standard (a.k.a. Rijndael)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "agent-client-protocol",
       "version": "2.0.0",
       "purl": "pkg:cargo/agent-client-protocol@2.0.0",
@@ -245,6 +264,25 @@
     },
     {
       "type": "library",
+      "name": "apple-native-keyring-store",
+      "version": "1.0.2",
+      "purl": "pkg:cargo/apple-native-keyring-store@1.0.2",
+      "bom-ref": "apple-native-keyring-store@1.0.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Apple-native credential store for keyring",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "arbitrary",
       "version": "1.4.2",
       "purl": "pkg:cargo/arbitrary@1.4.2",
@@ -264,6 +302,25 @@
     },
     {
       "type": "library",
+      "name": "async-broadcast",
+      "version": "0.7.2",
+      "purl": "pkg:cargo/async-broadcast@0.7.2",
+      "bom-ref": "async-broadcast@0.7.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Async broadcast channels",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "async-channel",
       "version": "2.5.0",
       "purl": "pkg:cargo/async-channel@2.5.0",
@@ -274,6 +331,25 @@
         }
       ],
       "description": "Async multi-producer multi-consumer channel",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "async-executor",
+      "version": "1.14.0",
+      "purl": "pkg:cargo/async-executor@1.14.0",
+      "bom-ref": "async-executor@1.14.0",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR MIT"
+        }
+      ],
+      "description": "Async executor",
       "externalReferences": [
         {
           "type": "distribution",
@@ -350,6 +426,25 @@
         }
       ],
       "description": "Async interface for working with processes",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "async-recursion",
+      "version": "1.1.1",
+      "purl": "pkg:cargo/async-recursion@1.1.1",
+      "bom-ref": "async-recursion@1.1.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Recursion for async functions",
       "externalReferences": [
         {
           "type": "distribution",
@@ -663,6 +758,25 @@
     },
     {
       "type": "library",
+      "name": "block-padding",
+      "version": "0.3.3",
+      "purl": "pkg:cargo/block-padding@0.3.3",
+      "bom-ref": "block-padding@0.3.3",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Padding and unpadding of messages divided into blocks.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "blocking",
       "version": "1.6.2",
       "purl": "pkg:cargo/blocking@1.6.2",
@@ -825,6 +939,25 @@
         }
       ],
       "description": "Capability-based version of the Rust standard library",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cbc",
+      "version": "0.1.2",
+      "purl": "pkg:cargo/cbc@0.1.2",
+      "bom-ref": "cbc@0.1.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Cipher Block Chaining (CBC) block cipher mode of operation",
       "externalReferences": [
         {
           "type": "distribution",
@@ -1281,6 +1414,25 @@
         }
       ],
       "description": "Extra features for convert_case",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "core-foundation",
+      "version": "0.10.1",
+      "purl": "pkg:cargo/core-foundation@0.10.1",
+      "bom-ref": "core-foundation@0.10.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Bindings to Core Foundation for macOS",
       "externalReferences": [
         {
           "type": "distribution",
@@ -2354,6 +2506,63 @@
     },
     {
       "type": "library",
+      "name": "endi",
+      "version": "1.1.1",
+      "purl": "pkg:cargo/endi@1.1.1",
+      "bom-ref": "endi@1.1.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A simple endian-handling library",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "enumflags2",
+      "version": "0.7.12",
+      "purl": "pkg:cargo/enumflags2@0.7.12",
+      "bom-ref": "enumflags2@0.7.12",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Enum-based bit flags",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "enumflags2_derive",
+      "version": "0.7.12",
+      "purl": "pkg:cargo/enumflags2_derive@0.7.12",
+      "bom-ref": "enumflags2_derive@0.7.12",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Do not use directly, use the reexport in the `enumflags2` crate. This allows for better compatibility across versions.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "equivalent",
       "version": "1.0.2",
       "purl": "pkg:cargo/equivalent@1.0.2",
@@ -3248,6 +3457,25 @@
     {
       "type": "library",
       "name": "hkdf",
+      "version": "0.12.4",
+      "purl": "pkg:cargo/hkdf@0.12.4",
+      "bom-ref": "hkdf@0.12.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hkdf",
       "version": "0.13.0",
       "purl": "pkg:cargo/hkdf@0.13.0",
       "bom-ref": "hkdf@0.13.0",
@@ -3257,6 +3485,25 @@
         }
       ],
       "description": "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hmac",
+      "version": "0.12.1",
+      "purl": "pkg:cargo/hmac@0.12.1",
+      "bom-ref": "hmac@0.12.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Generic implementation of Hash-based Message Authentication Code (HMAC)",
       "externalReferences": [
         {
           "type": "distribution",
@@ -4140,6 +4387,44 @@
     },
     {
       "type": "library",
+      "name": "keyring",
+      "version": "4.1.6",
+      "purl": "pkg:cargo/keyring@4.1.6",
+      "bom-ref": "keyring@4.1.6",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "All-in-One Rust Keyring",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "keyring-core",
+      "version": "1.0.0",
+      "purl": "pkg:cargo/keyring-core@1.0.0",
+      "bom-ref": "keyring-core@1.0.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Cross-platform library for managing passwords/secrets",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "konst",
       "version": "0.2.20",
       "purl": "pkg:cargo/konst@0.2.20",
@@ -4691,6 +4976,25 @@
     },
     {
       "type": "library",
+      "name": "memoffset",
+      "version": "0.9.1",
+      "purl": "pkg:cargo/memoffset@0.9.1",
+      "bom-ref": "memoffset@0.9.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "offset_of functionality for Rust structs.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "mime",
       "version": "0.3.17",
       "purl": "pkg:cargo/mime@0.3.17",
@@ -4824,6 +5128,63 @@
     },
     {
       "type": "library",
+      "name": "num",
+      "version": "0.4.3",
+      "purl": "pkg:cargo/num@0.4.3",
+      "bom-ref": "num@0.4.3",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "A collection of numeric types and traits for Rust, including bigint,\ncomplex, rational, range iterators, generic integers, and more!\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-bigint",
+      "version": "0.4.8",
+      "purl": "pkg:cargo/num-bigint@0.4.8",
+      "bom-ref": "num-bigint@0.4.8",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Big integer implementation for Rust",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-complex",
+      "version": "0.4.6",
+      "purl": "pkg:cargo/num-complex@0.4.6",
+      "bom-ref": "num-complex@0.4.6",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Complex numbers implementation for Rust",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "num-conv",
       "version": "0.2.2",
       "purl": "pkg:cargo/num-conv@0.2.2",
@@ -4834,6 +5195,63 @@
         }
       ],
       "description": "`num_conv` is a crate to convert between integer types without using `as` casts. This provides\nbetter certainty when refactoring, makes the exact behavior of code more explicit, and allows using\nturbofish syntax.\n",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-integer",
+      "version": "0.1.47",
+      "purl": "pkg:cargo/num-integer@0.1.47",
+      "bom-ref": "num-integer@0.1.47",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Integer traits and functions",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-iter",
+      "version": "0.1.46",
+      "purl": "pkg:cargo/num-iter@0.1.46",
+      "bom-ref": "num-iter@0.1.46",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "External iterators for generic mathematics",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "num-rational",
+      "version": "0.4.2",
+      "purl": "pkg:cargo/num-rational@0.4.2",
+      "bom-ref": "num-rational@0.4.2",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Rational numbers implementation for Rust",
       "externalReferences": [
         {
           "type": "distribution",
@@ -5043,6 +5461,25 @@
         }
       ],
       "description": "Unwrap std lock guards in a semantic way.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ordered-stream",
+      "version": "0.2.0",
+      "purl": "pkg:cargo/ordered-stream@0.2.0",
+      "bom-ref": "ordered-stream@0.2.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Streams that are ordered relative to external events",
       "externalReferences": [
         {
           "type": "distribution",
@@ -5624,6 +6061,25 @@
         }
       ],
       "description": "A minimal `syn` syntax tree pretty-printer",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "proc-macro-crate",
+      "version": "3.5.0",
+      "purl": "pkg:cargo/proc-macro-crate@3.5.0",
+      "bom-ref": "proc-macro-crate@3.5.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Replacement for crate (macro_rules keyword) in proc-macros\n",
       "externalReferences": [
         {
           "type": "distribution",
@@ -6773,6 +7229,63 @@
     },
     {
       "type": "library",
+      "name": "secret-service",
+      "version": "5.1.0",
+      "purl": "pkg:cargo/secret-service@5.1.0",
+      "bom-ref": "secret-service@5.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Library to interface with Secret Service API",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "security-framework",
+      "version": "3.7.0",
+      "purl": "pkg:cargo/security-framework@3.7.0",
+      "bom-ref": "security-framework@3.7.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Security.framework bindings for macOS and iOS",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "security-framework-sys",
+      "version": "2.17.0",
+      "purl": "pkg:cargo/security-framework-sys@2.17.0",
+      "bom-ref": "security-framework-sys@2.17.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Apple `Security.framework` low-level FFI bindings",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "semver",
       "version": "1.0.28",
       "purl": "pkg:cargo/semver@1.0.28",
@@ -6935,6 +7448,25 @@
         }
       ],
       "description": "Querystrings for Serde",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "serde_repr",
+      "version": "0.1.21",
+      "purl": "pkg:cargo/serde_repr@0.1.21",
+      "bom-ref": "serde_repr@0.1.21",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Derive Serialize and Deserialize that delegates to the underlying repr of a C-like enum.",
       "externalReferences": [
         {
           "type": "distribution",
@@ -8255,6 +8787,25 @@
     },
     {
       "type": "library",
+      "name": "toml_edit",
+      "version": "0.25.13+spec-1.1.0",
+      "purl": "pkg:cargo/toml_edit@0.25.13+spec-1.1.0",
+      "bom-ref": "toml_edit@0.25.13+spec-1.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Yet another format-preserving TOML parser.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "toml_parser",
       "version": "1.1.3+spec-1.1.0",
       "purl": "pkg:cargo/toml_parser@1.1.3+spec-1.1.0",
@@ -8607,6 +9158,25 @@
         }
       ],
       "description": "Typenum is a Rust library for type-level numbers evaluated at\n    compile time. It currently supports bits, unsigned integers, and signed\n    integers. It also provides a type-level array of type-level numbers, but its\n    implementation is incomplete.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "uds_windows",
+      "version": "1.2.1",
+      "purl": "pkg:cargo/uds_windows@1.2.1",
+      "bom-ref": "uds_windows@1.2.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Unix Domain Sockets for Windows!",
       "externalReferences": [
         {
           "type": "distribution",
@@ -10003,6 +10573,25 @@
     },
     {
       "type": "library",
+      "name": "windows-native-keyring-store",
+      "version": "1.1.0",
+      "purl": "pkg:cargo/windows-native-keyring-store@1.1.0",
+      "bom-ref": "windows-native-keyring-store@1.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "Windows native credential store for keyring",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "windows-numerics",
       "version": "0.3.1",
       "purl": "pkg:cargo/windows-numerics@0.3.1",
@@ -10529,6 +11118,82 @@
     },
     {
       "type": "library",
+      "name": "zbus",
+      "version": "5.18.0",
+      "purl": "pkg:cargo/zbus@5.18.0",
+      "bom-ref": "zbus@5.18.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "API for D-Bus communication",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zbus-secret-service-keyring-store",
+      "version": "1.0.1",
+      "purl": "pkg:cargo/zbus-secret-service-keyring-store@1.0.1",
+      "bom-ref": "zbus-secret-service-keyring-store@1.0.1",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "description": "ZBus Secret Service credential store for keyring",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zbus_macros",
+      "version": "5.18.0",
+      "purl": "pkg:cargo/zbus_macros@5.18.0",
+      "bom-ref": "zbus_macros@5.18.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "proc-macros for zbus",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zbus_names",
+      "version": "4.3.4",
+      "purl": "pkg:cargo/zbus_names@4.3.4",
+      "bom-ref": "zbus_names@4.3.4",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "A collection of D-Bus bus names types",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "zerocopy",
       "version": "0.8.56",
       "purl": "pkg:cargo/zerocopy@0.8.56",
@@ -10767,6 +11432,63 @@
         }
       ],
       "description": "Low-level bindings for the zstd compression library.",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zvariant",
+      "version": "5.13.1",
+      "purl": "pkg:cargo/zvariant@5.13.1",
+      "bom-ref": "zvariant@5.13.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "D-Bus & GVariant encoding & decoding",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zvariant_derive",
+      "version": "5.13.1",
+      "purl": "pkg:cargo/zvariant_derive@5.13.1",
+      "bom-ref": "zvariant_derive@5.13.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "D-Bus & GVariant encoding & decoding",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "registry+https://github.com/rust-lang/crates.io-index"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zvariant_utils",
+      "version": "3.5.0",
+      "purl": "pkg:cargo/zvariant_utils@3.5.0",
+      "bom-ref": "zvariant_utils@3.5.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "description": "Various utilities used internally by the zvariant crate.",
       "externalReferences": [
         {
           "type": "distribution",

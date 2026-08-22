@@ -305,13 +305,10 @@ impl CredHub {
 }
 
 pub async fn open_vault() -> Option<SqliteStore> {
-    let kek = match Kek::from_env().ok()? {
-        Some(k) => k,
-        None => {
-            let path = default_master_key_path()?;
-            Kek::load_or_create(&path).ok()?
-        }
-    };
+    // One precedence, in `Kek::resolve` (docs/25 M25.12), so the gateway and the
+    // CLI cannot disagree about which key seals the same vault.
+    let path = default_master_key_path()?;
+    let kek = Kek::resolve(&path).ok()?;
     let db = default_vault_db_path()?;
     SqliteStore::open(db, kek).await.ok()
 }

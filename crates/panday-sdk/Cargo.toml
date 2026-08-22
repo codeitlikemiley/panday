@@ -41,3 +41,9 @@ panday-harnessd.workspace = true
 axum.workspace = true
 time.workspace = true
 async-trait.workspace = true
+
+# Only built on macOS: elsewhere the vault keeps using the 0600 file, and the
+# crate is not compiled at all (docs/25 M25.12).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring.workspace = true
+apple-native-keyring-store.workspace = true
