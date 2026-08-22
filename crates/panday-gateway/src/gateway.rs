@@ -597,6 +597,25 @@ impl Gateway {
                 continue;
             }
 
+            // Every credential for this provider is below the operator's
+            // remaining threshold, so the leg is omitted rather than dialled
+            // (docs/25 M25.8). Same shape as the breaker skip above: retryable,
+            // so the chain walks to a provider that still has headroom.
+            if leg.adapter.is_exhausted() {
+                metrics::metrics()
+                    .model_calls
+                    .inc(&[&leg.provider, &leg.model.0, "exhausted"]);
+                failed.push(FailedLeg {
+                    model: leg.model.clone(),
+                    provider: leg.provider.clone(),
+                    error: "every credential below the remaining threshold".into(),
+                    retryable: true,
+                    rate_limited: false,
+                    retry_after_ms: 0,
+                });
+                continue;
+            }
+
             let started = std::time::Instant::now();
             match leg.adapter.chat(attempt).await {
                 Ok(stream) => {

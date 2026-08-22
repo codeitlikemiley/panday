@@ -61,6 +61,16 @@ pub trait ProviderAdapter: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Is every credential behind this adapter known to be spent (docs/25 M25.8)?
+    ///
+    /// Default `false`: a single-credential adapter has nothing to funnel, and
+    /// only a pool can answer this. The gateway asks *before* dialling so an
+    /// omitted provider reads as skipped in the route audit rather than as a
+    /// failure it caused.
+    fn is_exhausted(&self) -> bool {
+        false
+    }
+
     /// Report this credential's ratelimit headers to `sink` (docs/25 M25.7).
     ///
     /// Default is a no-op: only the two real upstream adapters see headers, and

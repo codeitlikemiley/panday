@@ -304,7 +304,49 @@ A one-credential gateway must keep today's failover behaviour.
   no such header. Those credentials report `headroom_pct: None` and their local
   counters keep answering. No scraper, per §Non-goals.
 
-- **M25.8** Selector `most_remaining`. Policy: omit a provider below threshold.
+- **M25.8** Selector `most_remaining`. Policy: omit a provider below threshold. ✅
+  *(shipped: `Rotate::MostRemaining`, `PooledAdapter::all_below_threshold`,
+  `ProviderAdapter::is_exhausted`, and the chain skip in `Gateway::chat`.)*
+
+  The first milestone where these numbers **steer traffic** rather than describe
+  it, which is why the two safeguards below matter more than the selector.
+
+  **"Most remaining" is the scarcer of the two numbers.** The operator's grant
+  (M25.6) and the provider's short-window headroom (M25.7) measure different
+  things, and a credential with a fat monthly grant and a nearly-spent minute
+  window is precisely the one about to 429. Choosing on the kinder figure would
+  reliably pick the credential most likely to fail — the same reasoning that
+  makes headroom itself the scarcer of requests and tokens.
+
+  **Ranking uses only what is measured; unknown sorts last.** Placing an
+  unmeasured credential *between* two known values would mean inventing a number
+  for it, and this spec refuses to invent numbers everywhere else. The sort is
+  stable, so unmeasured credentials keep their configured order among
+  themselves — a pool of OAuth seats with no ceiling and no headers, which is
+  the normal case, behaves exactly as it did before.
+
+  The consequence, stated rather than hidden: a credential known to be at 2% is
+  still tried before one nobody has measured, and will probably 429 first.
+  Ordering is not the tool for that. The **threshold** is, and it removes the
+  credential from the chain rather than reshuffling it — two mechanisms, one job
+  each. An operator who wants the nearly-spent one skipped sets a threshold; one
+  who has not expressed an opinion about "low" gets the credential we at least
+  know has something left.
+
+  **The funnel is opt-in.** `PANDAY_REMAINING_THRESHOLD` defaults to `0.0`,
+  meaning omit nothing. M25.6 established that an operator's declared ceiling is
+  an estimate and only a 429 proves a credential is spent; omitting a provider
+  from a request's chain on the strength of a guess would turn a wrong estimate
+  into an outage. An operator opts in with `PANDAY_REMAINING_THRESHOLD=0.05`.
+
+  **Only *known* credentials can be below threshold.** `all_below_threshold`
+  ignores unmeasured ones entirely, so no threshold — however aggressive — can
+  funnel out a pool nobody has measured.
+
+  **An omitted provider is skipped, not failed.** The check runs before the
+  adapter is dialled, in the same place and the same shape as the open-breaker
+  skip, so the route audit records it as a leg that was not attempted and the
+  chain walks on. The metric outcome is `exhausted`.
 
 - **M25.9** Gateway boot loads the vault. Env keys become rows if the vault is
   empty (back-compat). OAuth import is "insert if absent", not "the only cred".
