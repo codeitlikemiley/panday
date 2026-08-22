@@ -193,6 +193,32 @@ fn AccountsPage(snapshot: Snapshot) -> impl IntoView {
     }
 }
 
+/// What to show in the remaining column.
+///
+/// An undeclared ceiling reads as "—", never as 100%: nobody has measured this
+/// credential, and a full bar would invite exactly the decision the number
+/// exists to inform (docs/25 M25.6).
+fn remaining_label(r: &AccountRow) -> String {
+    if r.exhausted {
+        return "exhausted".into();
+    }
+    match r.remaining_pct {
+        Some(p) => format!("{:.0}%", p * 100.0),
+        None => "—".into(),
+    }
+}
+
+/// Seconds back into the shorthand the operator typed, so the form round-trips
+/// instead of showing them 2592000.
+fn window_label(secs: u64) -> String {
+    for (unit, n) in [("d", 86_400u64), ("h", 3_600), ("m", 60)] {
+        if secs >= n && secs.is_multiple_of(n) {
+            return format!("{}{unit}", secs / n);
+        }
+    }
+    format!("{secs}s")
+}
+
 #[component]
 fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
     if rows.is_empty() {
@@ -207,6 +233,9 @@ fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
                     <th>kind</th>
                     <th>label</th>
                     <th>last4</th>
+                    <th>used</th>
+                    <th>remaining</th>
+                    <th>ceiling</th>
                     <th></th>
                 </tr>
             </thead>
@@ -214,12 +243,40 @@ fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
                 {rows
                     .into_iter()
                     .map(|r| {
+                        // Read everything off `r` before the view moves its
+                        // fields out one by one.
+                        let id = r.id.clone();
+                        let remaining = remaining_label(&r);
+                        let ceiling = r.ceiling.map(|c| c.to_string()).unwrap_or_default();
+                        let window = r.window_secs.map(window_label).unwrap_or_default();
                         view! {
                             <tr>
                                 <td class="mono">{r.provider}</td>
                                 <td>{r.kind}</td>
                                 <td>{r.label}</td>
                                 <td class="mono">{"…"}{r.last4}</td>
+                                <td class="mono">{r.used}</td>
+                                <td class="mono">{remaining}</td>
+                                <td>
+                                    <form method="post" action="/console/accounts/ceiling">
+                                        <input type="hidden" name="id" value=id />
+                                        <input
+                                            type="text"
+                                            name="ceiling"
+                                            size="6"
+                                            placeholder="calls"
+                                            value=ceiling
+                                        />
+                                        <input
+                                            type="text"
+                                            name="window"
+                                            size="5"
+                                            placeholder="30d"
+                                            value=window
+                                        />
+                                        <button type="submit">set</button>
+                                    </form>
+                                </td>
                                 <td>
                                     <form method="post" action="/console/accounts/revoke">
                                         <input type="hidden" name="id" value=r.id />

@@ -1,6 +1,6 @@
 //! Mounts the Leptos operator console on the gateway process (docs/11).
 
-use crate::adapters::pool::{CredHub, Rotate};
+use crate::adapters::pool::{parse_window, CredHub, Grant, Rotate};
 use crate::creds::{persist_revoke, persist_secret};
 use crate::gateway::{CollectUsage, Gateway};
 use axum::extract::{Form, State};
@@ -36,6 +36,7 @@ pub fn router(state: ConsoleState) -> Router {
         .route("/console/accounts/api", post(add_api))
         .route("/console/accounts/revoke", post(revoke_account))
         .route("/console/accounts/rotate", post(set_rotate))
+        .route("/console/accounts/ceiling", post(set_ceiling))
         .with_state(state);
 
     if let Some(pkg) = pkg_dir() {
@@ -227,6 +228,31 @@ async fn set_rotate(State(state): State<ConsoleState>, Form(form): Form<RotateFo
     accounts_redirect()
 }
 
+#[derive(Deserialize)]
+struct CeilingForm {
+    id: String,
+    /// Calls per window. Empty clears the grant, which is how an operator says
+    /// "I no longer know this number" — distinct from declaring zero.
+    ceiling: String,
+    /// `5h`, `30d`, `90m`, or bare seconds. Blank defaults to 30 days.
+    window: String,
+}
+
+async fn set_ceiling(State(state): State<ConsoleState>, Form(form): Form<CeilingForm>) -> Redirect {
+    let grant = match form.ceiling.trim().parse::<u64>() {
+        Ok(ceiling) => Some(Grant {
+            ceiling,
+            window: parse_window(&form.window)
+                .unwrap_or(std::time::Duration::from_secs(30 * 24 * 3600)),
+        }),
+        // Unparseable or empty both clear it. Keeping a stale ceiling because a
+        // form field had a typo would leave a remaining % nobody declared.
+        Err(_) => None,
+    };
+    state.hub.set_grant(&form.id, grant);
+    accounts_redirect()
+}
+
 async fn snapshot(state: &ConsoleState) -> Snapshot {
     let grok_toks = panday_sdk::oauth::grok_cli_all();
     let grok = grok_toks.into_iter().next();
@@ -245,18 +271,29 @@ async fn snapshot(state: &ConsoleState) -> Snapshot {
         providers,
         grok: cred(grok.as_ref()),
         claude: cred(claude.as_ref()),
-        accounts: state
-            .hub
-            .accounts()
-            .into_iter()
-            .map(|m| AccountRow {
-                id: m.id,
-                provider: m.provider,
-                kind: m.kind,
-                label: m.label,
-                last4: m.last4,
-            })
-            .collect(),
+        accounts: {
+            let usage = state.hub.usage();
+            state
+                .hub
+                .accounts()
+                .into_iter()
+                .map(|m| {
+                    let u = usage.iter().find(|u| u.id == m.id);
+                    AccountRow {
+                        id: m.id,
+                        provider: m.provider,
+                        kind: m.kind,
+                        label: m.label,
+                        last4: m.last4,
+                        used: u.map(|u| u.used).unwrap_or(0),
+                        ceiling: u.and_then(|u| u.ceiling),
+                        window_secs: u.and_then(|u| u.window_secs),
+                        remaining_pct: u.and_then(|u| u.remaining_pct),
+                        exhausted: u.map(|u| u.exhausted).unwrap_or(false),
+                    }
+                })
+                .collect()
+        },
         rotate: state.hub.rotate().as_str().into(),
         models: overlay_live(&live, &catalog),
         pools: pools_for_live(pools_from_dev(), &live_ids),

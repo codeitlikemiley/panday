@@ -32,8 +32,16 @@ everything else.
 | sandbox-seconds by tier | the second metered good |
 | ledger vs provider-invoice drift | must be ~0; alarm at 1% |
 | turn stop-reasons distribution | budget stops climbing = UX problem brewing |
+| upstream calls by (provider, outcome) | which subscription or key the traffic is actually landing on, and how much of it the provider refuses (docs/25 M25.6) |
 
 Prometheus endpoint per service; Grafana dashboards checked into `deploy/`.
+
+**Credentials are not a label.** `panday_upstream_calls_total` is labelled by
+provider and outcome, never by credential id: an operator adds and revokes keys
+freely, so a series per credential would make this metric's cardinality a
+function of how often they do — the same unbounded-label mistake as the two rows
+below. Per-credential counters live on the console's `GET /accounts` instead,
+where a human reads them and retiring one costs nothing.
 
 **Two rows of that table are not Prometheus-shaped, resolved at M21.2.**
 "cache-read ratio *per session*" and "$ COGS *per session*" cannot be labels:

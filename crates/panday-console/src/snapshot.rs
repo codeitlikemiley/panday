@@ -24,6 +24,16 @@ pub struct AccountRow {
     pub kind: String,
     pub label: String,
     pub last4: String,
+    /// Calls made against this credential in the current window (docs/25 M25.6).
+    pub used: u64,
+    /// Operator-declared calls per window. `None` means nobody has declared one
+    /// — which is why `remaining_pct` is also `None` rather than 1.0. Rendering
+    /// "100% left" for a credential no one has measured would be a lie.
+    pub ceiling: Option<u64>,
+    pub window_secs: Option<u64>,
+    pub remaining_pct: Option<f64>,
+    /// A 429 arrived with nothing left in the window. Clears when it rolls.
+    pub exhausted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
