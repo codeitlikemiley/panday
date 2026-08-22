@@ -388,7 +388,41 @@ A one-credential gateway must keep today's failover behaviour.
   `panday creds` is M25.2.
 
 - **M25.10** Codex importer proven against the openai adapter, or a note that it
-  does not work and skip.
+  does not work and skip. ✅ *(proven at the auth layer; blocked at billing.
+  Probe: `cargo test -p panday-cli --test codex_probe -- --ignored`.)*
+
+  **The token authenticates.** Posting a Codex `tokens.access_token` to
+  `api.openai.com/v1/chat/completions` as a plain `Bearer` returned **HTTP 429
+  `insufficient_quota` / `credit_balance_exhausted`** — not 401. The control
+  matters: a garbage token on the same endpoint returns **401
+  `invalid_api_key`**. OpenAI accepted the credential and refused on money. So
+  `panday creds add --from-codex` produces something the `openai_compat` adapter
+  can genuinely use, and the importer needs no change.
+  *(Measured 2026-08-22 against a real `~/.codex/auth.json`.)*
+
+  **What it cannot do is pay.** That login had `auth_mode: chatgpt` and a null
+  `OPENAI_API_KEY` — a ChatGPT subscription, which does not come with API
+  credit. Codex CLI itself does not spend API credit: it talks to the ChatGPT
+  backend, which is why the file also carries an `account_id`. Importing the
+  token gives the gateway a credential that authenticates and then cannot buy a
+  completion until that account has API billing of its own.
+
+  This is why the milestone is *proven* rather than *skipped*, and the
+  distinction is worth keeping straight: the importer was never the problem, and
+  a future reader who sees 429s from an imported Codex credential should look at
+  the billing page, not at this code.
+
+  **Nothing special is needed to survive it.** An out-of-credit credential fails
+  like any other: the pool walks to a sibling, the per-credential breaker
+  (M25.5) counts the failures and stops dialling it, and the model chain moves
+  on. Mapping `insufficient_quota` to something other than `RateLimited` was
+  considered and not done — the observable behaviour is already correct, and a
+  new error shape would have to justify itself against docs/10's vocabulary
+  rather than against one provider's error string.
+
+  The probe is `#[ignore]`d per §Testing contract and asserts only the narrow
+  thing it can: that the response is not a 401. What the account can afford
+  afterwards is a fact about the account, not about the importer.
 
 - **M25.11** Hosted Postgres ciphertext (same envelope). Not tenant BYOK.
 

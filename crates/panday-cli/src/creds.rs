@@ -266,7 +266,8 @@ fn claude_missing() -> String {
     }
 }
 
-fn codex_auth_path() -> PathBuf {
+/// Exposed for the M25.10 live probe (`tests/codex_probe.rs`).
+pub fn codex_auth_path() -> PathBuf {
     if let Ok(p) = std::env::var(CODEX_AUTH_ENV) {
         let p = p.trim();
         if !p.is_empty() {
@@ -283,7 +284,8 @@ fn codex_auth_path() -> PathBuf {
 }
 
 /// Codex CLI's ChatGPT OAuth. Typical file has `tokens.access_token`.
-fn access_token_from_codex_json(raw: &str) -> Result<String, String> {
+/// Exposed for the M25.10 live probe (`tests/codex_probe.rs`).
+pub fn access_token_from_codex_json(raw: &str) -> Result<String, String> {
     let v: serde_json::Value =
         serde_json::from_str(raw).map_err(|_| "file is not JSON".to_string())?;
     v.pointer("/tokens/access_token")
