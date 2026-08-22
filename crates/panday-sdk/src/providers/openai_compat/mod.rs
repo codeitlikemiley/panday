@@ -165,6 +165,10 @@ pub struct OpenAiCompatClient {
     /// `None` for the `local` tier: loopback llama-server takes no auth.
     api_key: Option<String>,
     http: Arc<dyn HttpStreamTransport>,
+    /// Set once by whoever owns the credential (docs/25 M25.7). `OnceLock` so
+    /// the read on every call is lock-free and the wiring cannot be changed
+    /// underneath an in-flight request.
+    remaining_sink: std::sync::OnceLock<Arc<dyn super::transport::RemainingSink>>,
     /// When true, `provider/model` is sent intact — this client is talking to
     /// a panday gateway, which routes on the prefix. Upstream adapters leave
     /// this false so Together/xAI/llama-server see a bare model name.
@@ -172,6 +176,12 @@ pub struct OpenAiCompatClient {
 }
 
 impl OpenAiCompatClient {
+    /// Report ratelimit headers to `sink`. Called once, by the pool that knows
+    /// which credential this client holds. Ignored if already set.
+    pub fn set_remaining_sink(&self, sink: Arc<dyn super::transport::RemainingSink>) {
+        let _ = self.remaining_sink.set(sink);
+    }
+
     pub fn new(base_url: impl Into<String>, api_key: Option<String>) -> Self {
         Self::with_transport(base_url, api_key, Arc::new(ReqwestTransport::default()))
     }
@@ -192,6 +202,7 @@ impl OpenAiCompatClient {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key,
             http,
+            remaining_sink: std::sync::OnceLock::new(),
             keep_model_ref: false,
         }
     }
@@ -243,12 +254,18 @@ impl ModelClient for OpenAiCompatClient {
         // Kept here so they are not dropped (docs/25 M25.3). Overlay onto
         // operator remaining % is M25.7.
         let remaining = headers.ratelimit_remaining();
-        if remaining.requests.is_some() || remaining.tokens.is_some() {
+        if remaining.is_present() {
             tracing::debug!(
                 remaining_requests = ?remaining.requests,
                 remaining_tokens = ?remaining.tokens,
                 "upstream ratelimit remaining"
             );
+            // Overlay onto the operator's counters, if anyone is listening
+            // (docs/25 M25.7). Nobody listens in `panday local`, and that is
+            // fine — the local counters stay in charge.
+            if let Some(sink) = self.remaining_sink.get() {
+                sink.observe(remaining);
+            }
         }
 
         Ok(Box::pin(into_items(body)))

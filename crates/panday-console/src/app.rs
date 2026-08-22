@@ -235,6 +235,7 @@ fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
                     <th>last4</th>
                     <th>used</th>
                     <th>remaining</th>
+                    <th>headroom</th>
                     <th>ceiling</th>
                     <th></th>
                 </tr>
@@ -247,6 +248,10 @@ fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
                         // fields out one by one.
                         let id = r.id.clone();
                         let remaining = remaining_label(&r);
+                        let headroom = match r.headroom_pct {
+                            Some(p) => format!("{:.0}%", p * 100.0),
+                            None => "—".into(),
+                        };
                         let ceiling = r.ceiling.map(|c| c.to_string()).unwrap_or_default();
                         let window = r.window_secs.map(window_label).unwrap_or_default();
                         view! {
@@ -257,6 +262,7 @@ fn AccountTable(rows: Vec<AccountRow>) -> impl IntoView {
                                 <td class="mono">{"…"}{r.last4}</td>
                                 <td class="mono">{r.used}</td>
                                 <td class="mono">{remaining}</td>
+                                <td class="mono">{headroom}</td>
                                 <td>
                                     <form method="post" action="/console/accounts/ceiling">
                                         <input type="hidden" name="id" value=id />

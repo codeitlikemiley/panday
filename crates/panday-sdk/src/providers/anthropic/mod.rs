@@ -169,6 +169,10 @@ pub struct AnthropicClient {
     base_url: String,
     auth: AnthropicAuth,
     http: Arc<dyn HttpStreamTransport>,
+    /// Set once by whoever owns the credential (docs/25 M25.7). `OnceLock` so
+    /// the read on every call is lock-free and the wiring cannot be changed
+    /// underneath an in-flight request.
+    remaining_sink: std::sync::OnceLock<Arc<dyn super::transport::RemainingSink>>,
 }
 
 enum AnthropicAuth {
@@ -179,6 +183,12 @@ enum AnthropicAuth {
 }
 
 impl AnthropicClient {
+    /// Report ratelimit headers to `sink`. Called once, by the pool that knows
+    /// which credential this client holds. Ignored if already set.
+    pub fn set_remaining_sink(&self, sink: Arc<dyn super::transport::RemainingSink>) {
+        let _ = self.remaining_sink.set(sink);
+    }
+
     pub fn new(api_key: impl Into<String>) -> Self {
         Self::with_base_url("https://api.anthropic.com", api_key)
     }
@@ -189,6 +199,7 @@ impl AnthropicClient {
             base_url: "https://api.anthropic.com".into(),
             auth: AnthropicAuth::OAuth(access_token.into()),
             http: Arc::new(ReqwestTransport::default()),
+            remaining_sink: std::sync::OnceLock::new(),
         }
     }
 
@@ -205,6 +216,7 @@ impl AnthropicClient {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             auth: AnthropicAuth::ApiKey(api_key.into()),
             http,
+            remaining_sink: std::sync::OnceLock::new(),
         }
     }
 
@@ -262,12 +274,18 @@ impl ModelClient for AnthropicClient {
             .post_sse(&self.endpoint(), &self.headers(), body)
             .await?;
         let remaining = headers.ratelimit_remaining();
-        if remaining.requests.is_some() || remaining.tokens.is_some() {
+        if remaining.is_present() {
             tracing::debug!(
                 remaining_requests = ?remaining.requests,
                 remaining_tokens = ?remaining.tokens,
                 "upstream ratelimit remaining"
             );
+            // Overlay onto the operator's counters, if anyone is listening
+            // (docs/25 M25.7). Nobody listens in `panday local`, and that is
+            // fine — the local counters stay in charge.
+            if let Some(sink) = self.remaining_sink.get() {
+                sink.observe(remaining);
+            }
         }
         Ok(Box::pin(into_items(body)))
     }

@@ -12,6 +12,7 @@ use super::anthropic::Anthropic;
 use super::openai_compat::OpenAiCompat;
 use crate::circuit::CredentialBreakers;
 use crate::{AdapterCaps, ProviderAdapter};
+use panday_sdk::providers::transport::RatelimitRemaining;
 use panday_sdk::providers::RemoteModel;
 use panday_sdk::{ItemStream, PandayError};
 use panday_types::id::SessionId;
@@ -62,6 +63,27 @@ pub struct Grant {
     pub window: std::time::Duration,
 }
 
+/// Where a member's adapter reports the ratelimit headers it saw.
+///
+/// Holds a handle to the pool's shared map rather than to the pool, so there is
+/// no reference cycle to reason about and a revoked member's sink simply writes
+/// to a key nobody reads.
+struct MemberSink {
+    map: RemainingMap,
+    id: String,
+}
+
+impl panday_sdk::providers::transport::RemainingSink for MemberSink {
+    fn observe(&self, remaining: RatelimitRemaining) {
+        self.map
+            .lock()
+            .expect("pool remaining")
+            .insert(self.id.clone(), remaining);
+    }
+}
+
+type RemainingMap = Arc<Mutex<std::collections::BTreeMap<String, RatelimitRemaining>>>;
+
 /// What one credential has spent against its grant, right now.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberUsage {
@@ -76,6 +98,14 @@ pub struct MemberUsage {
     /// Set when a 429 arrives with nothing left in the window (docs/25).
     /// Cleared when the window rolls.
     pub exhausted: bool,
+    /// Fraction of the provider's own short window still available, from its
+    /// response headers (docs/25 M25.7). `None` when the upstream sends none —
+    /// SuperGrok, Claude Max and Codex OAuth do not, and we do not scrape.
+    pub headroom_pct: Option<f64>,
+    /// The raw counts behind `headroom_pct`, for an operator who wants the
+    /// number rather than the ratio.
+    pub headroom_requests: Option<u64>,
+    pub headroom_tokens: Option<u64>,
 }
 
 /// Live counters for one credential's window.
@@ -130,6 +160,10 @@ pub struct PooledAdapter {
     rotate: Mutex<Rotate>,
     cursor: Mutex<usize>,
     members: Mutex<Vec<Member>>,
+    /// Latest ratelimit headers per credential id (docs/25 M25.7). Separate
+    /// from `members` so a sink can write without taking the member lock that
+    /// the request path holds.
+    remaining: RemainingMap,
     /// One breaker per credential (docs/25 M25.5). Without this, a single dead
     /// key's failures accumulate against the `(provider, model)` breaker and
     /// eventually open the route for every healthy sibling too.
@@ -144,6 +178,7 @@ impl PooledAdapter {
             rotate: Mutex::new(Rotate::Failover),
             cursor: Mutex::new(0),
             members: Mutex::new(Vec::new()),
+            remaining: RemainingMap::default(),
             breakers: CredentialBreakers::default(),
         })
     }
@@ -172,6 +207,7 @@ impl PooledAdapter {
                     })
                     .collect(),
             ),
+            remaining: RemainingMap::default(),
             breakers: CredentialBreakers::default(),
         }
     }
@@ -216,6 +252,12 @@ impl PooledAdapter {
             last4: last4.to_string(),
         };
         let out = meta.clone();
+        // The adapter only learns which credential it is when it joins a pool,
+        // so the sink is wired here rather than at construction (docs/25 M25.7).
+        adapter.set_remaining_sink(Arc::new(MemberSink {
+            map: self.remaining.clone(),
+            id: meta.id.clone(),
+        }));
         self.members.lock().expect("pool members").push(Member {
             meta,
             adapter,
@@ -233,6 +275,7 @@ impl PooledAdapter {
         // keeps a revoked credential from leaving a tripped breaker behind for
         // an id that no longer exists (docs/25 M25.5).
         self.breakers.reset(id);
+        self.remaining.lock().expect("pool remaining").remove(id);
         before != members.len()
     }
 
@@ -306,10 +349,14 @@ impl PooledAdapter {
     /// reporting the last window's count until the next call arrived, which is
     /// exactly when an operator is most likely to be looking at it.
     pub fn usage(&self) -> Vec<MemberUsage> {
+        // Snapshot the headers first and drop the lock: holding both at once
+        // would order two locks that a sink takes in the other direction.
+        let headers = self.remaining.lock().expect("pool remaining").clone();
         let mut members = self.members.lock().expect("pool members");
         members
             .iter_mut()
             .map(|m| {
+                let hdr = headers.get(&m.meta.id).copied().unwrap_or_default();
                 m.meter.roll(m.grant);
                 let ceiling = m.grant.map(|g| g.ceiling);
                 MemberUsage {
@@ -323,6 +370,9 @@ impl PooledAdapter {
                         .filter(|c| *c > 0)
                         .map(|c| 1.0 - (m.meter.used.min(c) as f64 / c as f64)),
                     exhausted: m.meter.exhausted,
+                    headroom_pct: hdr.headroom_pct(),
+                    headroom_requests: hdr.requests,
+                    headroom_tokens: hdr.tokens,
                 }
             })
             .collect()
@@ -866,6 +916,79 @@ mod tests {
         assert!(err.is_retryable());
         assert_eq!(a.calls(), 1);
         assert_eq!(b.calls(), 1);
+    }
+
+    // ── M25.7: header overlay ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn a_credential_with_no_headers_reports_no_headroom() {
+        // The OAuth-subscription case. Absent headers must leave the local
+        // counters in charge, not read as "nothing left".
+        let a = Spy::new("openai_compat", Script::Ok("hi"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        adapter.set_grant(&id, Some(grant(10, 3600)));
+        drain_text(&adapter).await.unwrap();
+        let u = &adapter.usage()[0];
+        assert_eq!(u.headroom_pct, None, "no header, no headroom claim");
+        assert_eq!(
+            u.remaining_pct,
+            Some(0.9),
+            "the operator's grant still answers"
+        );
+    }
+
+    #[tokio::test]
+    async fn observed_headers_surface_as_headroom_for_that_credential_only() {
+        use panday_sdk::providers::transport::RemainingSink;
+        let a = Spy::new("openai_compat", Script::Ok("a"));
+        let b = Spy::new("openai_compat", Script::Ok("b"));
+        let adapter = pool(vec![a, b]);
+        let ids: Vec<String> = adapter.list().into_iter().map(|m| m.id).collect();
+
+        // Stand in for the adapter reporting what it saw on the wire.
+        let sink = MemberSink {
+            map: adapter.remaining.clone(),
+            id: ids[0].clone(),
+        };
+        sink.observe(RatelimitRemaining {
+            requests: Some(20),
+            limit_requests: Some(100),
+            ..Default::default()
+        });
+
+        let usage = adapter.usage();
+        let first = usage.iter().find(|u| u.id == ids[0]).unwrap();
+        let second = usage.iter().find(|u| u.id == ids[1]).unwrap();
+        assert_eq!(first.headroom_pct, Some(0.2));
+        assert_eq!(first.headroom_requests, Some(20));
+        assert_eq!(
+            second.headroom_pct, None,
+            "one credential's headers must not be attributed to its sibling"
+        );
+    }
+
+    #[tokio::test]
+    async fn revoking_a_credential_forgets_its_headers() {
+        use panday_sdk::providers::transport::RemainingSink;
+        let a = Spy::new("openai_compat", Script::Ok("a"));
+        let adapter = pool(vec![a]);
+        let id = adapter.list()[0].id.clone();
+        MemberSink {
+            map: adapter.remaining.clone(),
+            id: id.clone(),
+        }
+        .observe(RatelimitRemaining {
+            requests: Some(1),
+            limit_requests: Some(10),
+            ..Default::default()
+        });
+        assert_eq!(adapter.usage()[0].headroom_pct, Some(0.1));
+        adapter.remove(&id);
+        assert!(
+            adapter.remaining.lock().unwrap().is_empty(),
+            "a revoked credential must not leave headroom behind for a reused id"
+        );
     }
 
     // ── M25.6: grants, counters, remaining % ─────────────────────────────────

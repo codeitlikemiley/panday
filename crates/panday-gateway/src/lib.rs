@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use panday_sdk::providers::RemoteModel;
 use panday_sdk::{ItemStream, PandayError};
 use panday_types::model::ChatRequest;
+use std::sync::Arc;
 
 /// Capabilities an adapter/model offers; the router matches `Caps` needs
 /// against these.
@@ -59,4 +60,11 @@ pub trait ProviderAdapter: Send + Sync {
     async fn list_models(&self) -> Result<Vec<RemoteModel>, PandayError> {
         Ok(Vec::new())
     }
+
+    /// Report this credential's ratelimit headers to `sink` (docs/25 M25.7).
+    ///
+    /// Default is a no-op: only the two real upstream adapters see headers, and
+    /// a required method would make every test spy implement plumbing it does
+    /// not exercise.
+    fn set_remaining_sink(&self, _sink: Arc<dyn panday_sdk::providers::transport::RemainingSink>) {}
 }
