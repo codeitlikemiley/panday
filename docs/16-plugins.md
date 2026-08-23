@@ -22,6 +22,17 @@ my-plugin/
 `fs: workspace-ro`, `net: [api.github.com]`, `secrets: [GITHUB_TOKEN]`,
 `hooks: [pre_tool]`. Install-time consent; the sandbox tiers enforce
 (T1 WIT world for WASM, MCP servers run as T2 children with that policy).
+
+**Except `net`, which is requested and never granted.** No tier can enforce a
+per-domain allowlist — the egress proxy `docs/14` §policy describes is not
+built — and since M14.8 a `NetPolicy` naming a host is refused outright rather
+than approximated. A plugin declaring `net` therefore gets *no* egress, and the
+consent prompt says so in those words rather than listing the hosts as though
+they were granted. Sentence corrected here because it claimed enforcement that
+does not exist, which is the specific failure `panday_plugins`' own note warns
+about: "a capability that grants nothing in the sandbox is a lie told at the
+consent prompt." The field stays in the manifest so the requirement can be
+expressed once and mean something the day the proxy lands.
 Distribution: `.plugin` archive, ed25519-signed; registry tiers
 `verified | community | unlisted`, with the marketplace being a phase-6
 storefront over the same registry API.

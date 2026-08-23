@@ -170,6 +170,33 @@ fn the_consent_summary_names_every_grant_individually() {
 }
 
 #[test]
+fn a_requested_network_capability_is_not_presented_as_a_grant() {
+    // The consent prompt is the only place a person decides. It used to render
+    // `network: api.github.com`, which reads as "this plugin may reach that host" — and nothing
+    // granted it. No tier can: the egress proxy docs/14 describes is unbuilt, and since M14.8 a
+    // `NetPolicy` naming a host is refused rather than approximated.
+    //
+    // The hosts stay in the text (a user refusing a plugin needs specifics), but the line has to
+    // say the request is not honoured, or the prompt is asking consent for something that will
+    // not happen.
+    let m = PluginManifest::load(&fixture("example-plugin/plugin.toml")).unwrap();
+    let text = m.consent_summary();
+    let line = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("network:"))
+        .expect("a network line");
+
+    assert!(
+        line.contains("api.github.com"),
+        "the requested host must still be named: {line}"
+    );
+    assert!(
+        line.contains("NONE"),
+        "the line must say the request is not granted, not merely list it: {line}"
+    );
+}
+
+#[test]
 fn a_manifest_requesting_nothing_says_so_explicitly() {
     // Silence in a consent prompt reads as "unknown", which is worse than
     // "none".
