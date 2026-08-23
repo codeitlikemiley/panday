@@ -113,6 +113,8 @@ impl T0Sandbox {
 #[async_trait::async_trait]
 impl Sandbox for T0Sandbox {
     async fn create(&self, spec: SessionSpec) -> Result<SandboxHandle, SandboxError> {
+        // Before anything is spawned: a policy no tier can enforce is refused, not approximated.
+        spec.policy.net.enforceable()?;
         if spec.tier != SandboxTier::T0InProcess {
             return Err(SandboxError::Unsupported(spec.tier));
         }

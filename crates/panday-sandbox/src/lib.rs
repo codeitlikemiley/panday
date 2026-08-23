@@ -44,9 +44,13 @@ pub struct FsPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetPolicy {
-    /// Always true: all egress via the logging proxy (docs/14 §policy).
+    /// Reserved for the egress proxy docs/14 §policy describes. No tier reads it: there is no
+    /// proxy, so there is nothing for it to switch between.
     pub via_proxy: bool,
-    /// Domain patterns allowed through the proxy; empty = full deny.
+    /// Domain patterns that would be allowed through the proxy.
+    ///
+    /// **Refused, not honoured** — see [`NetPolicy::enforceable`]. Empty is the only accepted
+    /// value today, and it means no egress at all.
     #[serde(default)]
     pub allow: Vec<String>,
 }
@@ -57,6 +61,33 @@ impl Default for NetPolicy {
             via_proxy: true,
             allow: vec![],
         } // default-deny
+    }
+}
+
+impl NetPolicy {
+    /// Refuse a policy no tier can enforce, before anything is spawned.
+    ///
+    /// docs/14 specifies a per-domain allowlist served by an egress proxy. The proxy is not built
+    /// (M14.8), so no tier can distinguish `api.github.com` from anything else — and the honest
+    /// answer to "may this reach exactly these hosts?" is an error, not a guess.
+    ///
+    /// It is an error rather than a silent downgrade to full deny for two reasons. A caller that
+    /// asked for network and got none would fail later, somewhere less obvious, with a timeout
+    /// instead of a reason. And the previous behaviour was worse than a downgrade: T2 Linux read a
+    /// non-empty allowlist as "do not unshare the network namespace", so asking for one host
+    /// granted **the host's entire network** — the opposite of what the field reads like. Nothing
+    /// constructed such a policy, so it was never reachable, but it was one caller away.
+    pub fn enforceable(&self) -> Result<(), SandboxError> {
+        if self.allow.is_empty() {
+            return Ok(());
+        }
+        Err(SandboxError::PolicyViolation(format!(
+            "net.allow names {} host(s) and no tier can enforce a per-domain allowlist: the egress \
+             proxy docs/14 §policy describes is not built. Leave `allow` empty for no egress. \
+             Refused rather than approximated — granting more than was asked for is how this used \
+             to behave, and granting less would fail later as a timeout with no reason attached.",
+            self.allow.len()
+        )))
     }
 }
 
@@ -170,4 +201,34 @@ pub trait Sandbox: Send + Sync {
     /// T3 only; others return `Err(Unsupported)`.
     async fn snapshot(&self, h: &SandboxHandle) -> Result<SnapshotRef, SandboxError>;
     async fn destroy(&self, h: SandboxHandle) -> Result<(), SandboxError>;
+}
+
+#[cfg(test)]
+mod net_policy_tests {
+    use super::*;
+
+    #[test]
+    fn the_default_policy_is_enforceable_because_it_asks_for_nothing() {
+        NetPolicy::default().enforceable().expect("empty is fine");
+    }
+
+    #[test]
+    fn a_named_host_is_refused_rather_than_approximated() {
+        // The two wrong answers this guards against. Granting more than was asked for is what T2
+        // actually did — a non-empty allowlist dropped the network namespace on Linux and emitted
+        // `(allow network-outbound)` on macOS. Granting less, by quietly downgrading to full deny,
+        // would surface as a timeout somewhere later with no reason attached.
+        let policy = NetPolicy {
+            via_proxy: true,
+            allow: vec!["api.github.com".into()],
+        };
+        let err = policy
+            .enforceable()
+            .expect_err("a named host must be refused");
+        let message = err.to_string();
+        assert!(
+            message.contains("net.allow") && message.contains("proxy"),
+            "the refusal must say which field and why: {message}"
+        );
+    }
 }

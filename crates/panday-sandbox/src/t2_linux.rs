@@ -149,9 +149,13 @@ fn build_args(s: &Session) -> Vec<String> {
     push(&mut a, "--unshare-ipc");
     push(&mut a, "--unshare-uts");
     push(&mut a, "--unshare-cgroup-try");
-    if s.net.allow.is_empty() {
-        push(&mut a, "--unshare-net");
-    }
+    // Unconditional. This used to be gated on `s.net.allow.is_empty()`, which meant a non-empty
+    // allowlist *dropped* the network namespace and handed the payload the host's whole network —
+    // the loopback services, the LAN, the cloud metadata endpoint — while reading like a
+    // restriction. `NetPolicy::enforceable` now refuses such a policy at `create`, so this branch
+    // could not be reached either way; it is gone so that a future caller cannot resurrect it by
+    // deleting the check.
+    push(&mut a, "--unshare-net");
     // The jail must not outlive us; an orphaned sandbox is an escape of a
     // different kind.
     push(&mut a, "--die-with-parent");
@@ -225,6 +229,8 @@ fn build_args(s: &Session) -> Vec<String> {
 #[async_trait::async_trait]
 impl Sandbox for T2LinuxSandbox {
     async fn create(&self, spec: SessionSpec) -> Result<SandboxHandle, SandboxError> {
+        // Before anything is spawned: a policy no tier can enforce is refused, not approximated.
+        spec.policy.net.enforceable()?;
         if spec.tier != SandboxTier::T2OsJail {
             return Err(SandboxError::Unsupported(spec.tier));
         }

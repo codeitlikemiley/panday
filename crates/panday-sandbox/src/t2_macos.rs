@@ -161,16 +161,19 @@ impl SeatbeltProfile {
         }
         p.push_str("(allow file-ioctl (literal \"/dev/tty\"))\n");
 
-        // Network: default-deny (docs/14 §policy). An allowlist entry cannot
-        // be expressed per-domain in Seatbelt — DNS names are resolved before
-        // the syscall — so a non-empty allowlist means "egress permitted, and
-        // the proxy does the filtering" (the proxy is M14.2's component).
-        if net.allow.is_empty() {
-            p.push_str("(deny network*)\n");
-        } else {
-            p.push_str("(allow network-outbound)\n");
-            p.push_str("(allow network-bind)\n");
-        }
+        // Network: default-deny, unconditionally (docs/14 §policy).
+        //
+        // Seatbelt cannot express a per-domain rule — a name is resolved before the syscall the
+        // profile sees — so this used to read a non-empty allowlist as "egress permitted, the
+        // proxy filters". There is no proxy (M14.8), so that branch granted *unrestricted* egress
+        // plus inbound bind to any policy that named a single host. `NetPolicy::enforceable`
+        // refuses such a policy before a profile is ever generated, and the branch is gone rather
+        // than left unreachable, so deleting the check cannot bring it back.
+        //
+        // `net` stays in the signature: when the proxy exists, this is where its one permitted
+        // endpoint is named.
+        let _ = net;
+        p.push_str("(deny network*)\n");
 
         Ok(SeatbeltProfile(p))
     }
@@ -232,6 +235,8 @@ impl T2MacosSandbox {
 #[async_trait::async_trait]
 impl Sandbox for T2MacosSandbox {
     async fn create(&self, spec: SessionSpec) -> Result<SandboxHandle, SandboxError> {
+        // Before anything is spawned: a policy no tier can enforce is refused, not approximated.
+        spec.policy.net.enforceable()?;
         if spec.tier != SandboxTier::T2OsJail {
             return Err(SandboxError::Unsupported(spec.tier));
         }
