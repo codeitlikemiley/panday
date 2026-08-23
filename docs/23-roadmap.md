@@ -8,10 +8,12 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
-**Where numbered work stands (2026-08-23):** **108 milestones, 100 shipped, 8
-open** — M0.2 (this phase-2 exit tracker), M14.8 (egress proxy), M19.3 / M19.5 /
-M19.7 (training, not started), and M22.3 / M22.4 / M22.5 (partial: host, KVM
-timing, one real disconnected box).
+**Where numbered work stands (2026-08-23):** **109 milestones, 102 shipped, 7
+open** — M0.2 (this phase-2 exit tracker), M19.3 / M19.5 / M19.7 (training, not
+started), and M22.3 / M22.4 / M22.5 (partial: host, KVM timing, one real
+disconnected box). M14.8 (fail-closed net allowlist) and M14.9 (T3-remote
+CodeSandbox) shipped; T3 Firecracker on real KVM is still M14.5/M14.6 leftover
+timing plus M22.4.
 
 M11.10 (PG exact cache) closed, and M11.11 (per-route cache TTL) was added and
 closed in the same session: docs/11 had specified "TTL per route" since it was
@@ -195,9 +197,12 @@ tokens + air-gap kit (M17.6, M18.7), SOC2-shaped controls (M20 all).
 **Exit:** untrusted user code runs in your cloud with the escape suite green
 in CI; one enterprise pilot installs the air-gap kit from its README alone.
 
-**Status: T0/T1/T2 are shipped with their escape suites; T3 is not, and cannot be from here.**
+**Status: T0/T1/T2 are shipped with their escape suites; T3 Firecracker is not, and cannot be from here.**
 Firecracker needs KVM, and this tree is developed on macOS — M14.5, M14.6 and M22.4 are blocked on
-hardware rather than on design. Everything else in the phase is done: WASM plugin tools and hooks
+hardware rather than on design. **T3-remote (M14.9) is the laptop-buildable
+stand-in:** a named CodeSandbox backend behind the same `Sandbox` trait, fail-closed
+without a BYO workspace token, tested against a mock. It does not claim the
+cold-boot p95 or replace KVM pools. Everything else in the phase is done: WASM plugin tools and hooks
 (M16.4), the registry and `plugin install` (M16.6), scorecards and generated policy PRs (M12.4),
 the eval spine (M19.1), entitlement tokens (M17.6), the air-gap kit (M18.7), and the M20 controls
 including the injection canaries (M20.1) and drill #1 (M20.4). The kit installs and runs from a

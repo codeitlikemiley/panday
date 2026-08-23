@@ -28,6 +28,7 @@ stream *before* the harness folds it into context.
 | **T1** | wasmtime component (WASI 0.3) | plugin-provided tools & hooks | ~ms | capability: only WIT imports we grant |
 | **T2** | OS jail: bubblewrap-style namespaces + seccomp (Linux), Seatbelt profile (macOS) | user's own shell/tools on THEIR machine | ~10ms | FS scoping + egress deny; user is the trust anchor |
 | **T3** | Firecracker microVM | strangers' code on OUR cloud | ~125ms cold, ~snapshot-warm | hardware virtualization |
+| **T3-remote** | CodeSandbox / Together SDK microVM | same isolation *class* when this host has no `/dev/kvm` | billed in the token owner's workspace | their Firecracker, our `Sandbox` trait |
 
 Mechanism notes, from validated prior art:
 
@@ -44,6 +45,20 @@ Mechanism notes, from validated prior art:
   processes* — a product feature, not just an optimization.
 - **KVM required for T3** → cloud pools are Linux/metal-or-nested-virt. macOS
   users get T2 locally; cloud execution is always Linux.
+- **T3-remote (CodeSandbox / Together)** is an opt-in hosted backend for the
+  same hardware-isolation class when this host has no KVM. It is **not** a
+  fifth trust problem, **not** a browser JS playground, and **not** a noVNC
+  desktop — exec / files / hibernate on a Linux microVM, behind the same
+  `Sandbox` trait. BYO token only (`CSB_API_KEY` or vault provider
+  `codesandbox`). Fail-closed without one; never logged. Sandboxes are created
+  in *that* workspace and billed there (Pico 5 credits/h … XLarge 320/h; a
+  free Build plan is whatever CodeSandbox currently grants that workspace).
+  An operator may register more than one token they already own, the same way
+  they register multiple OpenAI keys. The product does **not** farm free
+  accounts, rotate burner logins, or pool credits across identities —
+  CodeSandbox ToS 2.3 (personal accounts) and 4.4(l) (no bot accounts).
+  Guest network is whatever CodeSandbox gives the VM; we cannot honour
+  default-deny egress on a guest we do not jail, and that is stated.
 
 ## Policy (uniform across tiers)
 
@@ -339,3 +354,36 @@ type error.
   "this plugin wants network" and not "this plugin may reach exactly these
   hosts". Per-domain egress remains unbuilt; when it exists, `NetPolicy::allow`
   is where it plugs in and this refusal is what it replaces.
+
+- **M14.9** T3-remote: CodeSandbox / Together SDK microVMs as an optional
+  hosted backend when the host has no KVM. ✅ *(shipped:
+  `panday_sandbox::t3_remote::CsbSandbox`; suite in
+  `crates/panday-sandbox/tests/t3_remote.rs` against a loopback mock. No live
+  CodeSandbox calls, no secrets in CI.)*
+
+  **Smallest honest slice.** The public control plane (`https://api.codesandbox.io`,
+  npm `@codesandbox/sdk`) can fork a template, start a VM, hibernate
+  (snapshot), and delete. Guest I/O (`commands.run`, put/get) is **not** on
+  that REST API — the official SDK speaks Pitcher over WebSocket after `start`
+  returns `pitcher_url` + `pitcher_token`. This crate stays on `reqwest` and
+  talks a thin documented HTTP seam to that host (`POST /commands/run`,
+  `PUT`/`GET /fs`). Tests mock both planes. We did not take a Node runtime
+  dependency. A later slice can speak Pitcher if live CSB never grows the REST
+  agent the SDK's v2.3 notes describe.
+
+  **Fail-closed without a token.** `CsbToken::from_secret("")`,
+  `from_env_or_vault(None)` (when `CSB_API_KEY` is unset), and
+  `panday_cli::creds::resolve_csb_token` on an empty vault all return the
+  named `MissingRemoteToken` error. The token is never on argv, never in
+  `Debug`, never in a query string — `Authorization: Bearer` only.
+
+  **Credits are the token owner's.** Paste a workspace API token from
+  https://codesandbox.io/t/api into `CSB_API_KEY` or
+  `panday creds add --provider codesandbox` (stdin). Each token is that
+  user's/workspace's own plan. This is not a marketplace and not a farm.
+
+  **What is not here:** live CSB in CI; Docker-in-CI; a Pitcher WebSocket
+  client; treating in-browser sandboxes as this backend; berthos / noVNC;
+  weakening T2/T3 isolation tests. T3 Firecracker still refuses without
+  `/dev/kvm` and does not silently become this backend — the operator
+  constructs `CsbSandbox` when they want remote.

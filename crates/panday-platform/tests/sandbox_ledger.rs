@@ -62,6 +62,12 @@ fn the_tiers_are_priced_by_what_they_actually_cost() {
     assert!(prices.for_tier(SandboxTier::T1Wasm) > 0);
     assert!(prices.for_tier(SandboxTier::T2OsJail) > prices.for_tier(SandboxTier::T1Wasm));
     assert!(prices.for_tier(SandboxTier::T3MicroVm) > prices.for_tier(SandboxTier::T2OsJail));
+    // Same isolation class, different host: T3-remote is our sandbox-seconds
+    // record, not the operator's CodeSandbox credit bill.
+    assert_eq!(
+        prices.for_tier(SandboxTier::T3Remote),
+        prices.for_tier(SandboxTier::T3MicroVm)
+    );
 }
 
 #[tokio::test]

@@ -35,6 +35,11 @@ cargo build --release
 #    Never argv. See docs/25.
 #    ./target/release/panday creds add --from-grok --label laptop
 #    ./target/release/panday creds list
+#    CodeSandbox T3-remote (docs/14 M14.9): paste *your* workspace token from
+#    https://codesandbox.io/t/api. Credits are billed to that workspace, not ours.
+#    export CSB_API_KEY=…          # or:
+#    ./target/release/panday creds add --provider codesandbox --label workspace
+#    # (pipe the token; never argv)
 
 # 2. Offline: a local model, a jailed workspace, nothing leaving the machine.
 #    Needs an OpenAI-compatible server on loopback (llama-server, mistral.rs, …).
@@ -107,7 +112,9 @@ grant them per tool (`docs/16` §MCP host).
 **Every milestone that does not need hardware or a third party is shipped.**
 Phases 0–2's numbered work is complete (Phase 1's *exit* still wants you to use
 the agent on a real repo; Phase 2's still wants Zed and a GGUF). Phase 3 is
-built except Stripe and a host; phase 4 except T3 on KVM; phase 5's
+built except Stripe and a host; phase 4 except T3 Firecracker on KVM
+(T3-remote / CodeSandbox is the BYO-token stand-in when there is no `/dev/kvm`);
+phase 5's
 infrastructure is in place and its models are not. Live traffic on this laptop
 uses Grok CLI OAuth (`xai/grok-4.6` against `api.x.ai`) as the *outbound* hop.
 Inbound, Claude Code / Grok Build / `agy` point at `panday-gateway` — that is
@@ -150,7 +157,8 @@ One binary-per-service Rust platform where:
   token bill is a first-class engineering target, measured against real
   prompt-cache economics, not vibes.
 - Untrusted execution is **tiered**: in-process pure tools → WASM plugins →
-  namespaced processes → Firecracker microVMs.
+  namespaced processes → Firecracker microVMs (or a BYO CodeSandbox VM when
+  the host has no KVM — credits are yours).
 - Skills are markdown, tools are MCP, editors connect over ACP — we adopt the
   open protocols and compete on the runtime.
 - Subscriptions and the API are the same metering pipeline; offline mode is a

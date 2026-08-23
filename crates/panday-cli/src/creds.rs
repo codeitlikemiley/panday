@@ -279,6 +279,28 @@ pub fn codex_auth_path() -> PathBuf {
 }
 
 /// Codex CLI's ChatGPT OAuth. Typical file has `tokens.access_token`.
+/// Workspace token for T3-remote (docs/14 M14.9). Env wins; otherwise the
+/// first active vault row with provider `codesandbox`. Never logs the secret.
+pub async fn resolve_csb_token<S: CredentialStore>(
+    store: &S,
+) -> Result<panday_sandbox::t3_remote::CsbToken, String> {
+    use panday_sandbox::t3_remote::{CsbToken, CSB_VAULT_PROVIDER};
+    if let Ok(token) = CsbToken::from_env() {
+        return Ok(token);
+    }
+    let rows = store.list().await.map_err(|e| e.to_string())?;
+    for row in rows {
+        if row.provider == CSB_VAULT_PROVIDER && row.state == State::Active {
+            let secret = store.get_secret(&row.id).await.map_err(|e| e.to_string())?;
+            return CsbToken::from_secret(secret.expose()).map_err(|e| e.to_string());
+        }
+    }
+    Err(
+        "T3-remote is fail-closed without a CodeSandbox token (CSB_API_KEY or vault provider codesandbox)"
+            .into(),
+    )
+}
+
 /// Exposed for the M25.10 live probe (`tests/codex_probe.rs`).
 pub fn access_token_from_codex_json(raw: &str) -> Result<String, String> {
     let v: serde_json::Value =
@@ -324,6 +346,7 @@ mod tests {
             "CLAUDE_CONFIG_DIR",
             "CODEX_HOME",
             "PANDAY_CODEX_AUTH",
+            "CSB_API_KEY",
         ];
 
         fn new() -> Self {
@@ -346,6 +369,7 @@ mod tests {
             std::env::remove_var("CLAUDE_CONFIG_DIR");
             std::env::remove_var("CODEX_HOME");
             std::env::remove_var("PANDAY_CODEX_AUTH");
+            std::env::remove_var("CSB_API_KEY");
             home
         }
 
@@ -647,5 +671,54 @@ mod tests {
             store.get_secret(&cid).await.unwrap_err(),
             VaultError::Revoked
         ));
+    }
+
+    #[tokio::test]
+    async fn codesandbox_vault_row_supplies_the_t3_remote_token() {
+        let _home = IsolatedHome::new();
+        let store = MemoryStore::new(Kek::generate());
+        let missing = resolve_csb_token(&store).await.unwrap_err();
+        assert!(
+            missing.contains("CSB_API_KEY") && missing.contains("codesandbox"),
+            "{missing}"
+        );
+        assert!(!missing.contains(A), "{missing}");
+
+        add_from_stdin(
+            &store,
+            Cursor::new(b"csb_test_from_vault\n"),
+            false,
+            "codesandbox",
+            Kind::ApiKey,
+            Some("workspace"),
+        )
+        .await
+        .unwrap();
+        let token = resolve_csb_token(&store).await.unwrap();
+        assert!(
+            !format!("{token:?}").contains("csb_test_from_vault"),
+            "resolved token leaked via Debug"
+        );
+    }
+
+    #[tokio::test]
+    async fn csb_api_key_env_wins_over_the_vault_row() {
+        let _home = IsolatedHome::new();
+        let store = MemoryStore::new(Kek::generate());
+        add_from_stdin(
+            &store,
+            Cursor::new(b"csb_test_from_vault\n"),
+            false,
+            "codesandbox",
+            Kind::ApiKey,
+            None,
+        )
+        .await
+        .unwrap();
+        std::env::set_var("CSB_API_KEY", "csb_test_from_env");
+        let token = resolve_csb_token(&store).await.unwrap();
+        let printed = format!("{token:?}");
+        assert!(!printed.contains("csb_test_from_env"), "{printed}");
+        assert!(!printed.contains("csb_test_from_vault"), "{printed}");
     }
 }
