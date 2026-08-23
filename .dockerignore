@@ -1,0 +1,9 @@
+# `target/` is tens of gigabytes of host-architecture build output that no image stage copies —
+# it is pure build-context transfer, and on this volume that took longer than the compile.
+target/
+**/target/
+
+.git/
+.github/
+scratchpad/
+*.tar.gz

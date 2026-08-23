@@ -133,7 +133,7 @@ fn usage() {
          sbom [--check]      write sbom.cdx.json from the lockfile; --check fails on drift\n  \
          ts-sdk [--check]    regenerate sdk/typescript/ and proto/openapi.json\n  \
          json-bench          schema-validity against a running gateway; needs a model\n  \
-         airgap [--models <dir>] [--out <dir>]  build the offline install kit (M18.7)\n  \
+         airgap [--models <dir>] [--runner <path>] [--out <dir>]  build the offline install kit (M18.7)\n  \
          mine --logs <dir> --out <file> [--consent granted]  mine training pairs (M19.4)\n  \
          profile --model <ref> [--base-url <url>] [--ceiling <tokens>]  measure a model (M19.2)\n"
     );
@@ -281,6 +281,10 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
         flag("--out").unwrap_or_else(|| root.join("target/airgap").display().to_string()),
     );
     let models = flag("--models");
+    // An inference runner to pack into `bin/`. Optional, because a site may already have one — but
+    // when it is absent the README has to say so, since `panday-local --serve` spawns one and an
+    // air-gapped machine cannot go and fetch it.
+    let runner = flag("--runner");
 
     // Release binaries, from this tree. Not built here: `cargo build --release` on a machine that
     // is not the release machine is how an air-gap bundle ends up with a debug build in it.
@@ -340,6 +344,36 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
             .map_err(|e| format!("copy {name}: {e}"))?;
     }
 
+    // Copied under its own file name, because that is what `panday-local` spawns: the supervisor
+    // runs `llama-server` / `mistralrs-server` by name off `PATH`, so renaming it here would put a
+    // binary in the box that nothing looks for.
+    let runner_name = match &runner {
+        Some(path) => {
+            let source = PathBuf::from(path);
+            if !source.is_file() {
+                return Err(format!("--runner {path}: not a file"));
+            }
+            let name = source
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            std::fs::copy(&source, out.join("bin").join(&name))
+                .map_err(|e| format!("copy {name}: {e}"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    out.join("bin").join(&name),
+                    std::fs::Permissions::from_mode(0o755),
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Some(name)
+        }
+        None => None,
+    };
+
     let mut model_files = Vec::new();
     if let Some(dir) = &models {
         for entry in std::fs::read_dir(dir).map_err(|e| format!("read {dir}: {e}"))? {
@@ -360,8 +394,11 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
         }
     }
 
-    std::fs::write(out.join("INSTALL.md"), airgap::install_readme(&model_files))
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        out.join("INSTALL.md"),
+        airgap::install_readme(&model_files, runner_name.as_deref()),
+    )
+    .map_err(|e| e.to_string())?;
     std::fs::write(out.join("install.sh"), airgap::INSTALL_SH).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
