@@ -90,6 +90,21 @@ const EXPECTED_TABLES: &[&str] = &[
     "credentials",
 ];
 
+/// Tables a migration creates that `/status` deliberately does not check for.
+///
+/// Listed rather than implied, the way `tenancy.rs` lists its non-tenant tables: an exemption
+/// nobody wrote down is indistinguishable from an omission, and this endpoint exists to catch
+/// omissions.
+///
+/// `exact_cache` (M11.10) is not a schema-health signal. It is an unlogged table that Postgres
+/// truncates after an unclean shutdown, so its absence is a normal state a healthy deployment
+/// passes through — reporting the schema unhealthy for it would make `/status` cry wolf for a
+/// table whose every row costs one provider call to rebuild.
+/// `cfg(test)` because nothing in the running service reads it — the exemption is a fact about
+/// what [`EXPECTED_TABLES`] leaves out, and the test below is the only thing that can check it.
+#[cfg(test)]
+const NOT_A_HEALTH_SIGNAL: &[&str] = &["exact_cache"];
+
 /// Kept as one literal rather than built from [`EXPECTED_TABLES`] because `tenancy.rs`'s M20.3 lint
 /// reads SQL out of string literals; a query assembled at runtime is a query the lint cannot see.
 const SCHEMA_PROBE: &str =
@@ -380,7 +395,7 @@ fn page(title: &str, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{EXPECTED_TABLES, SCHEMA_PROBE};
+    use super::{EXPECTED_TABLES, NOT_A_HEALTH_SIGNAL, SCHEMA_PROBE};
 
     #[test]
     fn the_schema_probe_and_the_expected_list_cannot_drift() {
@@ -415,18 +430,31 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_both_expected_and_exempt() {
+        // An exemption that also appears in the probe is a contradiction, and the probe would win
+        // silently. Cheap to state, and it makes the two lists readable as one decision.
+        for exempt in NOT_A_HEALTH_SIGNAL {
+            assert!(
+                !EXPECTED_TABLES.contains(exempt),
+                "`{exempt}` is exempt from the health check and also required by it"
+            );
+        }
+    }
+
+    #[test]
     fn every_migration_that_creates_a_table_is_represented() {
         // A migration adding a table its own binary does not check for is a binary that reports a
         // healthy schema it never verified. One name per migration is enough; naming every table
         // would not detect anything a neighbour in the same file does not.
         for (name, sql) in crate::pg::EMBEDDED_MIGRATIONS {
-            let creates: Vec<String> = sql
+            let mut creates: Vec<String> = sql
                 .to_lowercase()
                 .replace("create unlogged table", "create table")
                 .split("create table if not exists")
                 .skip(1)
                 .filter_map(|rest| rest.split_whitespace().next().map(str::to_string))
                 .collect();
+            creates.retain(|t| !NOT_A_HEALTH_SIGNAL.contains(&t.as_str()));
             if creates.is_empty() {
                 continue;
             }

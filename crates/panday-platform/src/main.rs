@@ -15,6 +15,7 @@ use panday_gateway::adapters::openai_compat::OpenAiCompat;
 use panday_gateway::ingress::{IngressState, RateLimiter};
 use panday_gateway::{Gateway, ProviderAdapter};
 use panday_platform::entitlements::Plan;
+use panday_platform::exact_cache::{self, PgExactCache};
 use panday_platform::keys::KeyAuthenticator;
 use panday_platform::ledger::{LedgerBudget, LedgerSink, OnWriteFailure};
 use panday_platform::pg;
@@ -500,6 +501,26 @@ async fn run() -> Result<(), String> {
         )))
         .budget(Arc::new(LedgerBudget::new(pool.clone(), Plan::free())))
         .route_audit(Arc::new(PgRouteAudit::new(pool.clone())));
+
+    // The exact cache is opt-in, because caching is a behaviour change and a deployment that has
+    // not named a TTL has not asked for one (docs/11). With a TTL set, every replica shares one
+    // table, so an answer paid for once is not paid for again on another pod.
+    //
+    // Unset is the in-memory default the builder already carries: `NoCache`. There is deliberately
+    // no "use memory if PG is missing" fallback — a per-replica cache silently standing in for a
+    // shared one is a hit rate nobody can explain.
+    if let Some(ttl) = env("PANDAY_EXACT_CACHE_TTL_SECS").and_then(|v| v.parse::<u64>().ok()) {
+        if ttl > 0 {
+            builder = builder.exact_cache(
+                Arc::new(PgExactCache::new(pool.clone())),
+                std::time::Duration::from_secs(ttl),
+            );
+            // Read-time filtering keeps expired rows from being served, not from accumulating.
+            // Every replica reaps; the deletes race harmlessly.
+            exact_cache::spawn_reaper(pool.clone(), std::time::Duration::from_secs(300));
+            tracing::info!(ttl_secs = ttl, "exact cache on, backed by postgres");
+        }
+    }
 
     for (provider, adapter) in adapters().await {
         builder = builder.adapter(provider, adapter);

@@ -8,10 +8,15 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
-**Where numbered work stands (2026-08-23):** **107 milestones, 98 shipped, 9
-open** — M0.2 (this phase-2 exit tracker), M11.10 (PG exact cache), M14.8
-(egress proxy), M19.3 / M19.5 / M19.7 (training, not started), and M22.3 /
-M22.4 / M22.5 (partial: host, KVM timing, air-gapped install).
+**Where numbered work stands (2026-08-23):** **108 milestones, 100 shipped, 8
+open** — M0.2 (this phase-2 exit tracker), M14.8 (egress proxy), M19.3 / M19.5 /
+M19.7 (training, not started), and M22.3 / M22.4 / M22.5 (partial: host, KVM
+timing, one real disconnected box).
+
+M11.10 (PG exact cache) closed, and M11.11 (per-route cache TTL) was added and
+closed in the same session: docs/11 had specified "TTL per route" since it was
+written while the builder took one global duration, which is the unnumbered-and-
+therefore-invisible state §4 of CLAUDE.md exists to prevent.
 
 The total rose from 104 on the same day. **No work was added** — three things
 that had always existed were finally given numbers: M0.2 was being *cited* here

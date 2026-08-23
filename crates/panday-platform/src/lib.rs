@@ -8,6 +8,7 @@ pub mod admin;
 pub mod billing;
 pub mod drift;
 pub mod entitlements;
+pub mod exact_cache;
 pub mod keys;
 pub mod ledger;
 pub mod pg;
