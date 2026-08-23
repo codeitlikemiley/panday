@@ -122,6 +122,40 @@ fn cached_gateway(adapter: Arc<dyn ProviderAdapter>) -> Gateway {
         .build()
 }
 
+/// A policy whose catch-all rule opts out of caching, and whose `route`-task rule keeps a short
+/// TTL of its own. Everything else is `dev.yaml`.
+const PER_ROUTE_POLICY: &str = r#"
+version: 1
+pools:
+  cheap:     [local/qwen3.5-4b]
+  workhorse: [local/qwen3.5-4b]
+rules:
+  - match: { task: route }
+    use: cheap
+    cache_ttl_secs: 600
+  - match: {}
+    use: workhorse
+    cache_ttl_secs: 0
+"#;
+
+/// Ask the router to choose, instead of naming a model.
+///
+/// Per-route TTL only exists for requests that took a route. A caller naming a concrete model is
+/// *pinned* (`ModelRef::is_auto`), matches no rule, and so has no route TTL to apply — it takes the
+/// deployment default. That is the honest reading of "TTL per route", and it is a real limit worth
+/// seeing in a test rather than discovering in production.
+fn auto(mut req: ChatRequest) -> ChatRequest {
+    req.model = ModelRef("auto".into());
+    req
+}
+
+fn gateway_with(policy: &str, adapter: Arc<dyn ProviderAdapter>) -> Gateway {
+    Gateway::builder(Arc::new(PolicyRouter::from_yaml(policy).unwrap()))
+        .adapter("local", adapter)
+        .exact_cache(Arc::new(MemoryExactCache::new(16)), Duration::from_secs(60))
+        .build()
+}
+
 // ── Exact cache ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -471,4 +505,71 @@ fn text_of(items: &[StreamItem]) -> String {
             _ => None,
         })
         .collect()
+}
+
+// ── Per-route TTL (M11.11) ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn a_route_with_a_zero_ttl_is_not_cached_while_the_cache_stays_on() {
+    // docs/11 has specified "TTL per route" since it was written and the builder only ever took
+    // one global `Duration`. A rule whose answers go stale faster than the fleet default used to
+    // mean turning the cache off for everyone.
+    let adapter = Counting::new();
+    let g = gateway_with(PER_ROUTE_POLICY, adapter.clone());
+    let account = AccountId::new();
+
+    // The catch-all rule sets `cache_ttl_secs: 0`, so identical requests both reach the provider
+    // even though the deployment has a 60s global TTL.
+    drain(&g, auto(request(account, "opted out")))
+        .await
+        .unwrap();
+    drain(&g, auto(request(account, "opted out")))
+        .await
+        .unwrap();
+    assert_eq!(
+        adapter.count(),
+        2,
+        "a route with a zero TTL must not be cached"
+    );
+}
+
+#[tokio::test]
+async fn a_route_that_sets_a_ttl_is_still_cached() {
+    // The other direction, or the test above would pass just as well against a cache that had
+    // stopped working entirely.
+    let adapter = Counting::new();
+    let g = gateway_with(PER_ROUTE_POLICY, adapter.clone());
+    let account = AccountId::new();
+
+    let mut first = auto(request(account, "route this"));
+    first.metadata.task = Some(panday_types::model::TaskClass::Route);
+    let mut second = auto(request(account, "route this"));
+    second.metadata.task = Some(panday_types::model::TaskClass::Route);
+
+    drain(&g, first).await.unwrap();
+    drain(&g, second).await.unwrap();
+    assert_eq!(
+        adapter.count(),
+        1,
+        "the `route` rule sets a 600s TTL, so the second request is a hit"
+    );
+}
+
+#[tokio::test]
+async fn a_pinned_model_takes_the_deployment_ttl_because_it_took_no_route() {
+    // The limit stated above, pinned so it cannot change silently. The catch-all rule sets
+    // `cache_ttl_secs: 0`, but a caller naming a concrete model never reaches that rule — so the
+    // global 60s applies and the second request is a hit. Most API traffic names a model, so this
+    // is the common case, not the corner.
+    let adapter = Counting::new();
+    let g = gateway_with(PER_ROUTE_POLICY, adapter.clone());
+    let account = AccountId::new();
+
+    drain(&g, request(account, "pinned")).await.unwrap();
+    drain(&g, request(account, "pinned")).await.unwrap();
+    assert_eq!(
+        adapter.count(),
+        1,
+        "a pinned request has no route, so the deployment TTL applies and it caches"
+    );
 }

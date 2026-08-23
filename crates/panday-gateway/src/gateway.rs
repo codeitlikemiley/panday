@@ -669,7 +669,18 @@ impl Gateway {
                         stream,
                         self.usage.clone(),
                         self.costs.clone(),
-                        cache_key.map(|k| (k, self.cache.clone(), self.cache_ttl)),
+                        // Per-route TTL (M11.11, docs/11 §Caching "TTL per route"). The matched
+                        // rule's value wins where it set one; `Some(0)` opts that route out of
+                        // caching while leaving it on everywhere else. The global TTL is still the
+                        // on/off switch — `cache_key` is `None` unless it is set, because the
+                        // lookup happens before routing and no route is known then.
+                        cache_key.and_then(|k| {
+                            let ttl = match resolution.decision.cache_ttl_secs {
+                                Some(secs) => Duration::from_secs(secs),
+                                None => self.cache_ttl,
+                            };
+                            (!ttl.is_zero()).then(|| (k, self.cache.clone(), ttl))
+                        }),
                         UsageRecord {
                             account,
                             request,

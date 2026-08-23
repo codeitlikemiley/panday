@@ -76,6 +76,13 @@ CI; a provider API drift breaks a fixture, not production.
   oversight: the window is small, the duplicate cost is one call, and a lock held across a
   provider call is a worse failure mode than paying twice.
 
+  **"TTL per route" is per route, and a pinned request took none.** A rule may set
+  `cache_ttl_secs` (M11.11); `0` opts that route out while the cache stays on everywhere else.
+  But a caller naming a concrete model is *pinned* — it matches no rule — so it has no route TTL
+  and takes the deployment default. Most API traffic names a model, so that is the common case
+  rather than the corner, and a test pins it. A route TTL also cannot switch caching *on*: the
+  gateway looks a request up before it routes it, so no route is known at read time. The global
+  TTL stays the on/off switch; the route varies the duration.
 - **Semantic cache**: pgvector over embedded prompts. Ships OFF; it is a
   correctness hazard for agentic traffic and mostly a demo feature. Revisit
   for the API product where customers opt in per key.
@@ -603,3 +610,21 @@ in-process, not a product surface. The gateway is stateless apart from cache
   docs/22, because an operator who finds it empty must not read that as data loss. It is
   deliberately absent from `/status`'s schema check for the same reason.
 
+- **M11.11** Per-route exact-cache TTL. ✅ *(shipped: `Rule::cache_ttl_secs`,
+  `RouteDecision::cache_ttl_secs`, and the gateway resolving one against the other.)*
+
+  Numbered because it was specified and unimplemented — the state CLAUDE.md §4 says to give a
+  number rather than leave invisible. §Caching has said "TTL per route" since it was written
+  while the builder took a single global `Duration`, so a rule whose answers went stale faster
+  than the fleet default meant turning caching off for everyone.
+
+  The rule *is* the route, so `cache_ttl_secs` sits on `Rule` and rides to the gateway on
+  `RouteDecision`: the gateway does not read the policy file, and the rule that matched is already
+  known where the decision is built. Absent means "no opinion, use the deployment's"; `Some(0)`
+  means "do not cache this route".
+
+  **Two limits, both deliberate and both tested.** It cannot switch caching on, because the lookup
+  happens before routing and a route TTL over a deployment that never enabled the cache would
+  write rows nothing reads. And a pinned model — any caller naming a concrete id rather than
+  `auto` — matches no rule, so it takes the deployment default. That is the common path for API
+  traffic, and it is the honest reading of the spec rather than a gap: per route means per route.

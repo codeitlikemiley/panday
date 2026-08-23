@@ -46,6 +46,13 @@ pub struct RouteDecision {
     pub chain: Vec<ModelRef>,
     pub matched_rule: String,
     pub pool: String,
+    /// The matched rule's exact-cache TTL in seconds, if it set one (M11.11).
+    ///
+    /// `None` means "no opinion, use the deployment's TTL"; `Some(0)` means "do not cache this
+    /// route". Carried on the decision rather than looked up again by the gateway, because the
+    /// gateway does not read the policy file and the rule that matched is already known here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_ttl_secs: Option<u64>,
     /// Filled in shadow mode: what the learned policy would have picked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counterfactual: Option<Vec<ModelRef>>,

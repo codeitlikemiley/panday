@@ -34,6 +34,21 @@ pub struct Rule {
     /// chain, never a single target).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<String>,
+    /// How long an exact-cache entry for this route stays fresh, in seconds (M11.11).
+    ///
+    /// docs/11 §Caching has specified "TTL per route" since it was written; the rule *is* the
+    /// route, so this is where it belongs. Absent means the deployment's global TTL applies.
+    ///
+    /// **`0` opts this route out of caching** without turning it off anywhere else — useful for a
+    /// rule whose answers go stale faster than the fleet default, where the alternative was
+    /// disabling the cache for everyone.
+    ///
+    /// It cannot switch caching *on*: the gateway looks a request up before it routes it, so no
+    /// route is known at read time, and a route TTL over a deployment that never enabled the cache
+    /// would write entries nothing would ever read. The global TTL stays the on/off switch and
+    /// this varies the duration — which is what "TTL per route" asks for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_ttl_secs: Option<u64>,
 }
 
 /// Rule predicate. Every field is optional; an absent field does not
@@ -341,6 +356,8 @@ impl Router for PolicyRouter {
         // are the tenant's, not the caller's, to negotiate.
         let pinned = (!q.requested.is_auto()).then(|| q.requested.clone());
 
+        // A pinned model matched no rule, so it has no route TTL and takes the global one.
+        let mut cache_ttl_secs: Option<u64> = None;
         let (mut chain, matched_rule, mut pool_name) = match &pinned {
             Some(model) => (vec![model.clone()], "pinned".to_string(), String::new()),
             None => {
@@ -358,6 +375,7 @@ impl Router for PolicyRouter {
                 if let Some(fb) = &rule.fallback {
                     chain.extend(p.pool_chain(fb));
                 }
+                cache_ttl_secs = rule.cache_ttl_secs;
                 (chain, format!("rules[{i}]"), rule.pool.clone())
             }
         };
@@ -434,6 +452,7 @@ impl Router for PolicyRouter {
             .and_then(|c| chain.first().and_then(|m| c.profile(m)));
 
         Ok(RouteDecision {
+            cache_ttl_secs,
             chain,
             matched_rule,
             pool: pool_name,
