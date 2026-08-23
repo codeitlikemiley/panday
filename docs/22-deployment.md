@@ -35,6 +35,32 @@ The SaaS compose, packaged: container images + a compose/helm bundle + signed
 model catalog + entitlement token (17/18). No egress required; updates ship
 as versioned bundles. Support boundary documented per bundle version.
 
+**Shape 3 is not built.** What exists is the *shape 1* air-gap kit — one directory of binaries,
+config and models (M18.7). The compose/helm bundle, the container images and the signed catalog
+that make this shape 3 are unwritten, and widening M22.5's v1 to include them is a scope decision
+nobody has taken. The boundary below is therefore the boundary of the kit that ships today.
+
+### Support boundary, per bundle version
+
+What a customer with `panday-airgap-<version>` may expect, and what is out of scope. The point of
+writing it down is that an air-gapped customer cannot ask: they have the tarball, `INSTALL.md`, and
+no channel to us until someone carries a question back through the door.
+
+| | In the bundle | Not in the bundle |
+|---|---|---|
+| **Binaries** | `panday`, `panday-local`, `panday-gateway`, `panday-platform`, built for one target triple per bundle | Any other architecture. A bundle is not portable across them; ordering the wrong one is a return trip. |
+| **Inference runner** | Only if the bundle was built with `xtask airgap --runner <path>`, and `INSTALL.md` says which | Otherwise nothing. `panday-local --serve` spawns `llama-server` by name, so a bundle without one installs and cannot answer a prompt. The customer carries their own through the door. |
+| **Models** | The GGUFs packed at build time, listed by name in `INSTALL.md` | Any later model. There is no download path; a new model is a new bundle or a file copied in by hand. |
+| **Entitlement** | Verification, locally, against `PANDAY_ENTITLEMENT_KEY` | Activation, revocation, or any call home. An expired token degrades to the community tier rather than stopping — that is the designed behaviour, not a grace period (M17.6). |
+| **Updates** | A newer bundle, installed by re-running `install.sh` over the old one | In-place patching, delta updates, or anything that reaches a repository. Event logs under `.panday/` are append-only and survive an install (ADR-002). |
+| **Data** | The customer's, on their disk, in SQLite and JSONL they can read | Telemetry. Nothing leaves the machine, so nothing can be sent to us for diagnosis — a bug report is whatever the operator can copy out by hand. |
+| **Verification** | `install.sh` and `INSTALL.md` are tested against a machine with no network on every change (`xtask/tests/airgap_container.rs`) | A guarantee about the customer's specific host. What is tested is Debian-family x86-64 in a container; a different distribution, an SELinux policy or a read-only `$HOME` is untested ground. |
+
+**What a version number covers.** A bundle is the binaries, the config and the models it was built
+with, together. Mixing them across versions is unsupported: the routing policy and the catalog are
+read by the binaries beside them, and a `catalog.yaml` from a newer bundle can name a model the
+older binary cannot load. `install.sh` overwrites all three for that reason.
+
 ## Upgrade paths (pre-written triggers, per ADR-003)
 
 | Pressure | Trigger metric | Move |
@@ -192,5 +218,25 @@ as versioned bundles. Support boundary documented per bundle version.
   storage backend; and every destination under `$PREFIX`, `$MODEL_DIR` or `$HOME`, so it never needs
   `sudo` it did not warn about.
 
-  **What remains** is the air: this machine has a network, so nothing here proves the install
-  *succeeds* without one. What is proven is that it never asks for one.
+  **The air is reproducible, and reproducing it found a real defect.**
+  `docker run --network none` is a real air gap for every property this kit claims — loopback and
+  nothing else, no DNS, no route. `deploy/airgap-test.Dockerfile` builds the kit on a connected
+  stage and copies it into a bare `debian:bookworm-slim` that installs nothing: the two machines
+  this milestone actually describes. `xtask/tests/airgap_container.rs` then installs there and
+  runs what the README tells a reader to run.
+
+  The first thing it caught: **the README's only verification step could not execute.**
+  `panday-local --serve` spawns `llama-server` (`panday_local::supervisor`), the kit shipped no
+  runner, and an air-gapped machine cannot fetch one. The box claimed "everything needed to run
+  Panday" and could not answer a prompt. Every check that existed here was a string property of
+  two generated files — one of them asserted the README *contains* `panday-local --serve` — so the
+  text was verified and the runnability never was. Fixed under M18.7 with `xtask airgap --runner`
+  and a README that adapts; the container test is what keeps it fixed.
+
+  The suite asserts the air gap itself before anything else (`the_air_gap_is_real`): a container
+  that could still resolve a hostname would install happily whether or not the kit needed a
+  network, and every other assertion here would be worthless.
+
+  **What remains** is a machine with no network *and no Docker* — one real box, installed from
+  `INSTALL.md` by someone who has not read this repo. The container proves the installer needs no
+  network; it does not prove the README is followable by a stranger.

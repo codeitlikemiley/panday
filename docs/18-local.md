@@ -285,3 +285,23 @@ offline via ed25519 pubkey baked into the binary.
   model index (`panday models` is for machines that can download; here the models are already in
   the box). An entitlement token is a file the customer copies in, and is documented in
   `INSTALL.md` alongside the fact that expiry degrades rather than stops (M17.6).
+
+  **The inference runner is `--runner`, and its absence is now stated rather than discovered.**
+  This list used to omit the runner entirely, while `INSTALL.md` opened with "everything needed to
+  run Panday on a machine with no internet connection" and gave `panday-local --serve` as the one
+  way to check the install. `--serve` spawns `llama-server` by name off `PATH`
+  (`panday_local::supervisor`), and no kit has ever shipped one — so the box installed cleanly and
+  then could not answer a prompt, which is the same "partial kit" failure the paragraph above
+  refuses for models. It survived because every check on this kit was a *string* property of the
+  two generated files; nothing had ever run the thing (M22.5).
+
+  `cargo xtask airgap --runner <path>` now packs one into `bin/` under its own file name, since
+  the supervisor spawns it by name. When a runner is packed the README says so and the promise
+  stands; when it is not, the README says *that* in its opening line, warns that the verify command
+  will fail at spawn, and gives the `--base-url` attach path, which needs none. Both directions are
+  tested.
+
+  **Open, and deliberately not decided here:** whether a released kit should default to packing a
+  runner. Doing so means vendoring a third-party binary per architecture, with a licensing surface
+  `cargo deny` does not see. Leaving it out means every air-gapped customer must carry one through
+  the door themselves — which is now at least *said*, instead of being found behind it.

@@ -1,0 +1,52 @@
+# The air-gap kit, installed on a machine with no network (docs/22 M22.5).
+#
+# Its own workflow rather than a seventh job in `ci.yml`: this builds a Linux release inside
+# Docker, which is minutes nobody should spend on a PR that touched a doc. `ci.yml`'s six jobs are
+# the contract every PR meets; this one runs when the kit's own inputs move.
+name: airgap
+
+on:
+  pull_request:
+    paths:
+      - "xtask/src/airgap.rs"
+      - "xtask/src/main.rs"
+      - "xtask/tests/airgap_container.rs"
+      - "deploy/airgap-test.Dockerfile"
+      - "crates/panday-local/src/supervisor.rs"
+      # The CLI beside the supervisor, not just the supervisor: `--serve` is parsed here and the
+      # default runner is chosen here, and the container suite asserts on both.
+      - "crates/panday-local/src/main.rs"
+      # Copied verbatim into the kit's `config/` by `xtask airgap`. Globs, because the shipped
+      # file moving is as much a change to the kit as its contents changing.
+      - "crates/panday-router/policy/*.yaml"
+      - "crates/panday-router/catalog/*.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "xtask/src/airgap.rs"
+      - "xtask/src/main.rs"
+      - "xtask/tests/airgap_container.rs"
+      - "deploy/airgap-test.Dockerfile"
+      - "crates/panday-local/src/supervisor.rs"
+      # The CLI beside the supervisor, not just the supervisor: `--serve` is parsed here and the
+      # default runner is chosen here, and the container suite asserts on both.
+      - "crates/panday-local/src/main.rs"
+      # Copied verbatim into the kit's `config/` by `xtask airgap`. Globs, because the shipped
+      # file moving is as much a change to the kit as its contents changing.
+      - "crates/panday-router/policy/*.yaml"
+      - "crates/panday-router/catalog/*.yaml"
+  workflow_dispatch:
+
+jobs:
+  install-air-gapped:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the kit on a connected machine
+        run: docker build -f deploy/airgap-test.Dockerfile -t panday-airgap-test .
+      # `--network none` is applied per `docker run` inside the test, not here: the build stage
+      # needs a network, because a kit is built somewhere connected and installed somewhere not.
+      - name: Install it on one with no network
+        run: cargo test -p xtask --test airgap_container -- --ignored --test-threads=1
