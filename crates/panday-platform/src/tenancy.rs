@@ -39,6 +39,9 @@ pub const TENANT_TABLES: &[&str] = &[
     "artifacts",
     "usage_records",
     "route_decisions",
+    // The exact-response cache (M11.10). Its key is `(account_id, digest)`; an unscoped read here
+    // serves one tenant another tenant's answer, which is M20.3's finding in its live form.
+    "exact_cache",
     "webhook_inbox",
     "secrets",
     "plugin_installs",
@@ -222,7 +225,12 @@ pub fn claims_cross_tenant(statement: &str) -> Option<String> {
 /// column is not there to filter on.
 pub fn table_declares_account_id(create_statement: &str) -> Option<String> {
     let sql = strip_comments(create_statement);
-    let lower = sql.to_lowercase();
+    // `CREATE UNLOGGED TABLE` is still a CREATE TABLE. The gateway's exact cache (M11.10) is the
+    // first unlogged table in this schema, and without this normalisation the DDL half of the lint
+    // silently skipped the one table whose entire risk is cross-tenant serving.
+    let lower = sql
+        .to_lowercase()
+        .replace("create unlogged table", "create table");
     if !lower.contains("create table") {
         return None;
     }

@@ -17,6 +17,21 @@
 //! yet persisted.
 
 use crate::cache::{is_cacheable, CacheKey, CachedResponse, ExactCache, NoCache};
+
+/// How long a cache lookup may hold up a request before it is abandoned as a miss.
+///
+/// The whole point of the exact cache is to be cheaper than the provider call it replaces; a
+/// lookup that takes longer than this has stopped being that. docs/22's escalation trigger is
+/// PG p99 > 5ms, so 25ms is five times the level at which an operator is already meant to be
+/// acting.
+const CACHE_GET_BUDGET: Duration = Duration::from_millis(25);
+
+/// How long a cache write may hold up the *terminal* frame of a response.
+///
+/// Larger than the read budget because the answer is already on its way to the caller and the only
+/// thing at stake is whether the next identical request pays for it again. Still bounded: an
+/// unbounded write would let a degraded database hold a stream open after the model has finished.
+const CACHE_PUT_BUDGET: Duration = Duration::from_millis(250);
 use crate::circuit::Breakers;
 use crate::ProviderAdapter;
 use futures_util::StreamExt;
@@ -505,7 +520,18 @@ impl Gateway {
         // must not cache it.
         let cache_key = (self.caching() && is_cacheable(&req)).then(|| CacheKey::of(&req));
         if let Some(key) = &cache_key {
-            if let Some(hit) = self.cache.get(key) {
+            // Bounded here rather than inside each implementation, so the bound holds for
+            // implementations nobody has written yet. A lookup slower than this is already an
+            // operational signal (docs/22 escalates the exact cache to Redis at PG p99 > 5ms), and
+            // abandoning it costs one provider call where waiting on it costs the whole request.
+            let looked_up = tokio::time::timeout(CACHE_GET_BUDGET, self.cache.get(key))
+                .await
+                .unwrap_or_else(|_| {
+                    metrics::metrics().cache_lookups.inc(&["timeout"]);
+                    tracing::warn!("exact cache lookup exceeded its budget; treating as a miss");
+                    None
+                });
+            if let Some(hit) = looked_up {
                 metrics::metrics().cache_lookups.inc(&["hit"]);
                 tracing::debug!(model = %req.model.0, "exact cache hit");
                 return Ok(Box::pin(futures_util::stream::iter(
@@ -797,27 +823,40 @@ fn capture_usage(
         let template = template.clone();
         let collected = collected.clone();
         async move {
-            // The guard is taken and dropped in one synchronous block: a `MutexGuard` held across the
-            // `await` below would make this future non-`Send`, which the stream must be.
-            {
+            // The guard is taken and dropped in one synchronous block: a `MutexGuard` held across
+            // an `await` would make this future non-`Send`, which the stream must be. Since
+            // `ExactCache::put` became async (M11.10), the buffer is *lifted out* here and the
+            // write happens below, after the guard is gone. Calling `put` inside this block is a
+            // compile error, and the error surfaces far from the edit that caused it — so the two
+            // halves are kept adjacent and commented rather than tidied apart.
+            let to_store = {
                 let mut slot = collected.lock().unwrap();
+                let mut lifted = None;
                 if let (Some(buffer), Ok(ok)) = (slot.as_mut(), &item) {
                     buffer.push(ok.clone());
                     // Store on `Done`, not on stream end: an abandoned stream is a
                     // partial answer, and caching it would serve a truncated response to
                     // everyone who asked the same question afterwards.
                     if matches!(ok, StreamItem::Done { .. }) {
-                        if let Some((key, cache, ttl)) = &store {
-                            cache.put(
-                                key.clone(),
-                                CachedResponse {
-                                    items: std::mem::take(buffer),
-                                },
-                                *ttl,
-                            );
-                        }
+                        lifted = Some(std::mem::take(buffer));
                         *slot = None;
                     }
+                }
+                lifted
+            };
+            if let (Some(items), Some((key, cache, ttl))) = (to_store, &store) {
+                // Bounded, and the outcome is discarded on purpose: the caller already has its
+                // answer, and a degraded cache must cost the next identical request a provider
+                // call rather than hold this stream open past the model finishing.
+                if tokio::time::timeout(
+                    CACHE_PUT_BUDGET,
+                    cache.put(key.clone(), CachedResponse { items }, *ttl),
+                )
+                .await
+                .is_err()
+                {
+                    metrics::metrics().cache_lookups.inc(&["put_timeout"]);
+                    tracing::warn!("exact cache write exceeded its budget; entry dropped");
                 }
             }
             if let Ok(StreamItem::Usage { usage }) = &item {

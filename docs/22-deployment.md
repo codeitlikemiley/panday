@@ -68,8 +68,30 @@ older binary cannot load. `install.sh` overwrites all three for that reason.
 | queue throughput | PG queue >1k msg/s sustained or lock contention visible | NATS JetStream |
 | analytics load | OLTP p99 degraded by dashboard queries | ClickHouse for events/metrics projections |
 | vector scale | index > RAM, recall/latency degrading | VectorChord / pgvectorscale |
-| cache latency | exact-cache PG p99 > 5ms | Redis |
+| cache latency | exact-cache PG p99 > 5ms — the gateway bounds a lookup at 25ms and counts an overrun, so the trigger is visible before it is fatal | Redis |
 | orchestration | sandbox fleet ops > 1 human-day/week | k8s for the pool only |
+
+
+### The exact cache is the first unlogged table (M11.10)
+
+`PANDAY_EXACT_CACHE_TTL_SECS` turns it on; unset means no caching at all, because caching is a
+behaviour change and a deployment that has not named a TTL has not asked for one. There is no
+fallback to an in-process cache when Postgres is absent — a per-replica cache silently standing in
+for a shared one is a hit rate nobody can explain.
+
+Two properties of `UNLOGGED` an operator must be told rather than discover:
+
+- **Postgres truncates it after an unclean shutdown.** Finding `exact_cache` empty after a crash is
+  normal, not data loss. Every row costs exactly one provider call to rebuild.
+- **It is not replicated.** A standby cannot serve cache reads, and a read-replica deployment will
+  see a lower hit rate than a single-primary one.
+
+For the same reason it is deliberately **not** part of `/status`'s schema check: an empty cache is
+a healthy state, and reporting the schema degraded for it would make the endpoint cry wolf.
+
+Every replica runs a reaper on a five-minute interval. Read-time filtering keeps expired rows from
+being *served*; it does not keep them from accumulating, and an unlogged table with no reaper grows
+until the disk does.
 
 ## Release engineering
 

@@ -273,8 +273,26 @@ async fn caching_is_off_unless_a_ttl_is_configured() {
     assert_eq!(adapter.count(), 2, "no TTL means no caching");
 }
 
-#[test]
-fn an_entry_expires_and_the_cache_stays_bounded() {
+#[tokio::test]
+async fn memory_exact_cache_satisfies_the_conformance_suite() {
+    // Expiry, tenant isolation, overwrite and round-tripping moved into the shared suite, which
+    // `PgExactCache` runs too. What stays below is what is genuinely `MemoryExactCache`'s: a PG
+    // unlogged table is bounded by disk and a reaper, not by an entry count, and `len()` is an
+    // inherent method rather than part of the trait.
+    panday_gateway::cache::conformance::run(
+        "MemoryExactCache",
+        std::sync::Arc::new(|| {
+            Box::pin(async {
+                std::sync::Arc::new(MemoryExactCache::new(64))
+                    as std::sync::Arc<dyn panday_gateway::cache::ExactCache>
+            })
+        }),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn the_memory_cache_stays_bounded_and_keeps_the_newest() {
     let cache = MemoryExactCache::new(2);
     let account = AccountId::new();
     let key = |n: u32| CacheKey {
@@ -283,14 +301,13 @@ fn an_entry_expires_and_the_cache_stays_bounded() {
     };
     let response = panday_gateway::CachedResponse { items: vec![] };
 
-    cache.put(key(1), response.clone(), Duration::from_millis(0));
-    assert!(cache.get(&key(1)).is_none(), "an expired entry is a miss");
-
     for n in 2..=5 {
-        cache.put(key(n), response.clone(), Duration::from_secs(60));
+        cache
+            .put(key(n), response.clone(), Duration::from_secs(60))
+            .await;
     }
     assert!(cache.len() <= 2, "capacity was {}", cache.len());
-    assert!(cache.get(&key(5)).is_some(), "the newest survives");
+    assert!(cache.get(&key(5)).await.is_some(), "the newest survives");
 }
 
 // ── Circuit breakers ─────────────────────────────────────────────────────────

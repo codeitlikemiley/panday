@@ -68,6 +68,14 @@ CI; a provider API drift breaks a fixture, not production.
 - **Exact cache**: hash(normalized request) → response, PG unlogged table,
   TTL per route, only for `temperature=0` + no-tools requests (evals love
   this; agents rarely hit it). Redis only if PG p99 ever hurts.
+
+  As built (M11.10): the key is `(account_id, digest)` and it is the table's primary key, not a
+  column beside it. The lookup is read-through and bounded at 25ms; a slow, unreachable or
+  unreadable backend is a miss, never a failed request. There is **no single-flight** — two
+  concurrent misses on one key both call the provider — which is a decision rather than an
+  oversight: the window is small, the duplicate cost is one call, and a lock held across a
+  provider call is a worse failure mode than paying twice.
+
 - **Semantic cache**: pgvector over embedded prompts. Ships OFF; it is a
   correctness hazard for agentic traffic and mostly a demo feature. Revisit
   for the API product where customers opt in per key.
@@ -541,9 +549,57 @@ in-process, not a product surface. The gateway is stateless apart from cache
   milestones were being cited for work nobody had started, so a reader chasing
   the pointer concluded it had shipped.
 
-  The seam is already right: `ExactCache` is a trait and the binaries wire
-  whichever implementation they have, so this is an additional impl plus a
-  migration, not a refactor. The parts with the bugs in them — eligibility, key
-  normalization, tenant scoping — are shared and already tested. Not started, and
-  not urgent: the in-memory cache is correct, it just does not survive a restart
-  or span replicas.
+  ✅ *(shipped: `panday_platform::exact_cache::PgExactCache`,
+  `crates/panday-platform/migrations/0010_exact_cache.sql`, and
+  `panday_gateway::cache::conformance` — one suite both implementations pass.)*
+
+  **It was a refactor after all.** The bullet used to say "an additional impl plus a migration,
+  not a refactor", on the grounds that `ExactCache` was already a trait. That was wrong for a
+  reason the seam did not show: the trait was **synchronous**, and a synchronous `get` over
+  Postgres has no legal implementation on a tokio worker — `block_in_place` requires a
+  multi-thread runtime and the overhead bench builds a current-thread one, while
+  `Handle::block_on` panics inside a runtime. So `ExactCache` became async, which is the same
+  change `UsageSink` made earlier and for the same reason; it was the last synchronous seam on
+  `Gateway`. Two designs that preserved the sync trait were written and scored, and both were
+  rejected: each kept an in-process cache as the only thing that ever served a hit, which is not
+  "replacing the in-memory one where a deployment has a database".
+
+  **The conformance suite was written first, against the one implementation that existed.** That
+  ordering is the lesson M25.11 paid for: `CredentialStore` reached its second implementation
+  with two disjoint test sets, so its contract had to be reconstructed. `ExactCache` had one
+  implementation and was about to have two — the moment to write the contract down, not the
+  moment after. It pins nine invariants; capacity and eviction order stay out of it, because a
+  PG unlogged table is bounded by a reaper and disk, not by an entry count.
+
+  **Tenant isolation is now pinned in the positive form.** The only test that existed asserted a
+  second account *misses*, which a digest-keyed table also passes: tenant B's write overwrites
+  tenant A's row, B misses as asserted, and A then reads B's answer. The suite asserts both
+  accounts read *their own body*. Verified by breaking it — with `PRIMARY KEY (digest)` the suite
+  fails; with `(account_id, digest)` it passes. That is M20.3's cache-key audit as an executable
+  check rather than a comment.
+
+  **Writing the suite found a live bug in `MemoryExactCache`.** `put` appended to the eviction
+  queue on every write while the eviction guard only fired for new keys, so re-putting one key
+  grew the queue without bound — a leak in the one structure whose stated justification is being
+  bounded, invisible from outside because `len()` reports the entry map. An eval suite replaying
+  identical requests is exactly the traffic this cache exists for, so it was on the main path.
+
+  **What a deployment gets.** `PANDAY_EXACT_CACHE_TTL_SECS` opts in; unset stays `NoCache`,
+  because caching is a behaviour change and a deployment that has not named a TTL has not asked
+  for one. There is deliberately no "fall back to memory if Postgres is missing" — a per-replica
+  cache silently standing in for a shared one is a hit rate nobody can explain.
+
+  **Bounded, and a miss when it cannot answer.** The lookup is bounded at 25ms and the write at
+  250ms, at the call site rather than inside each implementation, so the bound holds for
+  implementations nobody has written yet. An unreachable database, a row from a future schema
+  version, and a row that will not deserialize are all misses — never a failed request. Both
+  methods are infallible by signature for that reason: a `Result` would offer the caller a
+  decision it must never make differently, and the first careless `?` would turn one bad row into
+  a 500 for a hot key for a whole TTL.
+
+  **The first unlogged table in this schema.** Postgres truncates it after an unclean shutdown and
+  does not replicate it, so a standby cannot serve cache reads. Both are correct for a table whose
+  every row costs one provider call to rebuild — and both are stated in the migration and in
+  docs/22, because an operator who finds it empty must not read that as data loss. It is
+  deliberately absent from `/status`'s schema check for the same reason.
+
