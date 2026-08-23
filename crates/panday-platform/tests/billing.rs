@@ -35,6 +35,23 @@ fn event(e: &BillingEvent) -> serde_json::Value {
     serde_json::to_value(e).unwrap()
 }
 
+/// One event's queue state, by id.
+///
+/// Not `billing::stuck()`: that is an operator view and orders most-attempted first, so a
+/// row created a moment ago sorts to the *tail* of a shared queue that already holds a few
+/// hundred permanently-unapplied events from earlier runs. Paging it to find your own row
+/// is a test that fails more often the longer the integration database lives. Asking for
+/// the row by id is the question these tests actually mean.
+async fn queued(pool: &sqlx::PgPool, id: &str) -> Option<(Option<String>, i32)> {
+    sqlx::query_as(
+        "SELECT error, attempts FROM billing_events WHERE event_id = $1 AND applied_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
 #[tokio::test]
 #[ignore = "needs the integration lane"]
 async fn a_redelivered_webhook_is_stored_once() {
@@ -76,8 +93,10 @@ async fn checkout_puts_an_account_on_a_plan() {
     .await
     .unwrap();
 
-    let report = billing::apply_pending(&pool, 50).await.unwrap();
-    assert!(report.applied >= 1);
+    // Not `report.applied >= 1`: `apply_pending` drains the *whole* inbox, so a
+    // concurrent test in this binary can apply this event first and leave this call
+    // returning zero. The plan below is the property, and it holds whoever drained it.
+    billing::apply_pending(&pool, 50).await.unwrap();
     assert_eq!(
         billing::current_plan(&pool, account)
             .await
@@ -182,18 +201,15 @@ async fn an_event_for_an_unknown_customer_stays_in_the_queue_with_its_reason() {
     .await
     .unwrap();
 
-    // Counted, not asserted exactly: the integration database is shared, so other tests' stuck
-    // events are in this queue too — which is itself the condition the ordering change protects.
-    let report = billing::apply_pending(&pool, 100).await.unwrap();
-    assert!(report.unknown_customer >= 1);
+    // The report's counters are fleet-wide and this database is shared, so they cannot
+    // say anything about *this* event: another test's drain may have handled it already,
+    // and `unknown_customer` would then be zero here. Assert on the row instead.
+    billing::apply_pending(&pool, 100).await.unwrap();
 
-    let stuck = billing::stuck(&pool, 100).await.unwrap();
-    let mine = stuck
-        .iter()
-        .find(|(e, _, _)| *e == id)
-        .expect("still queued");
-    assert!(mine.1.contains("nobody-by-that-name"), "{:?}", mine);
-    assert!(mine.2 >= 1, "the attempt is counted");
+    let (error, attempts) = queued(&pool, &id).await.expect("still queued");
+    let error = error.expect("a queued event carries the reason it did not apply");
+    assert!(error.contains("nobody-by-that-name"), "{error}");
+    assert!(attempts >= 1, "the attempt is counted");
 }
 
 #[tokio::test]
@@ -226,15 +242,20 @@ async fn a_malformed_event_does_not_stop_the_queue() {
     .await
     .unwrap();
 
-    let report = billing::apply_pending(&pool, 50).await.unwrap();
-    assert!(report.failed >= 1);
-    assert!(report.applied >= 1, "the good event still went through");
+    billing::apply_pending(&pool, 50).await.unwrap();
+
+    // Both halves by row, not by counter — the counters belong to whichever drain won.
+    assert!(
+        queued(&pool, &bad).await.is_some(),
+        "the malformed event stays queued rather than vanishing"
+    );
     assert_eq!(
         billing::current_plan(&pool, account)
             .await
             .unwrap()
             .as_deref(),
-        Some("pro")
+        Some("pro"),
+        "the good event still went through"
     );
 }
 
