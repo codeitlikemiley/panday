@@ -24,7 +24,7 @@ never hashed.
 ```
 Credential
   id            UUIDv4          — not v7: a secret id must not encode mint time
-  provider      xai | anthropic | openai | gemini | …
+  provider      xai | anthropic | openai | gemini | codesandbox | …
   kind          api_key | oauth
   label         operator string (console; never a secret)
   last4         last four characters of the secret, stored in the clear
@@ -50,6 +50,14 @@ ciphertext is wiped.
 Import is explicit and read-only against official CLI stores (`~/.grok/auth.json`,
 Claude Code Keychain, `~/.codex/auth.json`). Never write those files. Never accept
 the secret on argv (`ps` sees argv).
+
+**CodeSandbox workspace tokens** (`provider=codesandbox`, env `CSB_API_KEY`) are
+the same store for a different job: T3-remote (docs/14 M14.9). Paste a token
+from https://codesandbox.io/t/api; sandboxes and VM credits are billed to
+*that* workspace. Fail-closed without one. An operator may register more than
+one token they already own (failover, like extra OpenAI keys). The product
+does not farm free accounts or rotate burner logins — each token is that
+user's/workspace's own plan (CodeSandbox ToS 2.3 / 4.4(l)).
 
 ## Multiple Grok sessions are N tokens, not N CLIs
 

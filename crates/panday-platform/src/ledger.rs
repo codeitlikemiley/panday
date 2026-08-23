@@ -267,7 +267,9 @@ impl TierPrices {
             T0InProcess => self.t0_in_process,
             T1Wasm => self.t1_wasm,
             T2OsJail => self.t2_os_jail,
-            T3MicroVm => self.t3_micro_vm,
+            // Same isolation class as local Firecracker. The operator's CodeSandbox
+            // credits are a separate bill; this is our sandbox-seconds record.
+            T3MicroVm | T3Remote => self.t3_micro_vm,
         }
     }
 }

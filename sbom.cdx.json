@@ -5641,7 +5641,7 @@
           "expression": "UNLICENSED"
         }
       ],
-      "description": "Tiered execution: T0 in-proc, T1 WASM, T2 OS jail, T3 microVM. Spec: docs/14-sandbox.md"
+      "description": "Tiered execution: T0 in-proc, T1 WASM, T2 OS jail, T3 microVM, T3-remote. Spec: docs/14-sandbox.md"
     },
     {
       "type": "application",

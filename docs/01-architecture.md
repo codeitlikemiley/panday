@@ -81,7 +81,8 @@ flowchart TB
    savings against prompt-cache pricing (`15-reducer.md`).
 6. **Execution is tiered by trust**: pure in-process tools → WASM components →
    namespaced processes (bubblewrap-class) → Firecracker microVMs for cloud
-   multi-tenant (`14-sandbox.md`).
+   multi-tenant, or a BYO CodeSandbox VM (T3-remote) when the host has no KVM
+   (`14-sandbox.md`).
 7. **We speak the open protocols at every boundary** — MCP in (tools), ACP up
    (editors), SKILL.md sideways (skills), OpenAI-compatible down (model
    backends), and inbound as Chat Completions, Anthropic Messages, and Gemini

@@ -882,7 +882,7 @@ pub fn help() -> String {
          --summary      one line: turns, tools, tokens, how it ended\n  \
          --diff <log>   diff this replay against another log's (e.g. before/after a reducer change)\n\n\
          CREDENTIALS:\n  \
-         --provider     outbound provider (xai, anthropic, openai, gemini, …). Secret is stdin, never argv.\n  \
+         --provider     outbound provider (xai, anthropic, openai, gemini, codesandbox, …). Secret is stdin, never argv.\n  \
          --kind         api_key (default) or oauth; --from-* is always oauth\n  \
          --label        operator name (not a secret)\n  \
          --from-grok    copy ~/.grok/auth.json into the vault (read-only)\n  \
@@ -896,6 +896,7 @@ pub fn help() -> String {
          PANDAY_MODEL_DIR         where GGUFs live (default ~/.panday/models)\n  \
          PANDAY_VAULT_KEY         64 hex chars for the vault KEK; else ~/.panday/master.key\n  \
          PANDAY_VAULT_DB          vault sqlite path (default ~/.panday/credentials.sqlite)\n  \
+         CSB_API_KEY              CodeSandbox workspace token for T3-remote (credits are yours; never argv)\n  \
          Grok CLI login           ~/.grok/auth.json enables `xai` (model id xai/grok-4.6)\n\n\
          Every call goes through the gateway: routed by policy, metered per call.",
         Config::LOCAL_DEFAULT
@@ -1333,6 +1334,8 @@ mod tests {
         assert!(h.contains("--from-codex"), "{h}");
         assert!(h.contains("PANDAY_VAULT_KEY"), "{h}");
         assert!(h.contains("PANDAY_VAULT_DB"), "{h}");
+        assert!(h.contains("CSB_API_KEY"), "{h}");
+        assert!(h.contains("codesandbox"), "{h}");
     }
 
     #[test]

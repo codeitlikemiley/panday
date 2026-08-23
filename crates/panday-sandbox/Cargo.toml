@@ -1,6 +1,6 @@
 [package]
 name = "panday-sandbox"
-description = "Tiered execution: T0 in-proc, T1 WASM, T2 OS jail, T3 microVM. Spec: docs/14-sandbox.md"
+description = "Tiered execution: T0 in-proc, T1 WASM, T2 OS jail, T3 microVM, T3-remote. Spec: docs/14-sandbox.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,9 +18,12 @@ futures-core.workspace = true
 
 futures-util.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "sync", "time", "macros", "rt"] }
+# Control-plane + guest HTTP for T3-remote (docs/14 M14.9). Already in the
+# docs/02 table; rustls only, matching every other outbound client.
+reqwest.workspace = true
 
 [dev-dependencies]
 # Hand-written components for the escape suite: a WAT string is the only way to
 # build a guest that imports something the world does not grant.
 wat = "1"
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }

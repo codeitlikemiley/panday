@@ -72,7 +72,10 @@ directly (the community Rust SDKs are too thin to depend on).
 
 **Consequences.** Four integration surfaces behind one `Sandbox` trait.
 Firecracker is Linux/KVM-only — cloud pools are Linux; macOS cloud sandboxing
-is out of scope (local T2 covers Macs).
+is out of scope (local T2 covers Macs). When the host has no KVM, an optional
+**T3-remote** backend (docs/14 M14.9) implements the same trait against a
+CodeSandbox / Together SDK microVM using the operator's own workspace token.
+It is not a fifth tier and it does not silently replace Firecracker.
 
 ---
 

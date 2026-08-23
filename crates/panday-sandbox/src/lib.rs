@@ -19,6 +19,9 @@ pub enum SandboxTier {
     T2OsJail,
     /// Firecracker microVM; hardware isolation; cloud multi-tenant.
     T3MicroVm,
+    /// Hosted microVM (CodeSandbox / Together) when this host has no KVM.
+    /// Same isolation *class* as [`Self::T3MicroVm`]; different host and bill.
+    T3Remote,
 }
 
 impl SandboxTier {
@@ -30,6 +33,7 @@ impl SandboxTier {
             Self::T1Wasm => "t1_wasm",
             Self::T2OsJail => "t2_os_jail",
             Self::T3MicroVm => "t3_micro_vm",
+            Self::T3Remote => "t3_remote",
         }
     }
 }
@@ -159,6 +163,12 @@ pub enum SandboxError {
     LimitExceeded(String),
     #[error("sandbox failure: {0}")]
     Internal(String),
+    /// T3-remote is opt-in and fail-closed: no token means no hosted VM, never
+    /// a silent downgrade to T2 and never a harvested farm of free accounts.
+    #[error(
+        "T3-remote is fail-closed without a CodeSandbox token (CSB_API_KEY or vault provider codesandbox)"
+    )]
+    MissingRemoteToken,
 }
 
 pub mod exec_stream;
@@ -174,12 +184,15 @@ pub mod t2_macos;
 /// arguments and the boot sequence are protocol and argv, and both are just as wrong on a Mac as on
 /// a hypervisor host. Type-checking them on every platform is free; pretending to run them is not.
 pub mod t3;
+/// T3-remote — CodeSandbox / Together microVMs when this host has no KVM (docs/14 M14.9).
+pub mod t3_remote;
 #[cfg(target_os = "linux")]
 pub use t2_linux::T2LinuxSandbox;
 #[cfg(target_os = "macos")]
 pub use t2_macos::{SeatbeltProfile, T2MacosSandbox};
 
 pub use t0::{Access, T0Sandbox};
+pub use t3_remote::{CsbSandbox, CsbToken, CSB_API_KEY_ENV, CSB_VAULT_PROVIDER};
 
 pub type ExecStream =
     std::pin::Pin<Box<dyn futures_core::Stream<Item = Result<ExecChunk, SandboxError>> + Send>>;
