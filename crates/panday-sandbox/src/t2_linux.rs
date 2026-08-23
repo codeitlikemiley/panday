@@ -24,8 +24,8 @@
 //! | Memory ceiling | needs cgroup v2 delegation | **not enforced** |
 
 use crate::{
-    ExecSpec, ExecStream, FsPolicy, Limits, NetPolicy, Sandbox, SandboxError, SandboxHandle,
-    SandboxPolicy, SandboxTier, SessionSpec, SnapshotRef,
+    ExecSpec, ExecStream, FsPolicy, Limits, Sandbox, SandboxError, SandboxHandle, SandboxPolicy,
+    SandboxTier, SessionSpec, SnapshotRef,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -52,7 +52,10 @@ struct Session {
     workspace: PathBuf,
     staged_ro: Vec<PathBuf>,
     limits: Limits,
-    net: NetPolicy,
+    // No `net`. It was here so `build_args` could decide whether to unshare the network
+    // namespace; that decision is gone — the answer is always yes — and `NetPolicy::enforceable`
+    // guarantees at `create` that `allow` is empty, so a stored copy would record a constant.
+    // When the egress proxy exists, what belongs here is the proxy's endpoint, not the policy.
     env: Vec<(String, String)>,
 }
 
@@ -88,7 +91,6 @@ impl T2LinuxSandbox {
                 workspace: std::env::temp_dir(),
                 staged_ro: vec![],
                 limits: Limits::default(),
-                net: NetPolicy::default(),
                 env: vec![],
             };
             let mut args = build_args(&probe_session);
@@ -242,7 +244,7 @@ impl Sandbox for T2LinuxSandbox {
 
         let SandboxPolicy {
             fs,
-            net,
+            net: _,
             limits,
             env: injected_env,
         } = spec.policy;
@@ -277,7 +279,6 @@ impl Sandbox for T2LinuxSandbox {
                 workspace,
                 staged_ro: staged,
                 limits,
-                net,
                 env: injected_env,
             },
         );
