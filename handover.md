@@ -112,14 +112,15 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `0dfc84e` — *M22.5: install the air-gap kit on a machine with no network (#32)*
+**HEAD (`main`):** `34dd903` — *M11.10 + M11.11: Postgres exact cache, behind a conformance suite, with per-route TTL (#34)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit — **seven** jobs now, not six: `airgap.yml` adds a path-filtered
 `install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
 **Open:** nothing.
 
-**107 milestones total: 98 shipped ✅, 9 remaining.** M22.5 is *less* partial than it was but
-still not ✅ — see §2.1. The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
+**108 milestones total: 100 shipped ✅, 8 remaining.** Recounted programmatically, not quoted —
+M11.11 was added and closed in the same session. M22.5 is *less* partial than it was but still not
+✅ — see §2.1. The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
 were always-real items that carried no number, so they were invisible to this
 count. Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
@@ -127,7 +128,8 @@ count too.
 
 | Spec | Shipped |
 |---|---|
-| 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
+| 02-workspace, 03-protocol, 10-sdk, 11-gateway (incl. M11.10/M11.11), 12-router, 13-harness, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
+| 14-sandbox | all but M14.8 (egress proxy — numbered 2026-08-23, never built) |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial — M22.5 now needs one real disconnected box, nothing more. |
 | 25-credentials | **12 / 12 shipped** (M25.11 in PR #31). M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.11 hosted Postgres ciphertext, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). M25.11 was never blocked on "needs a Postgres" — `deploy/integration-compose.yml` has run one all along. |
@@ -197,7 +199,23 @@ catalog for a tuned GGUF (M18.2).
 
 ## 3. In-flight — nothing
 
-`main` is clean and no PR is open. The last two merges were M25.11 (#31) and M22.5 (#32).
+`main` is clean and no PR is open. Merged this session: M25.11 (#31), M22.5 (#32), the `/status`
+fix (#33), and M11.10 + M11.11 (#34).
+
+**Two bugs I shipped and then had to fix, both the same shape: a test that checked something
+adjacent to the thing it was believed to check.**
+
+`/status` (#33) answered 503 on every healthy deployment from M25.11 until #33. I raised the schema
+threshold to `>= 9` without adding `credentials` to the probe's hardcoded `IN (...)` list, which
+still named eight — so the count could never reach it. The M25.11 test I thought covered this
+queries `information_schema` for *all* public tables; it never ran the probe `/status` runs. The
+threshold is now derived from the list, and a test ties the list to the SQL.
+
+The M11.10 integration lane (#34, third commit) went red on CI while passing locally, because
+`drop_previous_schemas` deleted schemas five sibling tests were using. nextest gives each test its
+own process; `cargo test` on one file hid it. **The local gate cannot catch this class** — the
+broken sweep still passes here 4/4. The reproduction is the lane's real invocation,
+`cargo nextest run --run-ignored all -E 'package(panday-platform)'`.
 
 **M22.5 is worth reading before touching the kit.** Every property it asserted was a *string*
 property of two generated files, checked at build time, and negative. Nothing had ever run the
@@ -342,8 +360,17 @@ Scope by a fresh account (most tests), or by a schema when the table is delibera
 `crates/panday-platform/tests/pg_vault.rs` does the latter, because the credential vault is
 operator-global and so has no `account_id` to scope by.
 
-**Run it twice before believing it.** A single green pass says nothing about order dependence,
-and this lane is not in the local gate.
+**Run it the way CI runs it, not the way that is convenient.** `cargo nextest run --run-ignored
+all -E 'package(panday-platform)'` gives every test its own process, concurrently; `cargo test -p
+... --test one_file` does not, and the difference is not academic. A sweep that deleted schemas
+five sibling tests were using passed here 4/4 under `cargo test` and went red on CI — and still
+passes here under the *old* code, so the local gate cannot catch this class at all. Run it twice
+either way: one green pass says nothing about order dependence.
+
+**A shared-fixture cleanup must be able to prove what it is deleting is dead.** Matching a name
+prefix cannot: a concurrent test's schema matches too. The schema names embed a UUIDv7, whose
+leading 48 bits are a millisecond timestamp, so "from an earlier run" is a fact the name carries —
+that is what the sweep keys on now, and a name that does not parse is not ours to delete.
 
 ### 5.4 The dev stack
 
@@ -373,49 +400,56 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 
 ## 6. Suggested next steps, in order
 
-**A previous version of this section said "nothing is laptop-buildable any
-more". That was wrong**, and it was wrong because it repeated the blocked-list
-framing below instead of checking the tree. Two surveys on 2026-08-23 found the
-opposite: several "blocked" milestones have substantial laptop-buildable slices
-that had never been separated out. Do not invent rates or p95s to make the list
-look shorter — but do not assume a milestone is blocked because this file once
-said so.
+**A previous version of this section said "nothing is laptop-buildable any more". That was
+wrong**, and it was wrong because it repeated the blocked-list framing above instead of checking
+the tree. Four milestones have closed since (M25.11, M22.5's container half, M11.10, M11.11), all
+of them on this laptop, three of them previously described here as blocked. Do not invent rates or
+p95s to make the list look shorter — but do not assume a milestone is blocked because this file
+once said so.
 
-0. **Merge PR #31** (M25.11 + the billing test fix). Green on all six jobs, still a draft because
-   `gh pr ready` / `gh pr merge` were refused by the permission classifier. That closes docs/25
-   at 12/12.
+0. **M14.8 — the egress proxy.** The last numbered milestone with no hardware dependency, and the
+   only one left that is squarely buildable here. `docs/14-sandbox.md` records that the proxy "is
+   not built" and that "a per-domain allowlist needs the proxy component and is deferred with it";
+   `docs/16-plugins.md` meanwhile lets `plugin.toml` declare `net: [...]` that nothing enforces.
+   A manifest field the sandbox cannot honour is the part worth fixing first, and worth stating in
+   docs/16 either way.
 
-   It also confirmed the lesson above: this file called M25.11 blocked on "a Postgres" and the
-   integration lane had been running one the whole time.
+   Bigger than the last three: a real component, not another implementation behind an existing
+   trait. Scope it before starting.
 
-1. **M11.10 — Postgres-backed exact cache.** The most obviously unblocked numbered milestone
-   left, and cheap for the same reason M25.11 was: `sqlx`/`postgres` is a workspace dependency and
-   the integration lane already runs Postgres. `docs/11` §Exact cache has always specified
-   `hash(normalized prompt + model + params)` in an unlogged PG table; what exists is the
-   `ExactCache` trait and `MemoryExactCache` (`crates/panday-gateway/src/cache.rs`).
+1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
+   decide whether you reach for it the next day. The fixture loop already passed live. This is the
+   real critical path — M19.4/M19.5/M19.7 all need transcript volume that only daily use produces.
+2. **M22.5's last mile — one real disconnected box.** The container half shipped (#32): the kit
+   installs under `docker run --network none`, `models/` is exercised, and the support-boundary
+   table is written. What remains is an install on a genuinely disconnected machine following only
+   `INSTALL.md`, by someone who has not read this repo. The container proves the installer needs
+   no network; it does not prove the README is followable.
 
-   **Do what M25.11 did: write the trait's conformance suite first**, against the one existing
-   implementation, before adding a second. `CredentialStore` had two impls with disjoint test sets
-   and therefore an unknown contract; `ExactCache` has one impl and is about to have two, which is
-   the moment to fix the contract rather than the moment after. Eligibility, key normalisation and
-   tenant scoping are the parts with the bugs in them and are identical either way — and the key
-   being tenant-scoped by construction is M20.3's finding, so the suite must pin it.
-
-2. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
-   decide whether you reach for it the next day. The fixture loop already passed live.
+   Open and deliberately undecided: whether a released kit should default to packing an inference
+   runner. `xtask airgap --runner <path>` exists and the README adapts either way, but defaulting
+   means vendoring a third-party binary per architecture, with a licensing surface `cargo deny`
+   cannot see. Recorded in docs/18 M18.7.
 3. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
    `STAGING_DEPLOY_HOST`; set that secret plus `STAGING_SSH_KEY`, `STAGING_SMOKE_URL`,
    `STAGING_DATABASE_URL` and it runs, with the smoke suite gating the deploy. Do not rent a VM
    with the user's money unasked.
 4. **KVM (M14.5–14.6, M22.4).** Two nodes, then measure fold latency. Do not invent p95s.
-5. **Air-gap on real metal (M22.5's last mile).** Once the container test above is green, one
-   install on a genuinely disconnected machine following only `INSTALL.md`. The container proves
-   the installer needs no network; it does not prove the README is followable by a stranger.
-6. **Stripe (M17.4 leftover / Phase 3 exit).** Live key, then the HTTP client and signature check.
+5. **Stripe (M17.4 leftover / Phase 3 exit).** Live key, then the HTTP client and signature check.
    Do not add a Stripe crate without a key the user already set.
-7. **Training (M19.3, then M19.5 / M19.7).** Labelled corpus that is *not* the 50 route-bench
+6. **Training (M19.3, then M19.5 / M19.7).** Labelled corpus that is *not* the 50 route-bench
    prompts; GPU-hours; docs/19 go/no-go before GRPO spend. The `Classifier` trait and shadow
-   harness are the slot Model 1 drops into.
-8. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
+   harness are the slot Model 1 drops into. Note the three acceptance gates are still prose, not
+   code — `eval.rs` has no cost dimension at all, so M19.5's gate is currently unimplementable.
+7. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
    invention — and re-read §1.1 first. The twelve tasks removed were the destructive classes; they
    are not coming back.
+
+### Two known-flaky tests, neither fixed
+
+- `panday-sandbox::t2_macos_escape::a_nonzero_exit_is_reported_not_swallowed` fails when the
+  machine is saturated: the jail's 30s wall clock elapses, the child is killed, and a killed
+  process reports no exit code — so `Some(3)` reads as `None`. Passes 5/5 in isolation. Seen while
+  a full gate, Docker and a workspace rebuild were competing.
+- nextest reports `1 leaky` on `panday-platform` occasionally — a test leaving a handle open,
+  most likely an unclosed pool. Not a failure; CI is clean.
