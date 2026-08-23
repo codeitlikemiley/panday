@@ -13,6 +13,13 @@ on:
       - "xtask/tests/airgap_container.rs"
       - "deploy/airgap-test.Dockerfile"
       - "crates/panday-local/src/supervisor.rs"
+      # The CLI beside the supervisor, not just the supervisor: `--serve` is parsed here and the
+      # default runner is chosen here, and the container suite asserts on both.
+      - "crates/panday-local/src/main.rs"
+      # Copied verbatim into the kit's `config/` by `xtask airgap`. Globs, because the shipped
+      # file moving is as much a change to the kit as its contents changing.
+      - "crates/panday-router/policy/*.yaml"
+      - "crates/panday-router/catalog/*.yaml"
   push:
     branches: [main]
     paths:
@@ -21,6 +28,13 @@ on:
       - "xtask/tests/airgap_container.rs"
       - "deploy/airgap-test.Dockerfile"
       - "crates/panday-local/src/supervisor.rs"
+      # The CLI beside the supervisor, not just the supervisor: `--serve` is parsed here and the
+      # default runner is chosen here, and the container suite asserts on both.
+      - "crates/panday-local/src/main.rs"
+      # Copied verbatim into the kit's `config/` by `xtask airgap`. Globs, because the shipped
+      # file moving is as much a change to the kit as its contents changing.
+      - "crates/panday-router/policy/*.yaml"
+      - "crates/panday-router/catalog/*.yaml"
   workflow_dispatch:
 
 jobs:

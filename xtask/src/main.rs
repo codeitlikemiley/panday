@@ -358,6 +358,15 @@ fn airgap(args: &[String]) -> Result<ExitCode, String> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            // The supervisor spawns by hardcoded name, so a differently-named build is a runner
+            // nothing looks for. Refused here rather than discovered behind a locked door.
+            if !airgap::RUNNER_BINARIES.contains(&name.as_str()) {
+                return Err(format!(
+                    "--runner {path}: `{name}` is not a name panday-local will spawn (expected one of {:?}). \
+                     Rename the binary, or the kit ships a runner nothing looks for.",
+                    airgap::RUNNER_BINARIES
+                ));
+            }
             std::fs::copy(&source, out.join("bin").join(&name))
                 .map_err(|e| format!("copy {name}: {e}"))?;
             #[cfg(unix)]

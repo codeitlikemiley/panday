@@ -55,6 +55,14 @@ pub fn install_readme(models: &[String], runner: Option<&str>) -> String {
             .join("\n")
     };
 
+    // `panday-local` defaults to `Runner::LlamaServer` (its `main.rs`), so a kit that packs
+    // mistral.rs and prints the bare command sends the reader at a binary the box does not hold.
+    // The flag is part of the promise, not a detail.
+    let runner_flag = match runner {
+        Some("mistralrs-server") => " --runner mistralrs",
+        _ => "",
+    };
+
     let (opening, bin_line, verify_note, missing_runner) = match runner {
         Some(name) => (
             "Everything needed to run Panday on a machine with no internet connection.",
@@ -114,7 +122,7 @@ backend.
 ## Verify it, offline
 
 ```sh
-panday-local --serve ~/.panday/models/<model>.gguf --workspace . "say hello"
+panday-local --serve ~/.panday/models/<model>.gguf{runner_flag} --workspace . "say hello"
 ```
 {verify_note}
 `panday local` refuses any base URL that is not loopback, so if the machine later gains a network,
@@ -150,6 +158,19 @@ are not touched by an install (ADR-002).
 /// against this, so a file added to one and not the other is a test failure rather than a support
 /// ticket.
 pub const KIT_LAYOUT: &[&str] = &["bin/", "config/", "models/", "INSTALL.md", "install.sh"];
+
+/// The only file names `panday-local` will ever spawn, and therefore the only ones worth packing.
+///
+/// `panday_local::supervisor` runs its runner by hardcoded name (`Runner::as_str`), with no PATH
+/// normalisation and no fallback. A kit holding `bin/llama-server-v2` has a runner nothing looks
+/// for: it installs cleanly, claims completeness, and fails at the README's one verify step with
+/// `spawn llama-server: No such file or directory` — the same partial-kit failure this module
+/// exists to prevent, reached by a different door.
+///
+/// Duplicated from `supervisor.rs` rather than imported, because xtask depending on
+/// `panday-local` would pull the whole offline tier into the build tool.
+/// `a_packed_runner_is_a_name_panday_local_will_actually_spawn` is the guard.
+pub const RUNNER_BINARIES: &[&str] = &["llama-server", "mistralrs-server"];
 
 /// Commands that reach off the machine. An air-gapped installer containing any of these is either
 /// broken or lying about what it needs.
@@ -326,13 +347,40 @@ mod tests {
             !readme.contains("Everything needed to run Panday"),
             "a kit with no runner may not claim to hold everything needed:\n{readme}"
         );
+        // One spelling, not two. The source string uses a `\`-newline continuation, which strips
+        // the newline *and* the leading whitespace after it, so the rendered README always has a
+        // single space here. An `||` against a variant that cannot occur reads as defensive and
+        // is really just a branch that can never carry the assertion.
         assert!(
-            readme.contains("does not include an \ninference runner")
-                || readme.contains("does not include an inference runner"),
+            readme.contains("does not include an inference runner"),
             "the absence has to be stated up front, not inferred:\n{readme}"
         );
         // And the reader needs the way out, not just the bad news.
         assert!(readme.contains("--base-url"), "{readme}");
+    }
+
+    #[test]
+    fn a_packed_runner_is_a_name_panday_local_will_actually_spawn() {
+        // `RUNNER_BINARIES` is a copy of `supervisor::Runner::as_str`'s outputs, and a copy drifts.
+        // If that enum gains a runner, this list has to gain it too — otherwise `xtask airgap
+        // --runner` refuses a binary the offline tier would happily have used.
+        assert_eq!(RUNNER_BINARIES, &["llama-server", "mistralrs-server"]);
+    }
+
+    #[test]
+    fn a_packed_mistralrs_is_named_in_the_command_the_reader_runs() {
+        // `panday-local` defaults to llama-server (its `main.rs`), so the bare verify command
+        // spawns a binary this kit does not hold — a box that packs the right runner and still
+        // fails at its own verification step.
+        let readme = install_readme(&["m.gguf".to_string()], Some("mistralrs-server"));
+        assert!(
+            readme.contains("--serve ~/.panday/models/<model>.gguf --runner mistralrs"),
+            "a kit packing mistral.rs must say so in the command it tells the reader to run:\n{readme}"
+        );
+
+        // And the llama-server kit must not carry a flag for a runner it did not pack.
+        let llama = install_readme(&["m.gguf".to_string()], Some("llama-server"));
+        assert!(!llama.contains("--runner mistralrs"), "{llama}");
     }
 
     #[test]
