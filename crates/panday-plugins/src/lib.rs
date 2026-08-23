@@ -60,7 +60,16 @@ pub enum FsCapability {
 pub struct Capabilities {
     #[serde(default)]
     pub fs: FsCapability,
-    /// Domain allowlist for egress; empty = no network.
+    /// Domains the plugin *requests* egress to.
+    ///
+    /// **Requested, never granted.** No sandbox tier can enforce a per-domain allowlist — the
+    /// egress proxy docs/14 §policy describes is not built — and since M14.8 a `NetPolicy` naming
+    /// a host is refused outright rather than approximated. So a plugin declaring `net` gets no
+    /// network, and the consent prompt says so in those words.
+    ///
+    /// Kept in the manifest rather than rejected at parse time, so a plugin author can express the
+    /// requirement once and have it mean something the day the proxy lands. What is not kept is
+    /// the *impression* that it already does.
     #[serde(default)]
     pub net: Vec<String>,
     /// Secret names the plugin may receive (user consents at install).
@@ -216,10 +225,19 @@ impl PluginManifest {
             FsCapability::WorkspaceRw => "  filesystem: READ AND WRITE the workspace".into(),
         });
 
+        // "a capability that grants nothing in the sandbox is a lie told at the consent prompt"
+        // — the note on `requested_fs_writable` below, which this line used to be an example of.
+        // It read `network: api.github.com`, which a person would reasonably take as "this plugin
+        // may reach that host". Nothing granted it then and nothing grants it now, so the prompt
+        // has to say which of the two it means.
         if self.capabilities.net.is_empty() {
             lines.push("  network: none".into());
         } else {
-            lines.push(format!("  network: {}", self.capabilities.net.join(", ")));
+            lines.push(format!(
+                "  network: NONE — requested {} but no tier can grant it (M14.8); the plugin will \
+                 have no egress",
+                self.capabilities.net.join(", ")
+            ));
         }
 
         if self.capabilities.secrets.is_empty() {
