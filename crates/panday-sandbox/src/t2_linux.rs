@@ -24,8 +24,8 @@
 //! | Memory ceiling | needs cgroup v2 delegation | **not enforced** |
 
 use crate::{
-    ExecSpec, ExecStream, FsPolicy, Limits, NetPolicy, Sandbox, SandboxError, SandboxHandle,
-    SandboxPolicy, SandboxTier, SessionSpec, SnapshotRef,
+    ExecSpec, ExecStream, FsPolicy, Limits, Sandbox, SandboxError, SandboxHandle, SandboxPolicy,
+    SandboxTier, SessionSpec, SnapshotRef,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -52,7 +52,10 @@ struct Session {
     workspace: PathBuf,
     staged_ro: Vec<PathBuf>,
     limits: Limits,
-    net: NetPolicy,
+    // No `net`. It was here so `build_args` could decide whether to unshare the network
+    // namespace; that decision is gone — the answer is always yes — and `NetPolicy::enforceable`
+    // guarantees at `create` that `allow` is empty, so a stored copy would record a constant.
+    // When the egress proxy exists, what belongs here is the proxy's endpoint, not the policy.
     env: Vec<(String, String)>,
 }
 
@@ -88,7 +91,6 @@ impl T2LinuxSandbox {
                 workspace: std::env::temp_dir(),
                 staged_ro: vec![],
                 limits: Limits::default(),
-                net: NetPolicy::default(),
                 env: vec![],
             };
             let mut args = build_args(&probe_session);
@@ -149,9 +151,13 @@ fn build_args(s: &Session) -> Vec<String> {
     push(&mut a, "--unshare-ipc");
     push(&mut a, "--unshare-uts");
     push(&mut a, "--unshare-cgroup-try");
-    if s.net.allow.is_empty() {
-        push(&mut a, "--unshare-net");
-    }
+    // Unconditional. This used to be gated on `s.net.allow.is_empty()`, which meant a non-empty
+    // allowlist *dropped* the network namespace and handed the payload the host's whole network —
+    // the loopback services, the LAN, the cloud metadata endpoint — while reading like a
+    // restriction. `NetPolicy::enforceable` now refuses such a policy at `create`, so this branch
+    // could not be reached either way; it is gone so that a future caller cannot resurrect it by
+    // deleting the check.
+    push(&mut a, "--unshare-net");
     // The jail must not outlive us; an orphaned sandbox is an escape of a
     // different kind.
     push(&mut a, "--die-with-parent");
@@ -225,6 +231,8 @@ fn build_args(s: &Session) -> Vec<String> {
 #[async_trait::async_trait]
 impl Sandbox for T2LinuxSandbox {
     async fn create(&self, spec: SessionSpec) -> Result<SandboxHandle, SandboxError> {
+        // Before anything is spawned: a policy no tier can enforce is refused, not approximated.
+        spec.policy.net.enforceable()?;
         if spec.tier != SandboxTier::T2OsJail {
             return Err(SandboxError::Unsupported(spec.tier));
         }
@@ -236,7 +244,7 @@ impl Sandbox for T2LinuxSandbox {
 
         let SandboxPolicy {
             fs,
-            net,
+            net: _,
             limits,
             env: injected_env,
         } = spec.policy;
@@ -271,7 +279,6 @@ impl Sandbox for T2LinuxSandbox {
                 workspace,
                 staged_ro: staged,
                 limits,
-                net,
                 env: injected_env,
             },
         );

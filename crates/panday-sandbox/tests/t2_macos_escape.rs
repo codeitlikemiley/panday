@@ -439,3 +439,45 @@ async fn the_wrong_tier_is_refused() {
         SandboxError::Unsupported(SandboxTier::T3MicroVm)
     ));
 }
+
+// ── M14.8: a policy no tier can enforce is refused ───────────────────────────
+
+#[tokio::test]
+async fn a_named_host_in_the_allowlist_is_refused_not_granted() {
+    // docs/14 §policy specifies a per-domain allowlist served by an egress proxy. The proxy is not
+    // built, so this tier cannot tell `api.github.com` from anything else.
+    //
+    // The bug this pins: a non-empty allowlist used to mean "the proxy filters, so open the gate",
+    // and with no proxy that granted the payload the host's whole network — loopback services, the
+    // LAN, the cloud metadata endpoint. Asking for one host got everything. Nothing in the tree
+    // constructed such a policy, so it was never reachable; it was one caller away.
+    if !T2MacosSandbox::available() {
+        return;
+    }
+    let root = TempDir::new("allowlist");
+    let workspace = root.path().join("ws");
+    std::fs::create_dir_all(&workspace).unwrap();
+
+    let err = T2MacosSandbox::new()
+        .create(SessionSpec {
+            tier: SandboxTier::T2OsJail,
+            policy: SandboxPolicy {
+                fs: FsPolicy {
+                    workspace_rw: workspace,
+                    staged_ro: vec![],
+                },
+                net: NetPolicy {
+                    via_proxy: true,
+                    allow: vec!["api.github.com".into()],
+                },
+                ..Default::default()
+            },
+        })
+        .await
+        .expect_err("a per-domain allowlist must be refused while no proxy exists");
+
+    assert!(
+        matches!(err, SandboxError::PolicyViolation(_)),
+        "refused for the stated reason, not by accident: {err:?}"
+    );
+}

@@ -121,7 +121,9 @@ type error.
   The egress *proxy* (for a non-empty allowlist) is not built: with
   `--unshare-net` there is no network to filter, and default-deny is the
   stronger guarantee. A per-domain allowlist needs the proxy component and is
-  deferred with it.
+  deferred with it — and since M14.8, **refused** rather than deferred silently:
+  `NetPolicy::enforceable` fails `create` on a non-empty `allow`, so no tier can
+  be handed a policy it cannot honour.
 - **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite. ✅ *(shipped: `panday_sandbox::t2_macos` — `SeatbeltProfile`, `T2MacosSandbox`; 15-case suite in `crates/panday-sandbox/tests/t2_macos_escape.rs`.)*
 
   Taken **out of roadmap order**, ahead of M14.2: the roadmap assumes a Linux
@@ -309,10 +311,31 @@ type error.
   that "a per-domain allowlist needs the proxy component and is deferred with
   it" — true, and invisible, because the deferral carried no number.
 
-  The gap it leaves is worth stating plainly: `docs/16` §plugin.toml lets a
-  plugin declare `net: [api.github.com]`, and today the sandbox cannot enforce
-  that. Under `--unshare-net` there is no network at all, so default-deny holds
-  and nothing is *less* safe than it claims — but a manifest field that reads
-  like an allowlist and is in fact an all-or-nothing switch is the kind of thing
-  someone will one day rely on. Until this ships, a non-empty `net` list means
-  "this plugin wants network", not "this plugin may reach exactly these hosts".
+  **This description of the gap was wrong, and understated it.** It said a
+  non-empty `net` list was "an all-or-nothing switch". The "on" position was not
+  *no filtering within an allowed set* — it was the host's entire network. T2
+  Linux read a non-empty allowlist as "do not pass `--unshare-net`", and T2
+  macOS emitted `(allow network-outbound)` plus `(allow network-bind)`. Asking
+  for one host granted every host, the loopback services beside the sandbox, the
+  LAN and the cloud metadata endpoint — while the manifest field read like a
+  restriction.
+
+  It was never reachable: every caller in the tree passes `NetPolicy::default()`
+  (empty `allow`), and `plugin.toml`'s `net` never reached `SandboxPolicy`. It
+  was one caller away from being live, which is not a margin worth keeping.
+
+  **Shipped instead: fail closed, by name.** `--unshare-net` and
+  `(deny network*)` are now unconditional — the permissive branches are deleted
+  rather than left unreachable, so removing the check cannot resurrect them —
+  and `NetPolicy::enforceable` refuses a non-empty `allow` at `create` with a
+  `PolicyViolation` naming the field and the reason.
+
+  Refused rather than downgraded to full deny, deliberately. A caller that asked
+  for network and silently got none fails later, somewhere less obvious, as a
+  timeout with no reason attached; a caller that asked for one host and got
+  every host is the bug above. An error is the only answer that is neither.
+
+  So a non-empty `net` list now means **"this configuration is rejected"**, not
+  "this plugin wants network" and not "this plugin may reach exactly these
+  hosts". Per-domain egress remains unbuilt; when it exists, `NetPolicy::allow`
+  is where it plugs in and this refusal is what it replaces.
