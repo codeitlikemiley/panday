@@ -71,6 +71,34 @@ async fn actor(state: &AdminState, headers: &HeaderMap) -> Result<String, Respon
     }
 }
 
+/// One table per migration that creates one, which is what `/status` means by "the schema this
+/// binary carries". Not every table: `plans`, `subscriptions`, `credit_grants` and `meter_exports`
+/// ship in the same migrations as their neighbours, and naming them would make this list longer
+/// without making it detect anything the neighbour does not.
+///
+/// Adding a migration that creates a table means adding it here **and** to [`SCHEMA_PROBE`];
+/// `the_schema_probe_and_the_expected_list_cannot_drift` fails if only one of them moves.
+const EXPECTED_TABLES: &[&str] = &[
+    "accounts",
+    "ledger_entries",
+    "api_keys",
+    "balances",
+    "route_decisions",
+    "session_events",
+    "billing_events",
+    "admin_actions",
+    "credentials",
+];
+
+/// Kept as one literal rather than built from [`EXPECTED_TABLES`] because `tenancy.rs`'s M20.3 lint
+/// reads SQL out of string literals; a query assembled at runtime is a query the lint cannot see.
+const SCHEMA_PROBE: &str =
+    "-- tenant-scoping: cross-tenant — a schema check is about the deployment, not an account.
+         SELECT count(*)::bigint FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+           ('accounts','ledger_entries','api_keys','balances','route_decisions',
+            'session_events','billing_events','admin_actions','credentials')";
+
 /// `GET /status` — is this deployment healthy?
 ///
 /// Three facts and nothing else: the build, whether the database answers, and whether the schema is
@@ -86,22 +114,18 @@ async fn status(State(state): State<AdminState>) -> Response {
         .await
         .is_ok();
 
-    let migrations = match sqlx::query_scalar::<_, i64>(
-        "-- tenant-scoping: cross-tenant — a schema check is about the deployment, not an account.
-         SELECT count(*)::bigint FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-           ('accounts','ledger_entries','api_keys','balances','route_decisions',
-            'session_events','billing_events','admin_actions')",
-    )
-    .fetch_one(&state.pool)
-    .await
+    let migrations = match sqlx::query_scalar::<_, i64>(SCHEMA_PROBE)
+        .fetch_one(&state.pool)
+        .await
     {
         Ok(n) => n as usize,
         Err(_) => 0,
     };
-    // Nine tables is what this build's migrations create (0009 added `credentials`, M25.11).
-    // Fewer means the binary rolled ahead of the schema.
-    let schema_ok = migrations >= 9;
+    // Derived from the list, never written as a number beside it. A hand-kept threshold and a
+    // hand-kept name list drift the moment one is edited and the other is not — which is exactly
+    // what happened when M25.11 raised this to 9 without adding `credentials` to the probe, making
+    // `schema_ok` unsatisfiable and every `/status` a 503.
+    let schema_ok = migrations >= EXPECTED_TABLES.len();
 
     let healthy = database && schema_ok;
     let body = serde_json::json!({
@@ -356,6 +380,65 @@ fn page(title: &str, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::{EXPECTED_TABLES, SCHEMA_PROBE};
+
+    #[test]
+    fn the_schema_probe_and_the_expected_list_cannot_drift() {
+        // The bug this exists for: M25.11 raised the threshold to 9 while the probe still named
+        // eight tables, so `count(*)` could never reach it. `schema_ok` was permanently false and
+        // `/status` answered 503 on a perfectly healthy deployment — a status page that always
+        // says "degraded" is one nobody can use to tell whether anything is wrong.
+        //
+        // Nothing caught it: the only `/status` test is in the smoke suite, needs a running
+        // deployment, and accepts `200 || 503`.
+        for table in EXPECTED_TABLES {
+            assert!(
+                SCHEMA_PROBE.contains(&format!("'{table}'")),
+                "`{table}` is expected but the probe never asks for it, so it can never be counted"
+            );
+        }
+        // Only the `IN (...)` list — `table_schema = 'public'` is a quoted literal too, and
+        // counting every quote pair in the statement made this assertion off by one.
+        let in_list = SCHEMA_PROBE
+            .split_once("IN\n")
+            .or_else(|| SCHEMA_PROBE.split_once("IN ("))
+            .expect("the probe filters on an IN list")
+            .1;
+        let asked_for = in_list.matches('\'').count() / 2;
+        assert_eq!(
+            asked_for,
+            EXPECTED_TABLES.len(),
+            "the probe asks for {asked_for} tables and {} are expected — a threshold the query \
+             cannot reach makes /status permanently degraded",
+            EXPECTED_TABLES.len()
+        );
+    }
+
+    #[test]
+    fn every_migration_that_creates_a_table_is_represented() {
+        // A migration adding a table its own binary does not check for is a binary that reports a
+        // healthy schema it never verified. One name per migration is enough; naming every table
+        // would not detect anything a neighbour in the same file does not.
+        for (name, sql) in crate::pg::EMBEDDED_MIGRATIONS {
+            let creates: Vec<String> = sql
+                .to_lowercase()
+                .replace("create unlogged table", "create table")
+                .split("create table if not exists")
+                .skip(1)
+                .filter_map(|rest| rest.split_whitespace().next().map(str::to_string))
+                .collect();
+            if creates.is_empty() {
+                continue;
+            }
+            assert!(
+                creates
+                    .iter()
+                    .any(|t| EXPECTED_TABLES.contains(&t.as_str())),
+                "{name} creates {creates:?} and /status checks for none of them"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]

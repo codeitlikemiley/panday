@@ -170,4 +170,18 @@ async fn the_status_endpoint_answers_without_a_key_and_tells_the_truth() {
     assert!(!rendered.contains("account_id"), "{rendered}");
     assert!(body["version"].is_string());
     assert!(body["schema"].is_boolean());
+
+    // A reachable database and a schema this binary rejects means the deploy rolled ahead of its
+    // migrations — or that the check itself is broken, which is what happened when M25.11 raised
+    // the table threshold above the number the probe could ever return. `200 || 503` above is
+    // deliberately tolerant of a genuinely degraded deployment; this is not, because a *running*
+    // database with a schema the binary cannot accept is never a healthy steady state.
+    if body["database"] == serde_json::Value::Bool(true) {
+        assert_eq!(
+            body["schema"],
+            serde_json::Value::Bool(true),
+            "the database answers but the schema check fails — migrations behind the binary, or a \
+             schema probe that cannot pass: {body}"
+        );
+    }
 }
