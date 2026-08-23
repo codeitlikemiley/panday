@@ -76,18 +76,41 @@ async fn isolated_pool() -> sqlx::PgPool {
     pool
 }
 
-/// Schemas from earlier runs. Done at the start rather than the end so a failing run leaves its
-/// schema behind to inspect.
-async fn drop_previous_schemas() {
+/// Schemas left behind by *earlier runs*, and only those.
+///
+/// A bare `DROP SCHEMA <prefix>_% CASCADE` is not safe here: nextest runs each test in its own
+/// process, concurrently, so a sweep that matched on the prefix alone would delete the schemas the
+/// other tests in this file are actively using. That is exactly how this suite first went red on
+/// CI while passing locally, where one `cargo test` binary was slow enough to get away with it.
+///
+/// The names embed a UUIDv7, whose leading 48 bits are a millisecond timestamp, so "earlier run"
+/// is a fact the name carries rather than something to infer. An hour is far longer than any run
+/// and far shorter than the database's life. Done at the start rather than the end, so a failing
+/// run leaves its schema behind to inspect.
+async fn drop_stale_schemas(prefix: &str) {
     let admin = pg::connect(&url()).await.expect("connect");
     let names: Vec<(String,)> = sqlx::query_as(
-        "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'cache\\_%'",
+        "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE $1",
     )
+    .bind(format!("{prefix}\\_%"))
     .fetch_all(&admin)
     .await
     .expect("list schemas");
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as u64;
     for (name,) in names {
-        run_sql(&admin, format!("DROP SCHEMA {name} CASCADE")).await;
+        let stamp = name
+            .strip_prefix(prefix)
+            .and_then(|r| r.strip_prefix('_'))
+            .and_then(|hex| u64::from_str_radix(hex.get(..12)?, 16).ok());
+        // A name that does not parse is not ours to delete.
+        let Some(created_ms) = stamp else { continue };
+        if now_ms.saturating_sub(created_ms) > 60 * 60 * 1000 {
+            run_sql(&admin, format!("DROP SCHEMA {name} CASCADE")).await;
+        }
     }
     admin.close().await;
 }
@@ -113,7 +136,7 @@ fn response(text: &str) -> CachedResponse {
 #[tokio::test]
 #[ignore = "needs the integration lane (deploy/integration-compose.yml)"]
 async fn pg_exact_cache_satisfies_the_conformance_suite() {
-    drop_previous_schemas().await;
+    drop_stale_schemas("cache").await;
     panday_gateway::cache::conformance::run(
         "PgExactCache",
         Arc::new(|| {
