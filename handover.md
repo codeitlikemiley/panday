@@ -112,12 +112,14 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `7dd4616` — *docs: make the specs stop lying, and number three invisible items (#30)*
+**HEAD (`main`):** `0dfc84e` — *M22.5: install the air-gap kit on a machine with no network (#32)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
-**CI:** green on that commit.
-**Open:** PR #31 (M25.11 + a billing test fix), all six jobs green, awaiting merge — see §3.
+**CI:** green on that commit — **seven** jobs now, not six: `airgap.yml` adds a path-filtered
+`install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
+**Open:** nothing.
 
-**107 milestones total: 98 shipped ✅, 9 remaining** (counting #31, which is green but unmerged). The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
+**107 milestones total: 98 shipped ✅, 9 remaining.** M22.5 is *less* partial than it was but
+still not ✅ — see §2.1. The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
 were always-real items that carried no number, so they were invisible to this
 count. Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
@@ -127,7 +129,7 @@ count too.
 |---|---|
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
-| 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
+| 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial — M22.5 now needs one real disconnected box, nothing more. |
 | 25-credentials | **12 / 12 shipped** (M25.11 in PR #31). M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.11 hosted Postgres ciphertext, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). M25.11 was never blocked on "needs a Postgres" — `deploy/integration-compose.yml` has run one all along. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
@@ -163,7 +165,7 @@ Phase 6 not started.
 |---|---|---|
 | **M22.3** Production live + status page | `GET /status` (unauthenticated, content-free, 503 when degraded, reports build + database + schema); backup/restore drill run and recorded in docs/20 | A host to deploy to |
 | **M22.4** T3 pool on KVM + chaos test | `panday_sandbox::t3::nodes` — consistent-hash ring, `drain`; failover suite proving a session resumes on another node by folding its log (`crates/panday-harness/tests/node_failover.rs`) | KVM nodes, for the timing half |
-| **M22.5** Air-gap bundle from its README alone | `xtask::airgap` — builder *refuses* to emit a kit whose installer contains a network command; README checked against the box and against the env vars the binary actually reads | **Nothing external.** `docker run --network none` is a real air gap for every property this kit claims. What is missing is proof the install *succeeds* without a network — every asserted property today is negative, enforced at build time by `reaches_network` in `xtask/src/airgap.rs`. Also unpacked: no real GGUF has ever gone through `models/`. |
+| **M22.5** Air-gap bundle from its README alone | All of the above, **plus the install actually run**: `deploy/airgap-test.Dockerfile` + `xtask/tests/airgap_container.rs` install the kit under `docker run --network none`, 6 tests. `models/` is exercised. The support-boundary table docs/22 asked for is written. | **One real disconnected box**, installed from `INSTALL.md` by someone who has not read this repo. The container proves the installer needs no network; it does not prove the README is followable by a stranger. |
 
 ### 2.2 The 3 not started — all need GPUs and data
 
@@ -193,86 +195,27 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight — PR #31, green, awaiting merge
+## 3. In-flight — nothing
 
-https://github.com/codeitlikemiley/panday/pull/31 — branch `m25.11-pg-vault`, two commits, all
-six CI jobs green including `integration`. It is still a **draft**: `gh pr ready` and `gh pr merge`
-were both refused by the permission classifier, so marking it ready and merging is the user's to do.
+`main` is clean and no PR is open. The last two merges were M25.11 (#31) and M22.5 (#32).
 
-**Commit 1 — M25.11.** The deliverable is the *conformance suite*, not the store.
-`MemoryStore` and `SqliteStore` had disjoint test sets — each trusted for something the other had
-never been asked to do — so `CredentialStore`'s contract was unknown and a third implementation
-would have been guesswork. `panday_sdk::vault::conformance::run` is nine invariants; both existing
-stores passed unmodified, and `PgStore` then fell out as `sqlite.rs` with `$1` and `bytea`.
-Rows are operator-global on purpose, stated in `0009_credentials.sql`. Hosted KEK provisioning is
-`PANDAY_VAULT_KEY` and only that — documented in docs/25, because the fall-through *generates* a
-key and every restart would then mint one that cannot read the last one's rows.
+**M22.5 is worth reading before touching the kit.** Every property it asserted was a *string*
+property of two generated files, checked at build time, and negative. Nothing had ever run the
+thing — so nobody noticed that the README's only verification step could not execute:
+`panday-local --serve` spawns `llama-server` by name, the kit shipped no runner, and an air-gapped
+machine cannot fetch one. The box promised "everything needed to run Panday" and could not answer
+a prompt.
 
-**Commit 2 — two pre-existing integration-lane defects**, found while verifying commit 1, the
-second masked by the first. Three billing assertions read `ApplyReport`'s fleet-wide counters to
-prove a row-scoped fact, and a concurrent test's drain zeroed them. With those gone, a second test
-failed deterministically: it paged `billing::stuck()` for its own row, but that orders
-most-attempted-first and the shared database holds 231 unapplied events at up to 23 attempts, so a
-fresh row sorts past any limit. It got likelier to fail every time anyone ran the lane.
+That is now `xtask airgap --runner <path>`, a README that adapts, and a builder that refuses a
+runner name `panday-local` will never spawn. Review found two more doors into the same failure: a
+packed `mistralrs-server` was not named in the verify command (the CLI defaults to llama-server),
+and any basename was accepted.
 
-**Also fixed:** `EMBEDDED_MIGRATIONS` had no `0009`. A deployed service reads the compiled-in set,
-not `migrations/`, so it would have booted with no `credentials` table while `/status` called the
-schema unhealthy — the exact failure that list's comment says a test exists to catch.
-
-The operator track (`docs/25`) is finished end to end: pool several credentials
-per provider → measure what each has left, from both the operator's declared
-grant and the provider's own response headers → prefer the fullest → optionally
-omit a provider whose credentials are all spent → persist the lot in the sealed
-vault so the next boot finds it.
-
-**Five findings from building it, kept because each is a shape that will recur:**
-
-- **A sentinel is not a value.** `retry_after_ms == 0` means "no upstream said",
-  and a plain `min()` over a pool collapsed to it the moment one member stayed
-  silent — erasing every real wait its siblings reported. Unknowns must abstain
-  from an aggregate, never win it.
-- **Filling a field can arm dead code.** `retry_after_ms` had always been 0, so
-  the retry middleware's server-stated-delay arm had never run. Populating it
-  activated an unbounded, upstream-controlled `sleep` sitting outside the
-  timeout layer.
-- **There are three error mappers, not one** — `ingress::error_response`,
-  `messages::anthropic_error`, `gemini_api::gemini_error`. They shared no code
-  and had drifted on status. Fixing the one you happen to open reaches neither
-  Claude Code nor Antigravity. Status now comes from `ingress::status_for`, and
-  two parity tests hold the line.
-- **A guard that would not have failed before the fix is decoration.** Every
-  parity and regression test added here fails against the commit preceding it.
-  That is the bar worth keeping.
-- **Verifying on the platform you are on is not verifying.** M25.12 is
-  `cfg(target_os = "macos")` throughout, and the local gate only ever compiled
-  the macOS half — so the Linux branch reached CI having never been built. Five
-  of six jobs passed; the one that failed was the only one that had looked at it.
-  `x86_64-unknown-linux-gnu` is installed but a cross-check still fails (`ring`
-  wants `x86_64-linux-gnu-gcc`, and there is no C cross-toolchain here), so for
-  `cfg`-gated code **CI is the only authority for the other platform** — plan for
-  a round trip rather than expecting the local gate to be sufficient.
-- **A grep for the type will not find an assertion on the status.** M11.9 changed
-  which HTTP status an error maps to, and two tests asserting `503` were
-  invisible to every search for `ModelUnavailable` — one of them in
-  `panday-platform`'s smoke suite, which runs in the **integration lane, not the
-  local gate**, and would have gone red on CI after the local run said green.
-  Changing a mapping means auditing what asserts on the *output*, not only what
-  matches on the *input*.
-- **Half a measurement is not a measurement.** M25.3 kept
-  `x-ratelimit-remaining-*` and not the matching `-limit-*`, which cannot make a
-  percentage; and a 429 only proved the Codex token authenticates once a control
-  request showed a bad token returns 401 instead. Same error twice: a number
-  without its denominator, and a result without its control.
-
-**One question carries no milestone number**, written into the spec rather than
-only here: under `most_remaining`, a credential known to be at 2% is still
-preferred over an unmeasured one, because ordering ranks only what it measures
-and the threshold — not the ordering — handles emptiness (docs/25 M25.8).
-
-*(The other one is closed. `ModelUnavailable` conflating an exhausted chain with
-a model this deployment cannot serve became **M11.9**: 503 and 404 respectively.)*
-
----
+**The suite was made to fail before being trusted.** Sabotaging `install.sh` with
+`getent hosts deb.debian.org` — a real DNS lookup absent from the hand-maintained
+`NETWORK_COMMANDS` list — left the static guard blind (kit emitted, 27/27 unit tests green) while
+the container suite went 3 of 5 red. That gap is the whole reason the container test exists, and
+it is the argument for running it rather than adding another keyword to the list.
 
 ## 4. Known problems
 
@@ -445,12 +388,18 @@ said so.
    It also confirmed the lesson above: this file called M25.11 blocked on "a Postgres" and the
    integration lane had been running one the whole time.
 
-1. **M22.5 — the air gap is reproducible on this laptop.** `docker run --network none`, install
-   the kit inside it, assert it completes and the verification command works on loopback only.
-   Then pack a real small GGUF (`models/` has never been exercised) and write the per-version
-   support-boundary doc docs/22 asks for. Verify the test *can fail* — edit `install.sh` to fetch
-   something and confirm it goes red — before trusting it green. Leave the shape-3 compose/helm
-   bundle out of `KIT_LAYOUT`; widening v1 scope is a judgement, not an omission.
+1. **M11.10 — Postgres-backed exact cache.** The most obviously unblocked numbered milestone
+   left, and cheap for the same reason M25.11 was: `sqlx`/`postgres` is a workspace dependency and
+   the integration lane already runs Postgres. `docs/11` §Exact cache has always specified
+   `hash(normalized prompt + model + params)` in an unlogged PG table; what exists is the
+   `ExactCache` trait and `MemoryExactCache` (`crates/panday-gateway/src/cache.rs`).
+
+   **Do what M25.11 did: write the trait's conformance suite first**, against the one existing
+   implementation, before adding a second. `CredentialStore` had two impls with disjoint test sets
+   and therefore an unknown contract; `ExactCache` has one impl and is about to have two, which is
+   the moment to fix the contract rather than the moment after. Eligibility, key normalisation and
+   tenant scoping are the parts with the bugs in them and are identical either way — and the key
+   being tenant-scoped by construction is M20.3's finding, so the suite must pin it.
 
 2. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
