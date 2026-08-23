@@ -10,7 +10,16 @@ Brief: `GOAL.prompt.md`. Baseline `main` at `34dd903`; run started 2026-08-23.
    CI gates, and there a host proxy is unreachable under `--unshare-net` without a veth pair or a
    relay binary shipped into the jail. That is a distribution problem, not a sandbox one.
    **Answer: "fail-closed is the milestone" or "build the proxy anyway".**
-2. **Should a released air-gap kit default to packing an inference runner?** `xtask airgap
+2. **M14.9's T3-remote accepts a no-egress policy it does not honour. Intended?** `NetPolicy`'s
+   own doc says "empty ... means no egress at all", every caller passes `NetPolicy::default()`,
+   and `t3_remote.rs` does nothing to constrain network — no egress setting in the fork/start
+   payload, and its suite asserts nothing about it. It *does* call `enforceable()` (line 271), so
+   the non-empty case is refused correctly; it is the empty case that is unhonoured. A CodeSandbox
+   microVM having internet is my inference, not something I tested — no token, no live calls. Not
+   fixed: it is a milestone that merged while I was working and not one of my nine tasks.
+   **Answer: "known and fine, it is a hosted VM the operator chose" or "make T3Remote refuse, or
+   say in docs/14 that it cannot honour no-egress".**
+3. **Should a released air-gap kit default to packing an inference runner?** `xtask airgap
    --runner <path>` exists. Defaulting means vendoring a third-party binary per architecture with
    a licensing surface `cargo deny` cannot see. **Answer: yes / no.**
 
@@ -19,9 +28,9 @@ Brief: `GOAL.prompt.md`. Baseline `main` at `34dd903`; run started 2026-08-23.
 | # | Task | State | PR | Merge |
 |---|---|---|---|---|
 | 1 | Merge PR #35 (handover docs) | **shipped** | #35 | `e40d4fb` |
-| 2 | Fail-closed egress in T2 | in progress | — | — |
-| 3 | `plugin.toml` `net:` claims enforcement it lacks | scoped, not started | — | — |
-| 4 | M14.8 decide and land | blocked on question 1 | — | — |
+| 2 | Fail-closed egress in T2 | **shipped** | #36 | `54d94ce` |
+| 3 | `plugin.toml` `net:` claims enforcement it lacks | **shipped** | #38 | `1e13624` |
+| 4 | M14.8 decide and land | **blocked on question 1** | — | — |
 | 5 | Executable training gates | not started | — | — |
 | 6 | `training/` directories | not started | — | — |
 | 7 | Shadow mode behind a flag | not started | — | — |
@@ -51,8 +60,15 @@ Unrestricted `mach-lookup` remains broad and is worth tightening as hardening, o
 |---|---|---|
 | `net_policy_tests::a_named_host_is_refused_rather_than_approximated` | `enforceable()` always returns `Ok` | red — `a named host must be refused` |
 | `t2_macos_escape::a_named_host_in_the_allowlist_is_refused_not_granted` | `enforceable()` no-op + macOS allowlist branch restored | red — sandbox created a session with an unenforceable policy |
+| `plugins::a_requested_network_capability_is_not_presented_as_a_grant` | old consent line restored | red — "must say the request is not granted, not merely list it: network: api.github.com" |
 
 Both green again after restoring.
+
+## Landed alongside, not by me
+
+**M14.9 (PR #37, `2301ec8`) merged onto `main` mid-run** — a T3-remote CodeSandbox backend. It was
+not in the brief and I did not touch it. It already calls `NetPolicy::enforceable()`, so task 2's
+refusal covers it; the open question is the empty-allowlist case above.
 
 ## Environment note that will cost the next run time
 
@@ -62,6 +78,8 @@ time-sensitive tests that fail or hang under that contention.** Observed three t
   test passes in **0.05s** on a quiet machine, on this branch. Not a code defect.
 - `panday-sandbox::a_nonzero_exit_is_reported_not_swallowed` fails when the jail's 30s wall clock
   elapses under load; a killed process reports no exit code, so `Some(3)` reads as `None`.
+- Gates took **60-100 minutes** rather than the usual ~15. The load was not the build: UTM/QEMU
+  held ~127% CPU for 7+ hours alongside the other project's cargo runs. Load average peaked at 31.
 - A gate script that ran `cargo test --workspace` twice left the second copy holding the cargo
   lock, blocking an unrelated run. Fixed by running it once.
 
@@ -71,4 +89,10 @@ stall by the child, not the parent.
 ## Unverified claims
 
 - T2 Linux changes are `#[cfg(target_os = "linux")]` and **cannot be compiled on this machine**.
-  CI is the only authority for `t2_linux.rs`, per the brief's rule 12.
+  CI is the only authority for `t2_linux.rs`, per the brief's rule 12. CI caught exactly one thing
+  local checks could not: a dead field and a comment-only import, both `-D warnings` errors.
+- `handover.md` says platform-conditional code cannot be checked locally because `ring` needs
+  `x86_64-linux-gnu-gcc`. Tested: `cargo check --target x86_64-unknown-linux-gnu` does not link at
+  all, and still fails — on **`zstd-sys`** (via wasmtime), whose *build script* compiles C. The
+  blocker is a build script, not linking, and there is no local Linux verification of any kind.
+- That a CodeSandbox microVM has internet is inferred, not tested.
