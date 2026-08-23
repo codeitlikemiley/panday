@@ -8,11 +8,10 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
-**Where numbered work stands (2026-08-23):** **107 milestones, 97 shipped, 10
+**Where numbered work stands (2026-08-23):** **107 milestones, 98 shipped, 9
 open** — M0.2 (this phase-2 exit tracker), M11.10 (PG exact cache), M14.8
-(egress proxy), M19.3 / M19.5 / M19.7 (training, not started), M22.3 / M22.4 /
-M22.5 (partial: host, KVM timing, air-gapped install), and M25.11 (hosted
-Postgres ciphertext).
+(egress proxy), M19.3 / M19.5 / M19.7 (training, not started), and M22.3 /
+M22.4 / M22.5 (partial: host, KVM timing, air-gapped install).
 
 The total rose from 104 on the same day. **No work was added** — three things
 that had always existed were finally given numbers: M0.2 was being *cited* here
@@ -28,13 +27,24 @@ status, not guessed.
 **Operator track (docs/25), 2026-08-21 to 2026-08-23:** twelve milestones
 (M25.1–25.12) to pool upstream API keys and Grok/Claude/Codex subscriptions
 behind the gateway. Additive — not Phase 5/6, does not skip training or Stripe.
-**Eleven of twelve are shipped**: the vault, `panday creds`, transport headers,
-the pooled adapter, per-credential breakers and sticky sessions, operator
-ceilings and remaining %, the provider-header overlay, the `most_remaining`
-selector and its opt-in funnel, vault-as-boot-source, the Codex importer, and
-the Keychain-wrapped KEK. **M25.11** (hosted Postgres ciphertext) is the only
-one left, and it is not blocked — `sqlx`/`postgres` is already a workspace
-dependency and the integration lane already runs Postgres.
+**All twelve are shipped**: the vault, `panday creds`, transport headers, the
+pooled adapter, per-credential breakers and sticky sessions, operator ceilings
+and remaining %, the provider-header overlay, the `most_remaining` selector and
+its opt-in funnel, vault-as-boot-source, the Codex importer, the hosted
+Postgres store, and the Keychain-wrapped KEK.
+
+M25.11 closed cheaply for a reason worth repeating elsewhere: the first commit
+was a `CredentialStore` conformance suite run against the two stores that
+already existed, *before* a third was written. Those two had disjoint test sets
+— each trusted for something the other had never been asked to do — so the
+trait's contract was unknown and a third implementation would have been
+guesswork. Both passed unmodified; `PgStore` then fell out as the same
+statements with `$1` and `bytea`. The suite, not the store, was the deliverable.
+
+The track is complete as *numbered work*. What it has not had is load: the
+pool's rotation, the breakers and the ceilings have unit tests and no traffic,
+and only the Phase 1 dogfood below will tell us which of those defaults is
+wrong.
 
 ## Phase 0 — Spine (~weeks 1–4)
 

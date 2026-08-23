@@ -99,9 +99,9 @@ async fn status(State(state): State<AdminState>) -> Response {
         Ok(n) => n as usize,
         Err(_) => 0,
     };
-    // Eight tables is what this build's migrations create. Fewer means the binary rolled ahead of
-    // the schema.
-    let schema_ok = migrations >= 8;
+    // Nine tables is what this build's migrations create (0009 added `credentials`, M25.11).
+    // Fewer means the binary rolled ahead of the schema.
+    let schema_ok = migrations >= 9;
 
     let healthy = database && schema_ok;
     let body = serde_json::json!({

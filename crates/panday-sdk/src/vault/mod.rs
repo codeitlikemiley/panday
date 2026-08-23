@@ -7,6 +7,8 @@
 //!
 //! `list` never returns a secret. `Debug` of [`Kek`] and [`Secret`] is redacted.
 
+pub mod conformance;
+mod postgres;
 mod sqlite;
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -22,6 +24,7 @@ use std::sync::Mutex;
 use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
+pub use postgres::PgStore;
 pub use sqlite::SqliteStore;
 
 /// 24-byte nonce for XChaCha20-Poly1305.
@@ -624,6 +627,27 @@ mod tests {
         let again = Kek::from_hex(&k.to_hex()).unwrap();
         assert_eq!(k.to_hex(), again.to_hex());
         assert!(Kek::from_hex("dead").is_err());
+    }
+
+    #[tokio::test]
+    async fn memory_store_satisfies_the_conformance_suite() {
+        // Every invariant, not just the ones this store happened to be given
+        // tests for. `MemoryStore` had never been asked to reject a duplicate id
+        // (only SqliteStore was), and SqliteStore had never been asked about
+        // grants (only this one was) — see conformance.rs.
+        super::conformance::run(
+            "MemoryStore",
+            std::sync::Arc::new(|| {
+                // A fresh KEK per store: the factory contract is that each call
+                // shares nothing with the last, and capturing one would make the
+                // closure `FnOnce`.
+                Box::pin(async {
+                    std::sync::Arc::new(MemoryStore::new(Kek::generate()))
+                        as std::sync::Arc<dyn CredentialStore>
+                })
+            }),
+        )
+        .await;
     }
 
     #[tokio::test]

@@ -430,7 +430,62 @@ A one-credential gateway must keep today's failover behaviour.
   thing it can: that the response is not a 401. What the account can afford
   afterwards is a fact about the account, not about the importer.
 
-- **M25.11** Hosted Postgres ciphertext (same envelope). Not tenant BYOK.
+- **M25.11** Hosted Postgres ciphertext (same envelope). Not tenant BYOK. ✅
+  *(shipped: `panday_sdk::vault::PgStore`,
+  `crates/panday-platform/migrations/0009_credentials.sql`, and the conformance
+  suite below run against a real Postgres in the integration lane.)*
+
+  **Same envelope, literally.** `PgStore` reuses `seal`/`open`/`validate_put`
+  and the AAD (`id || provider || kind`) unchanged — the only differences from
+  `SqliteStore` are the ones Postgres forces: `$1` placeholders, `bytea`, and a
+  real `uuid` column. A row is the same bytes under the same key wherever it is
+  stored, which is what makes this a *store* rather than a second format.
+
+  **A conformance suite came first, and it is the reason this was cheap.**
+  `panday_sdk::vault::conformance::run` is one matrix of nine invariants that
+  every `CredentialStore` must satisfy. Before it, `MemoryStore` and
+  `SqliteStore` had *disjoint* test sets — only one was ever asked whether it
+  rejected a duplicate id, only the other whether a grant round-tripped — so
+  each was trusted for something it had never been tested for. A trait with two
+  implementations and two disjoint test sets has an unknown contract; adding a
+  third to that would have been guesswork. Both existing stores passed
+  unmodified, so the suite found no divergence — but it is now impossible for a
+  fourth store to pass by testing only what it happens to do.
+
+  **Rows are operator-global, and the migration says so.** Every other table in
+  `panday-platform` carries `account_id NOT NULL REFERENCES accounts`; this one
+  does not. That is the decision, not an oversight: these are the operator's
+  upstream credentials, spent on everyone's behalf, so there is no tenant that
+  could own them — and scoping them would imply customers may supply their own,
+  which §Non-goals rules out first. The migration carries an explicit
+  `-- tenant-scoping: DELIBERATELY NOT SCOPED` block, because the next reader
+  will otherwise assume the convention was forgotten.
+
+  **KEK provisioning on a hosted deployment — `PANDAY_VAULT_KEY`, and there is
+  no second option.** `Kek::resolve`'s remaining sources are a laptop's:
+  `~/.panday/master.key` does not exist in a container and the macOS Keychain
+  does not exist on Linux. Falling through to the last step would *generate* a
+  key, which on a hosted node means every restart mints a KEK that cannot read
+  the rows the previous one wrote — the failure looks like data corruption and
+  is not. So:
+
+  - Set `PANDAY_VAULT_KEY` to the 64-character hex of a 32-byte key, from the
+    deployment's own secret manager. It is never a database row, never a
+    committed file, and never in the same blast radius as the ciphertext it
+    unlocks — a KEK stored beside the vault is not a KEK.
+  - **Back it up before the first `put`, not after.** M25.12's warning applies
+    with more force here: a lost KEK is a permanently unreadable vault, and a
+    hosted one holds every credential the fleet runs on. There is no recovery
+    path and there is not meant to be.
+  - Rotating it is re-encryption, not a config change: read every row with the
+    old key, `put` it under the new one. Nothing here does that yet, and
+    pretending otherwise by making the variable a list would be worse.
+
+  The table lives in the platform migrations rather than being created on
+  connect, unlike `SqliteStore`: a laptop file has no deployer, a hosted
+  database does, and a process that migrates whatever database it happens to
+  open is a process that migrates the wrong one eventually.
+
 
 - **M25.12** Keychain-wrapped KEK. Ask before adding `keyring`. Skip if file+env
   is enough. ✅ *(shipped: `Kek::resolve`, `PANDAY_VAULT_KEYCHAIN`, and a
