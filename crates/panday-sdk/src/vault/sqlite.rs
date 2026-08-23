@@ -347,6 +347,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sqlite_store_satisfies_the_conformance_suite() {
+        // The same list `MemoryStore` is held to. Before this, the two stores had
+        // disjoint test sets: grants were only proven here's sibling, duplicate
+        // ids only here.
+        crate::vault::conformance::run(
+            "SqliteStore",
+            std::sync::Arc::new(|| {
+                Box::pin(async {
+                    std::sync::Arc::new(
+                        SqliteStore::in_memory(Kek::generate())
+                            .await
+                            .expect("in-memory db"),
+                    ) as std::sync::Arc<dyn CredentialStore>
+                })
+            }),
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn sqlite_round_trip_and_last4_is_clear() {
         let store = SqliteStore::in_memory(Kek::generate()).await.unwrap();
         let m = meta("xai");

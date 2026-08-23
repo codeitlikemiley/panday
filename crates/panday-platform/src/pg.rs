@@ -118,6 +118,10 @@ pub const EMBEDDED_MIGRATIONS: &[(&str, &str)] = &[
         "0008_abuse_controls.sql",
         include_str!("../migrations/0008_abuse_controls.sql"),
     ),
+    (
+        "0009_credentials.sql",
+        include_str!("../migrations/0009_credentials.sql"),
+    ),
 ];
 
 /// Apply the compiled-in migrations. What a deployed service calls.

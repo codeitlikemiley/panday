@@ -112,11 +112,12 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `fa046cc` — *M25.12: Keychain-wrapped KEK, opt-in and macOS-only (#28)*
+**HEAD (`main`):** `7dd4616` — *docs: make the specs stop lying, and number three invisible items (#30)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit.
+**Open:** PR #31 (M25.11 + a billing test fix), all six jobs green, awaiting merge — see §3.
 
-**107 milestones total: 97 shipped ✅, 10 remaining.** The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
+**107 milestones total: 98 shipped ✅, 9 remaining** (counting #31, which is green but unmerged). The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
 were always-real items that carried no number, so they were invisible to this
 count. Recount it rather than trusting this line —
 `docs/25` added twelve milestones after the "89" figure was written, and CLAUDE.md §4 quotes the
@@ -127,7 +128,7 @@ count too.
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway, 12-router, 13-harness, 14-sandbox, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial. |
-| 25-credentials | **11 / 12 shipped** — the whole laptop-buildable track. M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). Only **M25.11** (hosted Postgres ciphertext) remains, and it needs a Postgres. |
+| 25-credentials | **12 / 12 shipped** (M25.11 in PR #31). M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.11 hosted Postgres ciphertext, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). M25.11 was never blocked on "needs a Postgres" — `deploy/integration-compose.yml` has run one all along. |
 
 **The operator track (`docs/25`) is new since the last handover.** Twelve milestones to pool upstream
 API keys and Grok/Claude/Codex subscriptions behind the gateway and rotate between them. It is
@@ -162,7 +163,7 @@ Phase 6 not started.
 |---|---|---|
 | **M22.3** Production live + status page | `GET /status` (unauthenticated, content-free, 503 when degraded, reports build + database + schema); backup/restore drill run and recorded in docs/20 | A host to deploy to |
 | **M22.4** T3 pool on KVM + chaos test | `panday_sandbox::t3::nodes` — consistent-hash ring, `drain`; failover suite proving a session resumes on another node by folding its log (`crates/panday-harness/tests/node_failover.rs`) | KVM nodes, for the timing half |
-| **M22.5** Air-gap bundle from its README alone | `xtask::airgap` — builder *refuses* to emit a kit whose installer contains a network command; README checked against the box and against the env vars the binary actually reads | A machine with no network |
+| **M22.5** Air-gap bundle from its README alone | `xtask::airgap` — builder *refuses* to emit a kit whose installer contains a network command; README checked against the box and against the env vars the binary actually reads | **Nothing external.** `docker run --network none` is a real air gap for every property this kit claims. What is missing is proof the install *succeeds* without a network — every asserted property today is negative, enforced at build time by `reaches_network` in `xtask/src/airgap.rs`. Also unpacked: no real GGUF has ever gone through `models/`. |
 
 ### 2.2 The 3 not started — all need GPUs and data
 
@@ -192,9 +193,31 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight — nothing
+## 3. In-flight — PR #31, green, awaiting merge
 
-`git status` on `main` is clean and no PR is open.
+https://github.com/codeitlikemiley/panday/pull/31 — branch `m25.11-pg-vault`, two commits, all
+six CI jobs green including `integration`. It is still a **draft**: `gh pr ready` and `gh pr merge`
+were both refused by the permission classifier, so marking it ready and merging is the user's to do.
+
+**Commit 1 — M25.11.** The deliverable is the *conformance suite*, not the store.
+`MemoryStore` and `SqliteStore` had disjoint test sets — each trusted for something the other had
+never been asked to do — so `CredentialStore`'s contract was unknown and a third implementation
+would have been guesswork. `panday_sdk::vault::conformance::run` is nine invariants; both existing
+stores passed unmodified, and `PgStore` then fell out as `sqlite.rs` with `$1` and `bytea`.
+Rows are operator-global on purpose, stated in `0009_credentials.sql`. Hosted KEK provisioning is
+`PANDAY_VAULT_KEY` and only that — documented in docs/25, because the fall-through *generates* a
+key and every restart would then mint one that cannot read the last one's rows.
+
+**Commit 2 — two pre-existing integration-lane defects**, found while verifying commit 1, the
+second masked by the first. Three billing assertions read `ApplyReport`'s fleet-wide counters to
+prove a row-scoped fact, and a concurrent test's drain zeroed them. With those gone, a second test
+failed deterministically: it paged `billing::stuck()` for its own row, but that orders
+most-attempted-first and the shared database holds 231 unapplied events at up to 23 attempts, so a
+fresh row sorts past any limit. It got likelier to fail every time anyone ran the lane.
+
+**Also fixed:** `EMBEDDED_MIGRATIONS` had no `0009`. A deployed service reads the compiled-in set,
+not `migrations/`, so it would have booted with no `credentials` table while `/status` called the
+schema unhealthy — the exact failure that list's comment says a test exists to catch.
 
 The operator track (`docs/25`) is finished end to end: pool several credentials
 per provider → measure what each has left, from both the operator's declared
@@ -359,6 +382,26 @@ Three databases on three ports, deliberately: **5432** is whatever the developer
 **5433** is the disposable integration lane (tmpfs, fsync off), **5442** is `just dev` (named volumes,
 holds a minted API key). `just it` and `just dev` must never touch each other.
 
+**Assert on your own rows, never on a global count or a bounded global listing.** That database
+is shared by every test binary *and* it survives across runs, so both go stale in ways that get
+worse over time:
+
+- A **counter** from something that drains or scans the whole table belongs to whichever
+  concurrent test won the race, not to you. Three billing tests asserted `report.applied >= 1`
+  and a different one failed on each run — the event *had* applied, by someone else's drain. The
+  `>= 1` looks like it tolerates sharing; it only tolerates other tests adding *more*.
+- A **bounded listing** ordered for an operator is not a lookup. `billing::stuck(pool, 100)`
+  orders most-attempted-first, so a row created a second ago sorts to the tail behind a few
+  hundred permanently-stuck events from earlier runs. That test grew likelier to fail every time
+  anyone ran the lane, and would eventually have failed permanently.
+
+Scope by a fresh account (most tests), or by a schema when the table is deliberately unscoped —
+`crates/panday-platform/tests/pg_vault.rs` does the latter, because the credential vault is
+operator-global and so has no `account_id` to scope by.
+
+**Run it twice before believing it.** A single green pass says nothing about order dependence,
+and this lane is not in the local gate.
+
 ### 5.4 The dev stack
 
 ```sh
@@ -395,32 +438,35 @@ that had never been separated out. Do not invent rates or p95s to make the list
 look shorter — but do not assume a milestone is blocked because this file once
 said so.
 
-0. **M25.11 — hosted Postgres ciphertext. Not blocked; simply unstarted.**
-   `sqlx` with `postgres` is already in `[workspace.dependencies]`, `just dev`
-   runs Postgres on 5442, `deploy/integration-compose.yml` on 5433, and twelve
-   test files already gate on `PANDAY_TEST_DATABASE_URL`. It is roughly
-   `crates/panday-sdk/src/vault/sqlite.rs` with `$1` placeholders and `bytea`,
-   plus a migration. Rows are **operator-global**, not account-scoped —
-   "not tenant BYOK", decided 2026-08-23. Start with a `CredentialStore`
-   conformance suite (there is none; `MemoryStore` and `SqliteStore` are tested
-   separately and may already have diverged), then the impl falls out of it.
+0. **Merge PR #31** (M25.11 + the billing test fix). Green on all six jobs, still a draft because
+   `gh pr ready` / `gh pr merge` were refused by the permission classifier. That closes docs/25
+   at 12/12.
 
-   *(M25.12 shipped 2026-08-23 — `keyring` approved, macOS-only, opt-in behind
-   `PANDAY_VAULT_KEYCHAIN=1`.)*
+   It also confirmed the lesson above: this file called M25.11 blocked on "a Postgres" and the
+   integration lane had been running one the whole time.
 
-1. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
+1. **M22.5 — the air gap is reproducible on this laptop.** `docker run --network none`, install
+   the kit inside it, assert it completes and the verification command works on loopback only.
+   Then pack a real small GGUF (`models/` has never been exercised) and write the per-version
+   support-boundary doc docs/22 asks for. Verify the test *can fail* — edit `install.sh` to fetch
+   something and confirm it goes red — before trusting it green. Leave the shape-3 compose/helm
+   bundle out of `KIT_LAYOUT`; widening v1 scope is a judgement, not an omission.
+
+2. **Phase 1 dogfood (the builder, not an agent).** Use the agent on a real repo under `dev` and
    decide whether you reach for it the next day. The fixture loop already passed live.
-2. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
+3. **A host (M22.2 leftover / M22.3).** The deploy workflow is written and guarded on
    `STAGING_DEPLOY_HOST`; set that secret plus `STAGING_SSH_KEY`, `STAGING_SMOKE_URL`,
    `STAGING_DATABASE_URL` and it runs, with the smoke suite gating the deploy. Do not rent a VM
    with the user's money unasked.
-3. **KVM (M14.5–14.6, M22.4).** Two nodes, then measure fold latency. Do not invent p95s.
-4. **Air-gap (M22.5).** Install the kit on a machine with no network, following only `INSTALL.md`.
-5. **Stripe (M17.4 leftover / Phase 3 exit).** Live key, then the HTTP client and signature check.
+4. **KVM (M14.5–14.6, M22.4).** Two nodes, then measure fold latency. Do not invent p95s.
+5. **Air-gap on real metal (M22.5's last mile).** Once the container test above is green, one
+   install on a genuinely disconnected machine following only `INSTALL.md`. The container proves
+   the installer needs no network; it does not prove the README is followable by a stranger.
+6. **Stripe (M17.4 leftover / Phase 3 exit).** Live key, then the HTTP client and signature check.
    Do not add a Stripe crate without a key the user already set.
-6. **Training (M19.3, then M19.5 / M19.7).** Labelled corpus that is *not* the 50 route-bench
+7. **Training (M19.3, then M19.5 / M19.7).** Labelled corpus that is *not* the 50 route-bench
    prompts; GPU-hours; docs/19 go/no-go before GRPO spend. The `Classifier` trait and shadow
    harness are the slot Model 1 drops into.
-7. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
+8. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
    invention — and re-read §1.1 first. The twelve tasks removed were the destructive classes; they
    are not coming back.
