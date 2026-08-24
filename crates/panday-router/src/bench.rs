@@ -419,6 +419,28 @@ impl Score {
     pub fn meets_the_gate(&self, floor: f64) -> bool {
         self.accuracy() >= floor && self.confidently_wrong.is_empty()
     }
+
+    /// **M19.3's gate**: "classifier ... beats heuristic on route-bench by ≥10pt".
+    ///
+    /// [`meets_the_gate`](Self::meets_the_gate) is an absolute floor; this is the relative one the
+    /// milestone actually states, and until now it existed only as prose. A gate that is not a
+    /// function is a gate nobody can fail, which is the state docs/19 M19.1 was written against.
+    ///
+    /// `margin_points` is **percentage points**, not a fraction: M19.3 says "≥10pt", so the call
+    /// is `beats(&heuristic, 10.0)`. Accuracy is a 0..1 ratio internally and the conversion
+    /// happens here, once — passing `0.10` and meaning ten points is the obvious way to get this
+    /// wrong, so `the_margin_is_percentage_points_not_a_fraction` pins it.
+    ///
+    /// **Being confidently wrong disqualifies a challenger regardless of margin.** That is not an
+    /// extra condition bolted on: the dangerous quadrant is the thing route-bench exists to
+    /// measure (a wrong answer the router *trusts* and acts on), and a caller who checked only the
+    /// margin would ship a model that is more accurate on average and catastrophic on the cases
+    /// that matter. The incumbent's own quadrant is not consulted — the question is whether the
+    /// *challenger* is safe to deploy, not whether it is less bad than what is there.
+    pub fn beats(&self, incumbent: &Score, margin_points: f64) -> bool {
+        let gained = (self.accuracy() - incumbent.accuracy()) * 100.0;
+        gained >= margin_points && self.confidently_wrong.is_empty()
+    }
 }
 
 /// Score any classifier against the corpus. `HeuristicClassifier` today; a learned one at
@@ -447,4 +469,61 @@ pub fn score(c: &dyn Classifier) -> Score {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::Score;
+
+    fn score(correct: usize, total: usize, confidently_wrong: Vec<&'static str>) -> Score {
+        Score {
+            total,
+            correct,
+            confidently_wrong,
+            caught_by_the_gate: vec![],
+        }
+    }
+
+    #[test]
+    fn the_margin_is_percentage_points_not_a_fraction() {
+        // M19.3 says "≥10pt". Accuracy is a 0..1 ratio internally, so the obvious mistake is to
+        // pass 0.10 and mean ten points — which would let a challenger through on a *tenth* of a
+        // percentage point. The unit is pinned here because the gate is unfalsifiable by
+        // inspection: both readings compile and both look right.
+        let incumbent = score(70, 100, vec![]);
+        let exactly_ten = score(80, 100, vec![]);
+        let just_under = score(79, 100, vec![]);
+
+        assert!(
+            exactly_ten.beats(&incumbent, 10.0),
+            "10pt clears a 10pt bar"
+        );
+        assert!(!just_under.beats(&incumbent, 10.0), "9pt does not");
+    }
+
+    #[test]
+    fn a_confidently_wrong_challenger_does_not_ship_however_far_ahead() {
+        // The whole point of route-bench's dangerous quadrant. A model can be twenty points more
+        // accurate and still be the worse thing to deploy, because the router *acts* on a
+        // confident answer.
+        let incumbent = score(50, 100, vec![]);
+        let brilliant_but_reckless = score(90, 100, vec!["a-case-it-got-wrong-and-trusted"]);
+        assert!(
+            !brilliant_but_reckless.beats(&incumbent, 10.0),
+            "40pt ahead, and still not shippable"
+        );
+    }
+
+    #[test]
+    fn losing_ground_is_not_a_pass() {
+        let incumbent = score(90, 100, vec![]);
+        let worse = score(60, 100, vec![]);
+        assert!(!worse.beats(&incumbent, 10.0));
+        // And equal is not "beats" either: the milestone asks for a margin, not parity.
+        assert!(!incumbent.beats(&incumbent, 10.0));
+        assert!(
+            incumbent.beats(&incumbent, 0.0),
+            "a zero-point bar is met by parity"
+        );
+    }
 }

@@ -254,6 +254,17 @@ artifacts; CI runs eval gates nightly.
   one that emits well-formed calls with the wrong arguments — because a generator that cannot
   report a bad model as bad is not worth running against a good one.
 - **M19.3** Model 1 shipped: classifier behind `Classifier` trait beats heuristic on route-bench by ≥10pt; deployed in shadow, then live.
+
+  **The gate is a function now, though the model is not here.** `panday_router::bench::Score::beats(&incumbent, 10.0)`
+  — the margin in percentage points, as the milestone states it. It was prose until this change,
+  which meant M19.3 could not be failed even with a classifier in hand; `Score::meets_the_gate` is
+  an absolute floor and answers a different question.
+
+  A challenger that is **confidently wrong is refused regardless of margin**. That is not an extra
+  condition: the dangerous quadrant is what route-bench exists to measure, and a caller checking
+  only the margin would ship a model that is better on average and catastrophic where the router
+  acts on it. Unit pinned by test — passing `0.10` for "ten points" is the obvious way to get this
+  wrong and both readings compile.
 - **M19.4** Transcript mining pipeline with consent flags + PII scrub + provenance; first 10k-pair summarizer dataset. ✅ *(shipped: `panday_harness::mining`, `cargo xtask mine --logs <dir> --out <file>`. **The 10k-pair dataset is not here** — it needs 10k consented transcripts, and this repo has none.)*
 
   **Consent, then scrub, then provenance — and each step defaults to refusing.** The mistakes in a
@@ -285,6 +296,21 @@ artifacts; CI runs eval gates nightly.
   miner runs end to end today over a directory of logs and reports exactly why each candidate was
   dropped — which is the part that had to exist before any transcript was worth collecting.
 - **M19.5** Model 2 shipped: reduce-bench regression zero, ≥25% cheaper semantic tier than the provider cheap-pool it replaces; GGUF in catalog.
+
+  **reduce-bench had no cost dimension at all**, so "≥25% cheaper" was unmeasurable — the suite
+  scored retention and token ratio, which are not money. `Report::cost_saving` and
+  `Report::cheaper_than(0.25, incumbent_price, replacement_price)` add it.
+
+  Cost rather than tokens because the two move independently: a reducer that keeps 40% of the
+  tokens and hands them to a model at three times the price is *more* expensive, and the old
+  ratio-only scorecard would have called that a 60% win. Prices are per token and supplied by the
+  caller — `panday-harness` has no price table and must not grow one, or the gate starts drifting
+  with a catalog. A saving against an incumbent that spends nothing returns `None` rather than a
+  number.
+
+  Both halves are required, because either alone is a trap: cheapness with regressions is a
+  reducer that saves money by losing the answer, and zero regressions with no saving is a semantic
+  tier with no reason to exist.
 - **M19.6** agent-bench (50 verifiable repo tasks in T3) doubling as GRPO environment. ✅ *(shipped: `panday_harness::agent_bench` — 41 tasks, the audit, the jailed runner, and `score`. **Runs in T2, not T3**. Thirty-eight are repair classes; three (`poisoned-readme`, `poisoned-comment`, `granted-json`) are M20.1 injection canaries whose verifier fails if a relative marker file exists. Still not 50 — the twelve destructive classes stay gone.)*
 
   **This is the second attempt, and the first one destroyed a machine.** The original ran each
@@ -334,3 +360,15 @@ artifacts; CI runs eval gates nightly.
   **What is left is the model**, and T3 for the tasks that will eventually need a VM rather than a
   jail (M14.5).
 - **M19.7** Model 3 v1: SFT stage beats base on agent-bench; go/no-go review for the GRPO spend.
+
+  **`Scorecard::beats(&base)` is the gate**, on the artifact type every suite already emits, so
+  it is not agent-bench's alone.
+
+  It returns `Option<bool>`, and the `None` is the substance. Comparing a tuned run over ten tasks
+  against a base run over forty-one is how this measurement gets faked without anyone lying: both
+  numbers are real, the ratio is meaningless, and a plain `bool` would have hidden it. Refused
+  when the suites differ, when either ran nothing, or when the case counts differ — a shorter run
+  is a different corpus, not a better model. `.unwrap_or(false)` fails closed, which is what a
+  shipping decision should do.
+
+  Strictly greater, no margin: the milestone says "beats", and a tie is not one.
