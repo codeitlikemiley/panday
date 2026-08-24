@@ -141,7 +141,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = [
 # set, which is what makes the tier's promise ("only the imports we grant") true
 # for a guest that std links WASI into whether it uses it or not.
 wasmtime = "47"
-wasmtime-wasi = "47"
+wasmtime-wasi = "48"
 # ACP for editors (docs/02 dependency table, docs/16 §ACP bridge). The AEP⇄ACP
 # mapping is written against the official crate's types rather than a private
 # ACP-shaped struct, so M16.5 is transport wiring and not a second translation.
