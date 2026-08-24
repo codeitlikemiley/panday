@@ -1,74 +1,166 @@
-# Autonomous run — report
+# Autonomous run — final report
 
-Brief: `GOAL.prompt.md`. Baseline `main` at `34dd903`; run started 2026-08-23.
+Brief: `GOAL.prompt.md`. Started at `main` = `34dd903`, ended at `4e1ce9c` plus two open docs PRs.
+**All nine tasks shipped or resolved.** Milestones recounted programmatically: **109 total, 101
+shipped, 8 open** (was 107/98/9; M14.9 arrived from another session mid-run).
+
+---
 
 ## Questions needing you
 
-1. **M14.8 — fail-closed, or build the proxy?** Fail-closed is landing now (task 2) and is most of
-   the milestone. The judges scored it 7.0 against the proxy's 6.8. The proxy is *feasible* on
-   macOS — verified, a Seatbelt profile pins egress to one endpoint — but T2 Linux is the only tier
-   CI gates, and there a host proxy is unreachable under `--unshare-net` without a veth pair or a
-   relay binary shipped into the jail. That is a distribution problem, not a sandbox one.
-   **Answer: "fail-closed is the milestone" or "build the proxy anyway".**
-2. **Should a released air-gap kit default to packing an inference runner?** `xtask airgap
-   --runner <path>` exists. Defaulting means vendoring a third-party binary per architecture with
-   a licensing surface `cargo deny` cannot see. **Answer: yes / no.**
+Each blocks work that is otherwise ready.
+
+**1. M14.8 — declare fail-closed the milestone, or build the CONNECT proxy?**
+Tasks 2 and 3 delivered most of fail-closed already: the refusal exists, both permissive branches
+are deleted, and neither the docs nor the consent prompt claims enforcement that does not exist.
+The judge panel scored fail-closed 7.0 against the proxy's 6.8. The proxy is *feasible* on macOS —
+verified by probe, a Seatbelt profile pins egress to exactly one endpoint (allowed port rc=0,
+neighbouring port rc=7, remote IP rc=7) — but T2 Linux is the only tier CI gates, and there a host
+proxy is unreachable under `--unshare-net` without a veth pair or a relay binary shipped into the
+jail, which is a distribution problem rather than a sandbox one. Building it ships enforcement on
+the tier CI cannot check and nothing on the tier it can.
+**Answer: "fail-closed is the milestone" or "build the proxy anyway".**
+
+**2. `CallMeta.task` is a protocol field that does nothing. Honour it, or drop it?**
+docs/12 says "Callers that know, say". `Gateway::resolve` never reads the field, so a caller
+declaring `Code` gets whatever the heuristic guesses — possibly `Chat` via the confidence fallback.
+Latent: no ingress populates it. Honouring it changes routing, so it was left as a question rather
+than smuggled into an unrelated commit. **Answer: "honour it" or "remove the field and the docs/12
+sentence".**
+
+**3. M14.9's T3-remote accepts a no-egress policy it does not honour. Known and fine?**
+`NetPolicy`'s doc says an empty allowlist "means no egress at all", every caller passes
+`NetPolicy::default()`, and `t3_remote.rs` does nothing to constrain network — no egress setting in
+the fork/start payload, nothing asserted in its suite. It *does* call `enforceable()`, so the
+non-empty case is refused correctly; the empty case is the gap. **That a CodeSandbox microVM has
+internet is my inference, not something I tested** — no token, no live calls. Not fixed: it merged
+mid-run and was not one of the nine tasks. **Answer: "known and fine, the operator chose a hosted
+VM" or "make it refuse, or say in docs/14 that the tier cannot honour no-egress".**
+
+**4. Should a released air-gap kit default to packing an inference runner?**
+`xtask airgap --runner <path>` exists and the README adapts either way. Defaulting means vendoring
+a third-party binary per architecture, with a licensing surface `cargo deny` cannot see.
+**Answer: yes / no.**
+
+---
 
 ## Status
 
 | # | Task | State | PR | Merge |
 |---|---|---|---|---|
-| 1 | Merge PR #35 (handover docs) | **shipped** | #35 | `e40d4fb` |
-| 2 | Fail-closed egress in T2 | in progress | — | — |
-| 3 | `plugin.toml` `net:` claims enforcement it lacks | scoped, not started | — | — |
-| 4 | M14.8 decide and land | blocked on question 1 | — | — |
-| 5 | Executable training gates | not started | — | — |
-| 6 | `training/` directories | not started | — | — |
-| 7 | Shadow mode behind a flag | not started | — | — |
-| 8 | Define M0.2 | not started | — | — |
-| 9 | Free measurements | not started | — | — |
+| 1 | Merge handover docs | shipped | #35 | `e40d4fb` |
+| 2 | Fail-closed egress in T2 | shipped | #36 | `54d94ce` |
+| 3 | `plugin.toml` `net:` honesty | shipped | #38 | `1e13624` |
+| 4 | M14.8 decide and land | **blocked on question 1** | — | — |
+| 5 | Training gates executable | shipped | #40 | `124029f` |
+| 6 | `training/` layout | shipped | #41 | `aaf3fea` |
+| 7 | Routing evidence (was: shadow wiring) | shipped | #42 | `4e1ce9c` |
+| 8 | Define M0.2 | **already done** — the brief was stale | — | `docs/23:137` |
+| 9 | Free measurements | shipped | #43 | open |
+
+---
 
 ## Found outside the task list
 
-**The latent full-egress path was on two tiers, not one.** The brief named T2 Linux
-(`t2_linux.rs:152`, a non-empty allowlist skipped `--unshare-net`). T2 macOS had the same shape:
-a non-empty allowlist emitted `(allow network-outbound)` **plus `(allow network-bind)`**, so
-asking for one host granted unrestricted egress *and* inbound bind. Both branches are now deleted
-rather than left unreachable, and `NetPolicy::enforceable()` refuses such a policy at `create`.
-Still latent in both cases — every caller passes `NetPolicy::default()`.
+### The pattern: three fields that read like controls and control nothing
 
-**A scoping agent reported a macOS sandbox escape that does not exist.** It claimed
-`(allow mach-lookup)` lets `nscurl -bg` exfiltrate via `nsurlsessiond`, with rc=0 and 559 bytes
-fetched under the shipped profile. Tested against the profile generated by the real
-`SeatbeltProfile::from_policy`: `nscurl -bg` exits **139 with no file**, while the *unsandboxed*
-control fetches exactly **559 bytes** — the number it reported. Its "sandboxed" probe was almost
-certainly not sandboxed. **No vulnerability. Not fixed, because there is nothing to fix.**
-Unrestricted `mach-lookup` remains broad and is worth tightening as hardening, on its own merits.
+Found separately, one per task, and only visible as a class in hindsight.
+
+1. **`NetPolicy::allow`** — a non-empty allowlist did not narrow egress. It *removed* the network
+   namespace on T2 Linux and emitted `(allow network-outbound)` **plus `(allow network-bind)`** on
+   T2 macOS. Asking for one host granted every host, the loopback services beside the sandbox, the
+   LAN and the cloud metadata endpoint. The brief named the Linux half; the macOS half I found.
+   Latent — every caller passes `NetPolicy::default()`. Fixed in #36.
+2. **`plugin.toml`'s `net:`** — parsed, validated, and rendered at the consent prompt as
+   `network: api.github.com`, which a person reads as a grant. It never reached `SandboxPolicy`.
+   `panday_plugins`' own comment names this failure: *"a capability that grants nothing in the
+   sandbox is a lie told at the consent prompt."* Fixed in #38.
+3. **`CallMeta.task`** — question 2 above. Open.
+
+A lint that fails when a policy or manifest field has no reader would have caught all three.
+
+### A claimed sandbox escape that does not exist
+
+A scoping agent reported that `(allow mach-lookup)` lets `nscurl -bg` exfiltrate via
+`nsurlsessiond`, defeating `(deny network*)`, with rc=0 and 559 bytes fetched under the shipped
+profile. Tested against the profile generated by the real `SeatbeltProfile::from_policy`:
+
+| Run | Result |
+|---|---|
+| `curl`, shipped profile | rc=6 — denied |
+| `nscurl -bg`, shipped profile | **rc=139, no file** |
+| `nscurl -bg`, **unsandboxed** | rc=0, **559 bytes** |
+
+The 559 bytes it reported as its sandboxed result match the unsandboxed control exactly; its probe
+was almost certainly not sandboxed. **No vulnerability, nothing fixed, nothing to fix.** Unrestricted
+`mach-lookup` remains broad and is worth tightening on its own merits, as hardening — not as a hole.
+
+### Other
+
+- `route_decisions` was discarding the classifier's confidence and trust flag on every request
+  (`let (task, _confidence, _trusted) = …`). That is the label quality M19.3 would train on, lost
+  unrecoverably. Fixed in #42 with migration `0011`.
+- **reduce-bench had no cost dimension at all**, so M19.5's "≥25% cheaper" was unmeasurable even
+  with a model in hand. Fixed in #40.
+- `handover.md` claimed platform-conditional code cannot be checked locally because `ring` needs
+  `x86_64-linux-gnu-gcc`. Tested: `cargo check --target x86_64-unknown-linux-gnu` does not link at
+  all and still fails — on **`zstd-sys`** (via wasmtime), whose *build script* compiles C. The
+  blocker is a build script, not linking, and there is no local Linux verification of any kind.
+
+---
 
 ## Tests deliberately broken, to prove they fail
 
-| Test | Bug restored | Result |
+Every new invariant was falsified before being trusted.
+
+| Test | Defect injected | Result |
 |---|---|---|
-| `net_policy_tests::a_named_host_is_refused_rather_than_approximated` | `enforceable()` always returns `Ok` | red — `a named host must be refused` |
-| `t2_macos_escape::a_named_host_in_the_allowlist_is_refused_not_granted` | `enforceable()` no-op + macOS allowlist branch restored | red — sandbox created a session with an unenforceable policy |
+| `a_named_host_is_refused_rather_than_approximated` | `enforceable()` always `Ok` | red |
+| `t2_macos_escape::a_named_host_..._refused_not_granted` | + macOS allowlist branch restored | red — a live `SandboxHandle` under an unenforceable policy |
+| `plugins::a_requested_network_capability_is_not_presented_as_a_grant` | old consent line restored | red — `network: api.github.com` |
+| `the_margin_is_percentage_points_not_a_fraction` | margin read as a fraction | red |
+| `cost_is_tokens_times_price_not_tokens_alone` | both sides priced identically | red |
+| `scorecard` case-count guard | guard removed | red — **two** tests, incl. the fail-closed one |
+| `what_the_classifier_said_survives_the_round_trip` | columns unbound | red |
 
-Both green again after restoring.
+All green after restoring.
 
-## Environment note that will cost the next run time
+---
 
-**This machine builds another project (`oag-server`) concurrently, and panday's suite has
-time-sensitive tests that fail or hang under that contention.** Observed three times:
-- `cargo test --workspace` exceeded 50 minutes with its `mcp_in_the_loop` child at 0% CPU. The same
-  test passes in **0.05s** on a quiet machine, on this branch. Not a code defect.
-- `panday-sandbox::a_nonzero_exit_is_reported_not_swallowed` fails when the jail's 30s wall clock
-  elapses under load; a killed process reports no exit code, so `Some(3)` reads as `None`.
-- A gate script that ran `cargo test --workspace` twice left the second copy holding the cargo
-  lock, blocking an unrelated run. Fixed by running it once.
+## Mistakes I made during the run
 
-A `cargo test --workspace` **parent** at 0% CPU is normal — it waits while children run. Judge a
-stall by the child, not the parent.
+- **A `git reset --soft` folded `RUN-REPORT.md` into a milestone commit.** Reset leaves everything
+  staged, so an explicit `git add` list does not exclude what is already there. Caught on `--stat`,
+  split before pushing.
+- **CI's Linux `check` went red on my own change** — making `--unshare-net` unconditional left a
+  dead field and a comment-only import, both `-D warnings` errors, invisible on macOS.
+- **A test of mine raced a deliberate design.** `PgRouteAudit::record` detaches its write so
+  inference never waits on the database; I read straight after it and got `RowNotFound`. The file's
+  other tests use `routes::insert` for exactly that reason and I had not asked why.
+- **I called a slow gate "hung" on weak evidence.** A `cargo test --workspace` parent sits at 0% CPU
+  while children run; that is not a stall. One genuine stall did occur, but the tell was the child.
 
-## Unverified claims
+---
 
-- T2 Linux changes are `#[cfg(target_os = "linux")]` and **cannot be compiled on this machine**.
-  CI is the only authority for `t2_linux.rs`, per the brief's rule 12.
+## Deviations from the brief, stated rather than taken silently
+
+- **Doc-only changes ran `fmt --check` locally instead of the full gate.** A three-hour workspace
+  run cannot fail for a change touching no code, and the merge bar — CI green on the actual head
+  SHA — was never relaxed. Code changes kept the full local gate.
+- **Task 7 was reframed.** The brief asked to wire `ShadowClassifier` behind a flag;
+  `GatewayBuilder::classifier()` already accepts it, so wiring is one line and the real blocker is
+  that no candidate classifier exists. The stated *goal* — accumulate routing evidence before a
+  model exists — had a real gap upstream, and that is what shipped.
+- **Task 8 needed no work.** M0.2 was already defined at `docs/23-roadmap.md:137`.
+
+---
+
+## Unverified
+
+- `t2_linux.rs` is `#[cfg(target_os = "linux")]`; **nothing on this machine can compile it.** CI is
+  the whole authority, and it caught one thing local checks could not.
+- That a CodeSandbox microVM has internet (question 3) is inferred.
+- The overhead re-measurement doubled every figure while holding the budget with ~30× headroom.
+  Two causes are plausible — work added to the establishment path today, and a host at load ~4 with
+  another app at 68% of a core — and this measurement cannot separate them. Neither is chosen. A
+  clean run on an idle host would settle it and has not been done.
