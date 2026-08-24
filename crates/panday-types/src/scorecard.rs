@@ -124,6 +124,33 @@ impl Scorecard {
         self.cases > 0 && self.rate() >= floor
     }
 
+    /// **The relative gate**: did this run beat an earlier one on the same suite?
+    ///
+    /// [`meets`](Self::meets) answers "is it good enough"; several milestones ask "is it *better*"
+    /// and had no function to ask with — M19.7 ("SFT stage beats base on agent-bench") is the
+    /// live one. A gate that exists only in prose is a gate nobody can fail.
+    ///
+    /// **`None` means the two cannot be compared, and that is the point of the return type.**
+    /// Comparing a tuned run over ten tasks against a base run over forty-one is the way this
+    /// measurement gets faked without anyone lying: both numbers are real, the ratio is
+    /// meaningless, and a `bool` would have hidden it. Refused when the suites differ, when either
+    /// ran nothing, or when the case counts differ — a shorter run is a different corpus, not a
+    /// better model. A caller that writes `.unwrap_or(false)` fails closed, which is the right
+    /// default for a shipping decision.
+    ///
+    /// Strictly greater, with no margin: M19.7 says "beats", and a tie is not one. Where a
+    /// milestone names a margin instead — M19.3's "≥10pt" — that gate lives with its suite and
+    /// takes the margin explicitly, because the unit is the suite's business, not this type's.
+    pub fn beats(&self, base: &Scorecard) -> Option<bool> {
+        if self.suite != base.suite || self.cases == 0 || base.cases == 0 {
+            return None;
+        }
+        if self.cases != base.cases {
+            return None;
+        }
+        Some(self.passed > base.passed)
+    }
+
     /// The human rendering. Derived from the artifact, never the other way round.
     pub fn to_markdown(&self) -> String {
         let mut out = format!(
@@ -224,5 +251,63 @@ mod tests {
         assert!(md.contains("1/2 passed (50%)"));
         assert!(md.contains("quantization: Q4_K_M"));
         assert!(md.contains("missing required field `city`"));
+    }
+}
+
+#[cfg(test)]
+mod relative_gate_tests {
+    use super::Scorecard;
+
+    fn card(suite: &str, passed: u32, cases: u32) -> Scorecard {
+        let mut c = Scorecard::new(suite, "subject", "2026-08-24T00:00:00Z");
+        for i in 0..cases {
+            c.record(&format!("case{i}"), i < passed, "");
+        }
+        c
+    }
+
+    #[test]
+    fn a_shorter_run_is_not_a_better_model() {
+        // The failure this return type exists for. Both numbers are real, the comparison is not:
+        // 9/10 against 30/41 is a different corpus, not an improvement. A `bool` would have said
+        // "better" and nobody would have noticed.
+        let base = card("agent-bench", 30, 41);
+        let tuned_on_fewer = card("agent-bench", 9, 10);
+        assert_eq!(tuned_on_fewer.beats(&base), None);
+    }
+
+    #[test]
+    fn suites_do_not_cross() {
+        let a = card("agent-bench", 40, 41);
+        let b = card("route-bench", 10, 41);
+        assert_eq!(a.beats(&b), None, "same case count, different question");
+    }
+
+    #[test]
+    fn nothing_ran_is_not_a_win() {
+        let base = card("agent-bench", 0, 0);
+        let tuned = card("agent-bench", 5, 5);
+        assert_eq!(tuned.beats(&base), None);
+        assert_eq!(base.beats(&tuned), None);
+    }
+
+    #[test]
+    fn beating_is_strict() {
+        let base = card("agent-bench", 30, 41);
+        assert_eq!(card("agent-bench", 31, 41).beats(&base), Some(true));
+        assert_eq!(
+            card("agent-bench", 30, 41).beats(&base),
+            Some(false),
+            "a tie is not a win"
+        );
+        assert_eq!(card("agent-bench", 29, 41).beats(&base), Some(false));
+    }
+
+    #[test]
+    fn an_incomparable_pair_fails_closed_for_a_careless_caller() {
+        // `.unwrap_or(false)` is what a caller will write. It must mean "do not ship".
+        let base = card("agent-bench", 30, 41);
+        let mismatched = card("agent-bench", 41, 42);
+        assert!(!mismatched.beats(&base).unwrap_or(false));
     }
 }

@@ -137,6 +137,62 @@ impl Report {
         solvable.iter().filter(|r| r.with_reduction.solved).count() as f64 / solvable.len() as f64
     }
 
+    /// **M19.5's gate**: "≥25% cheaper semantic tier than the provider cheap-pool it replaces".
+    ///
+    /// Until now this suite had **no cost dimension at all** — it measured retention and token
+    /// ratio, which are not money. So the milestone could not be judged even with a model in hand,
+    /// and that is the failure docs/19 M19.1 exists to prevent: a gate stated in prose is a gate
+    /// nobody can fail.
+    ///
+    /// Cost, not tokens, because the two move independently and the milestone is about the
+    /// cheaper one *winning*. A reducer that keeps 40% of the tokens but hands them to a model at
+    /// three times the price is more expensive, and a ratio-only scorecard would call it a 60%
+    /// improvement.
+    ///
+    /// Prices are **per token**, in the same unit for both sides, and supplied by the caller —
+    /// this crate has no price table and must not grow one, or the gate starts depending on a
+    /// catalog that drifts. `panday_router`'s catalog is where a binary gets them.
+    ///
+    /// Returns `None` when the incumbent would spend nothing: a saving against zero is not a
+    /// percentage, and reporting one would be inventing a number.
+    pub fn cost_saving(&self, incumbent_price: f64, replacement_price: f64) -> Option<f64> {
+        let incumbent: f64 = self
+            .rows
+            .iter()
+            .map(|r| r.without_reduction.tokens_raw as f64 * incumbent_price)
+            .sum();
+        let replacement: f64 = self
+            .rows
+            .iter()
+            .map(|r| r.with_reduction.tokens_kept as f64 * replacement_price)
+            .sum();
+        if incumbent <= 0.0 {
+            return None;
+        }
+        Some(1.0 - replacement / incumbent)
+    }
+
+    /// M19.5, whole: zero regressions **and** at least `fraction` cheaper.
+    ///
+    /// Both halves, because either alone is a trap. Cheapness with regressions is a reducer that
+    /// saves money by losing the answer; zero regressions with no saving is a semantic tier with
+    /// no reason to exist. The milestone names both and so does this.
+    ///
+    /// `fraction` is a ratio — M19.5 says 25%, so `cheaper_than(0.25, ...)`. Unlike route-bench's
+    /// margin, which is stated in points, this one is stated as a percentage *of* the incumbent,
+    /// so a ratio is the honest shape. `the_two_gates_do_not_share_a_unit` pins the difference.
+    pub fn cheaper_than(
+        &self,
+        fraction: f64,
+        incumbent_price: f64,
+        replacement_price: f64,
+    ) -> bool {
+        self.regressions().is_empty()
+            && self
+                .cost_saving(incumbent_price, replacement_price)
+                .is_some_and(|saved| saved >= fraction)
+    }
+
     /// Mean reduction across the corpus. Reported *after* success, and never
     /// instead of it (ADR-007).
     pub fn mean_ratio(&self) -> f64 {
@@ -432,4 +488,89 @@ pub async fn run_corpus(
         });
     }
     Report { rows }
+}
+
+#[cfg(test)]
+mod cost_gate_tests {
+    use super::{Outcome, Report, Row};
+
+    fn outcome(solved: bool, raw: u32, kept: u32) -> Outcome {
+        Outcome {
+            solved,
+            tokens_raw: raw,
+            tokens_kept: kept,
+            missing_facts: vec![],
+            strategy: "test".into(),
+        }
+    }
+
+    fn report(rows: Vec<(bool, u32, bool, u32)>) -> Report {
+        Report {
+            rows: rows
+                .into_iter()
+                .enumerate()
+                .map(|(i, (s0, raw, s1, kept))| Row {
+                    scenario: format!("s{i}"),
+                    without_reduction: outcome(s0, raw, raw),
+                    with_reduction: outcome(s1, raw, kept),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn cost_is_tokens_times_price_not_tokens_alone() {
+        // The reason this dimension exists. Half the tokens at four times the price is *more*
+        // expensive, and a ratio-only scorecard would have called it a 50% win.
+        let r = report(vec![(true, 1000, true, 500)]);
+        assert_eq!(r.mean_ratio(), 0.5, "half the tokens kept");
+
+        let saving = r.cost_saving(1.0, 4.0).expect("a saving");
+        assert!(
+            saving < 0.0,
+            "keeping half the tokens at 4x the price costs more, not less: {saving}"
+        );
+    }
+
+    #[test]
+    fn a_saving_against_nothing_is_not_a_number() {
+        // An empty corpus, or one where the incumbent spends zero, has no percentage to report.
+        // Returning 0.0 or 1.0 here would be inventing a result.
+        assert_eq!(Report::default().cost_saving(1.0, 1.0), None);
+        assert_eq!(report(vec![(true, 0, true, 0)]).cost_saving(1.0, 1.0), None);
+    }
+
+    #[test]
+    fn the_gate_needs_both_halves() {
+        // Cheap but broken: 90% saved, and a scenario that was solvable is now not.
+        let broken = report(vec![(true, 1000, false, 100)]);
+        assert!(
+            !broken.cheaper_than(0.25, 1.0, 1.0),
+            "a regression is not paid for by being cheap"
+        );
+
+        // Sound but not cheap enough: no regressions, 10% saved against a 25% bar.
+        let timid = report(vec![(true, 1000, true, 900)]);
+        assert!(!timid.cheaper_than(0.25, 1.0, 1.0));
+
+        // Both: no regressions and 30% saved.
+        let good = report(vec![(true, 1000, true, 700)]);
+        assert!(good.cheaper_than(0.25, 1.0, 1.0));
+    }
+
+    #[test]
+    fn the_two_gates_do_not_share_a_unit() {
+        // route-bench's `Score::beats` takes percentage POINTS (M19.3: "≥10pt"); this one takes a
+        // FRACTION of the incumbent's spend (M19.5: "≥25% cheaper"). They read alike at a call
+        // site and mean different things, so each is pinned where it lives.
+        let r = report(vec![(true, 1000, true, 700)]);
+        assert!(
+            r.cheaper_than(0.25, 1.0, 1.0),
+            "0.25 is twenty-five percent"
+        );
+        assert!(
+            !r.cheaper_than(25.0, 1.0, 1.0),
+            "25.0 would be a 2500% saving, which nothing can meet"
+        );
+    }
 }
