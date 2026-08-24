@@ -126,6 +126,10 @@ pub const EMBEDDED_MIGRATIONS: &[(&str, &str)] = &[
         "0010_exact_cache.sql",
         include_str!("../migrations/0010_exact_cache.sql"),
     ),
+    (
+        "0011_route_confidence.sql",
+        include_str!("../migrations/0011_route_confidence.sql"),
+    ),
 ];
 
 /// Apply the compiled-in migrations. What a deployed service calls.

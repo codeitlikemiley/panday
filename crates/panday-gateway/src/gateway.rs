@@ -134,6 +134,20 @@ pub struct RouteRecord {
     /// Legs actually attempted. `1` is the healthy case; more is failover, and a rule whose
     /// attempts climb is a rule pointing at a sick provider.
     pub attempts: u32,
+    /// How sure the classifier was, 0..1.
+    ///
+    /// Recorded because `task` alone cannot be read back: a row saying `chat` means either "the
+    /// heuristic was certain" or "it guessed something at 0.2 and the gate fell back to `chat`",
+    /// and those are opposite facts about the same field. Until now both were discarded at the
+    /// call site (`let (task, _confidence, _trusted) = ...`), so every request threw away the one
+    /// signal a learned router would be trained on (M19.3).
+    ///
+    /// Content-free, like every other column here (docs/20 T5): a float and a bool say nothing
+    /// about what the user typed.
+    pub confidence: f32,
+    /// Whether the classifier's guess cleared docs/12's confidence gate. `false` means `task` is
+    /// the fallback, not the guess — which is exactly the distinction a training label needs.
+    pub trusted: bool,
 }
 
 /// Where routing decisions go. Postgres implements this (`panday_platform::routes`).
@@ -291,10 +305,18 @@ impl Gateway {
     /// here" is a routing outcome worth *recording*, not just an error to return: a rule whose pool
     /// names models this deployment has no adapter for is invisible otherwise (M12.2).
     pub fn resolve(&self, req: &ChatRequest) -> Result<Resolution, PandayError> {
-        // A declared class wins; otherwise classify, and fall back to `Chat`
-        // when the guess is not trusted (docs/12: confidence "gates whether we
-        // trust it").
-        let (task, _confidence, _trusted) = classify_or_default(
+        // Classify, and fall back to `Chat` when the guess is not trusted (docs/12: confidence
+        // "gates whether we trust it").
+        //
+        // This comment used to open "A declared class wins; otherwise classify", which the code
+        // does not do: `CallMeta.task` is never read here, so a caller that declared `Code` gets
+        // whatever the heuristic guesses. docs/12 says "Callers that know, say", so the spec and
+        // the code disagree and the spec is not the one that is wrong. Latent today — no ingress
+        // populates `CallMeta.task` — but it is a protocol field that reads like a control and
+        // controls nothing, which is the shape of defect this session has already found twice.
+        // Left as a behaviour question rather than changed here, because honouring it changes
+        // routing and belongs in its own commit.
+        let (task, confidence, trusted) = classify_or_default(
             self.classifier.as_ref(),
             req,
             panday_types::model::TaskClass::Chat,
@@ -354,6 +376,8 @@ impl Gateway {
         Ok(Resolution {
             decision,
             task,
+            confidence,
+            trusted,
             usable,
             skipped,
         })
@@ -389,6 +413,11 @@ pub struct Resolution {
     pub decision: panday_router::RouteDecision,
     /// The class the router keyed on — declared, or the classifier's guess.
     pub task: panday_types::model::TaskClass,
+    /// The classifier's confidence, and whether it cleared docs/12's gate. Always produced —
+    /// `classify_or_default` classifies every request — and carried here so the audit can record
+    /// what the classifier *said*, not only what the router used. See `RouteRecord::confidence`.
+    pub confidence: f32,
+    pub trusted: bool,
     /// Targets with an adapter behind them, in failover order.
     pub usable: Vec<Resolved>,
     /// Targets that were dropped, each with the reason. The message a caller sees when `usable` is
@@ -573,6 +602,8 @@ impl Gateway {
                 .map(|m| m.0.clone())
                 .collect(),
             chosen: None,
+            confidence: resolution.confidence,
+            trusted: resolution.trusted,
             attempts: 0,
         };
 
