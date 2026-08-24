@@ -29,6 +29,8 @@ fn record(account: uuid::Uuid, rule: &str, chosen: Option<&str>, attempts: u32) 
         ],
         chosen: chosen.map(str::to_string),
         attempts,
+        confidence: 0.82,
+        trusted: true,
     }
 }
 
@@ -137,4 +139,46 @@ async fn the_gateway_sink_writes_without_making_the_caller_wait() {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     panic!("the audit row never landed");
+}
+
+#[tokio::test]
+#[ignore = "needs the integration lane (deploy/integration-compose.yml)"]
+async fn what_the_classifier_said_survives_the_round_trip() {
+    // The point of 0011. `task` alone conflates "the heuristic was certain" with "it guessed
+    // something at 0.2 and the gate fell back", and a learned router (M19.3) is trained on exactly
+    // that distinction. Both were discarded before this, so the evidence a future model needs was
+    // being thrown away one request at a time.
+    let pool = database().await;
+    let account = pg::create_account(&pool, &format!("acme-{}", uuid::Uuid::now_v7()))
+        .await
+        .expect("account");
+
+    let mut untrusted = record(account, "rules[0]", Some("anthropic/claude-sonnet-4-5"), 1);
+    untrusted.confidence = 0.21;
+    untrusted.trusted = false;
+    let id = untrusted.request.0;
+
+    // `routes::insert`, not `PgRouteAudit::record`: the trait impl detaches the write onto a
+    // background task so inference never waits on the database, so a test that read straight after
+    // it would race the spawn — and did, once, with `RowNotFound`. What is under test here is the
+    // column round trip, not the detachment.
+    routes::insert(&pool, &untrusted).await.expect("insert");
+
+    let (confidence, trusted): (Option<f32>, Option<bool>) =
+        sqlx::query_as("SELECT confidence, trusted FROM route_decisions WHERE request_id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("the row");
+
+    assert_eq!(
+        trusted,
+        Some(false),
+        "the gate fired and the row must say so"
+    );
+    let confidence = confidence.expect("a confidence was recorded");
+    assert!(
+        (confidence - 0.21).abs() < 1e-6,
+        "confidence must survive as written, not rounded to a bucket: {confidence}"
+    );
 }

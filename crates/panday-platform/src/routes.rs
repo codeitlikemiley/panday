@@ -45,8 +45,9 @@ impl RouteAudit for PgRouteAudit {
 pub async fn insert(pool: &PgPool, record: &RouteRecord) -> Result<(), PgError> {
     sqlx::query(
         "INSERT INTO route_decisions
-             (request_id, account_id, requested, task, matched_rule, pool, chain, chosen, attempts)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             (request_id, account_id, requested, task, matched_rule, pool, chain, chosen, attempts,
+              confidence, trusted)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (request_id) DO NOTHING",
     )
     .bind(record.request.0)
@@ -58,6 +59,8 @@ pub async fn insert(pool: &PgPool, record: &RouteRecord) -> Result<(), PgError> 
     .bind(serde_json::json!(record.chain))
     .bind(record.chosen.as_deref())
     .bind(record.attempts as i32)
+    .bind(record.confidence)
+    .bind(record.trusted)
     .execute(pool)
     .await
     .map_err(|e| PgError::Query(e.to_string()))?;
