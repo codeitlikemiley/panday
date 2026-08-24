@@ -160,6 +160,24 @@ training/                    # Python uv project — the ONE Python island (ADR-
 └── registry.py              # artifact registry client → catalog entries (18)
 ```
 
+**What is actually here, because the plan above is one of four and the divergence is the
+interesting part.** Four empty directories would satisfy this diagram and tell a reader nothing;
+they are deliberately not created.
+
+| Planned | Reality |
+|---|---|
+| `datasets/` | **Built, in Rust.** `panday_harness::mining` + `cargo xtask mine --logs <dir> --out <file>` (M19.4). It reads panday's own JSONL event logs, whose shape is a Rust type with golden fixtures; a Python re-implementation would be a second parser for a format that moves, and the two would disagree the first time an event gained a field. The consent flags, PII scrub and provenance the milestone asks for live there. |
+| `evals/` | **As planned** — `training/evals/json_discipline.py`, inspect-ai through the gateway. |
+| `recipes/` | **Unwritten.** unsloth/trl configs are per base model, and no base model is chosen. Writing them now would be committing hyperparameters for a model nobody has picked, on hardware nobody has rented. |
+| `export/` | **Unwritten, except signing, which is in Rust.** `panday models sign` signs the model index (`sign_index`), so the trust half of the pipeline exists. Merge / GGUF convert / imatrix / quantize all need a trained model on disk. |
+| `registry.py` | **Unwritten.** The catalog it would write to is `crates/panday-router/catalog/*.yaml`, read by Rust, and the signed index is already Rust's. Whether a Python client is the right shape is a question to answer when there is an artifact to register — not before. |
+
+The pattern worth naming: **the deterministic, format-owning half migrated to Rust and the
+model-shaped half is waiting on a model.** ADR-001's boundary ("Rust serves, Python trains") still
+holds; the line simply sits further into Python than this diagram drew it. Anything above marked
+unwritten is blocked on a base-model choice and GPU hours, and none of it is faked in the
+meantime.
+
 Format: OpenAI-style `messages` JSONL everywhere (tool-call turns preserved
 natively — never flattened to text). Dataset builders emit provenance +
 license fields per example; `semhash` dedup + n-gram decontam runs in the
