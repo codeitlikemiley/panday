@@ -368,12 +368,37 @@ in-process, not a product surface. The gateway is stateless apart from cache
 - **M11.6** Exact cache + circuit breakers; p99 overhead budget: <3ms non-streaming, <1ms per stream frame at 100 rps on one core. ✅ *(shipped: `panday_gateway::cache`, `panday_gateway::circuit`, wired in `Gateway::chat`; `tests/cache_and_breakers.rs`, `tests/overhead.rs`.)*
 
   **Measured, release build, single-threaded runtime, 1000 back-to-back requests
-  (harder than the specified 100 rps — no idle time between them):**
-  establishment p50 21.6µs / p99 52.0µs against the 3ms budget; per stream frame
-  p50 41ns / p99 1.17µs against the 1ms budget. The benchmark is `#[ignore]`d
-  because a wall-clock assertion on shared CI hardware fails for reasons
-  unrelated to the code, and a flaky test gets muted — which is worse than one
-  that must be run deliberately.
+  (harder than the specified 100 rps — no idle time between them).** The
+  benchmark is `#[ignore]`d because a wall-clock assertion on shared CI hardware
+  fails for reasons unrelated to the code, and a flaky test gets muted — which is
+  worse than one that must be run deliberately.
+
+  | | 2026-08-20 | 2026-08-24 | budget |
+  |---|---|---|---|
+  | establishment p50 | 21.6µs | 49.6µs | — |
+  | establishment p99 | 52.0µs | 99.1µs | 3ms |
+  | per stream frame p50 | 41ns | 167ns | — |
+  | per stream frame p99 | 1.17µs | 2.21µs | 1ms |
+
+  **The budget holds with roughly thirty times the headroom, and the figures
+  doubled.** Both are true and the second is not dismissed by the first: a number
+  that moves 2x is worth noticing while the margin is large, because that is the
+  only time it is cheap to.
+
+  **What the doubling cannot be attributed to, honestly.** Two things changed
+  between the runs and this measurement cannot separate them. The gateway gained
+  real work on the establishment path — `ExactCache` became async with a bounded
+  lookup (M11.10), per-route TTL resolution (M11.11), and the classifier's
+  confidence now rides to the audit (M12.5 groundwork). And the host was not
+  quiet: load average ~4 with another application at ~68% of a core, where the
+  2026-08-20 figures came from an idle machine. Attributing the change to either
+  would be inventing a cause, so both are named and neither is chosen. A clean
+  re-measurement on an idle host is what would settle it, and it has not been
+  done.
+
+  The older figures are kept rather than overwritten. A single number in a doc
+  reads as "this is what it is"; two dated ones read as "this is how it moves",
+  which is the more useful thing to know about a budget with this much room.
 
   **The exact cache is not Postgres yet.** The spec names a PG unlogged table and
   **no milestone owns building one** — this previously cited "M3.5", which is
