@@ -48,6 +48,11 @@ acceptance criteria. Each is sized for one focused session.
   cargo clippy --workspace --all-targets -- -D warnings
   ```
   Also `cargo fmt --all --check` — CI gates on it (`.github/workflows/ci.yml`).
+  **One exception:** a commit touching *only* `docs/`, `handover.md` or
+  `RUN-REPORT.md` runs `cargo fmt --all --check` locally, and CI green on the
+  actual head SHA stays the merge bar. No code, test or CI job reads those paths.
+  The exception names paths, not the `.md` extension — tests load `.md` fixtures
+  (the `SKILL.md` files), so any other `.md` change keeps the full gate.
 - The commit message names the milestone, e.g. `M11.1: openai_compat adapter`.
 - A milestone is done when its stated acceptance criteria hold — not when the
   code merely compiles.
