@@ -118,13 +118,14 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `4e1ce9c` — *M12.5 groundwork: record what the classifier said (#42)*
+**HEAD (`main`):** `6c3159b` — *deps: clear three RustSec advisories — rustls 0.23.45, wasmtime 47.0.4 (#54)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit — **seven** jobs now, not six: `airgap.yml` adds a path-filtered
 `install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
-**Open:** #43 (overhead re-measurement) and #44 (this handover).
+**Open:** #43 (overhead re-measurement), #44 (this handover), #53 (M14.8 declared, M14.10
+specified), and Dependabot's #46–#49 and #52, which are undecided.
 
-**109 milestones total: 101 shipped ✅, 8 remaining** at `4e1ce9c` — **110 / 102 / 8** once the M14.8
+**109 milestones total: 101 shipped ✅, 8 remaining** at `6c3159b` — **110 / 102 / 8** once the M14.8
 PR lands (M14.8 closes, M14.10 is added). Recounted programmatically, not quoted.
 M14.9 (T3-remote CodeSandbox) landed from another session mid-run; M11.11 was added and closed
 earlier. M22.5 is *less* partial than it was but still not
@@ -207,7 +208,8 @@ catalog for a tuned GGUF (M18.2).
 
 ## 3. In-flight — two docs PRs; one decision waiting on the user
 
-`main` is at `4e1ce9c`. Open: **#43** (overhead re-measurement) and this one. **#39 was closed as
+`main` is at `6c3159b`. Open: **#43** (overhead re-measurement), **#53** (M14.8) and this one.
+**#54** cleared three RustSec advisories that had turned `cargo deny` red on every PR. **#39 was closed as
 superseded** — its content is folded into `RUN-REPORT.md`.
 
 ### M14.8 is decided; M14.10 is next
