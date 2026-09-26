@@ -301,7 +301,8 @@ offline via ed25519 pubkey baked into the binary.
   will fail at spawn, and gives the `--base-url` attach path, which needs none. Both directions are
   tested.
 
-  **Open, and deliberately not decided here:** whether a released kit should default to packing a
-  runner. Doing so means vendoring a third-party binary per architecture, with a licensing surface
-  `cargo deny` does not see. Leaving it out means every air-gapped customer must carry one through
-  the door themselves — which is now at least *said*, instead of being found behind it.
+  **Decided 2026-09-26 by the builder: a released kit does not pack a runner by default.**
+  `--runner <path>` stays opt-in. Packing one by default would mean vendoring a third-party binary
+  per architecture, with a licensing surface `cargo deny` does not see. So every air-gapped customer
+  carries a runner through the door themselves, and `INSTALL.md` says so in its opening line
+  instead of letting them find out at spawn.

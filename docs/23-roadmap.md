@@ -8,9 +8,11 @@ one week of evenings.
 
 **The one rule: do not start phase N+1 to avoid finishing phase N.**
 
-**Where numbered work stands (2026-09-26):** **110 milestones, 102 shipped, 8
+**Where numbered work stands (2026-09-26):** **112 milestones, 102 shipped, 10
 open** — M0.2 (this phase-2 exit tracker), M14.10 (the egress proxy — Phase 1
-work, since M14.2 names it), M19.3 / M19.5 / M19.7 (training, not started), and
+work, since M14.2 names it), M12.6 (honour `CallMeta.task`) and M14.11
+(T3-remote states it cannot enforce no-egress), both numbered from the
+autonomous run's questions, M19.3 / M19.5 / M19.7 (training, not started), and
 M22.3 / M22.4 / M22.5 (partial: host, KVM timing, one real disconnected box).
 M14.8 (fail-closed net allowlist, declared the milestone 2026-09-26) and M14.9
 (T3-remote CodeSandbox) shipped; T3 Firecracker on real KVM is still M14.5/M14.6 leftover

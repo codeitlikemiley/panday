@@ -452,3 +452,23 @@ type error.
   5. A non-empty `allow` on a tier without a proxy, or on T2 Linux without a relay path, is still
      refused at `create`.
   6. Each new must-fail case is shown red against a deliberately broken proxy before it is trusted.
+
+- **M14.11** T3-remote says in code that it cannot enforce no-egress.
+
+  M14.9's `CsbSandbox` accepts `NetPolicy::default()`, whose doc says an empty allowlist "means no
+  egress at all". A CodeSandbox guest has whatever network CodeSandbox gives it, and §Tiers
+  already says we cannot honour default-deny on a guest we do not jail. So the prose admitted it
+  and the type did not. (That the guest has internet is inferred, not tested: no token, no live
+  calls.) Decided by the builder on 2026-09-26 (RUN-REPORT question 3): keep the tier working,
+  and make the gap impossible to miss.
+
+  **Acceptance:**
+  1. `NetPolicy` gains an explicit acknowledgement that egress is not enforced (default: not
+     acknowledged). `CsbSandbox::create` refuses a policy without it, with a `PolicyViolation`
+     that names the tier and the reason.
+  2. With the acknowledgement set, the tier works exactly as M14.9 shipped it.
+  3. Every other tier ignores the acknowledgement. Setting it never weakens T2 or T3, pinned by a
+     test on each tier CI can run.
+  4. The operator path that constructs `CsbSandbox` sets it deliberately, and the M14.9 docs above
+     say so.
+  5. The refusal test goes red when the check is removed.
