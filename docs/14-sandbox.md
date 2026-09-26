@@ -138,7 +138,7 @@ type error.
   stronger guarantee. A per-domain allowlist needs the proxy component and is
   deferred with it — and since M14.8, **refused** rather than deferred silently:
   `NetPolicy::enforceable` fails `create` on a non-empty `allow`, so no tier can
-  be handed a policy it cannot honour.
+  be handed a policy it cannot honour. The proxy itself is **M14.10**.
 - **M14.3** T2 macOS via Seatbelt profile generation; parity subset of escape suite. ✅ *(shipped: `panday_sandbox::t2_macos` — `SeatbeltProfile`, `T2MacosSandbox`; 15-case suite in `crates/panday-sandbox/tests/t2_macos_escape.rs`.)*
 
   Taken **out of roadmap order**, ahead of M14.2: the roadmap assumes a Linux
@@ -320,7 +320,14 @@ type error.
   has no account, and a loop that needed a billing backend to run a tool would make the offline tier
   impossible.
 
-- **M14.8** Egress proxy, so a non-empty `net` allowlist means something.
+- **M14.8** Fail closed on a non-empty `net` allowlist; the proxy moves to M14.10. ✅ *(shipped:
+  `NetPolicy::enforceable`, unconditional `--unshare-net` and `(deny network*)` (#36); `plugin.toml`'s
+  `net:` shown as requested, not granted (#38). Declared the milestone by the builder on 2026-09-26.)*
+
+  **Retitled.** This was numbered as "Egress proxy, so a non-empty `net` allowlist means something".
+  Two options were scoped — fail closed, or build the proxy — and fail closed landed first as tasks
+  of an autonomous run. The builder declared that the milestone and kept the proxy as its own
+  number, M14.10, so neither is half-landed under one ID.
 
   Carved out of M14.2's note, which records that the proxy "is not built" and
   that "a per-domain allowlist needs the proxy component and is deferred with
@@ -352,8 +359,8 @@ type error.
 
   So a non-empty `net` list now means **"this configuration is rejected"**, not
   "this plugin wants network" and not "this plugin may reach exactly these
-  hosts". Per-domain egress remains unbuilt; when it exists, `NetPolicy::allow`
-  is where it plugs in and this refusal is what it replaces.
+  hosts". Per-domain egress is M14.10; `NetPolicy::allow` is where it plugs in
+  and this refusal is what it replaces, on the tiers that wire a proxy.
 
 - **M14.9** T3-remote: CodeSandbox / Together SDK microVMs as an optional
   hosted backend when the host has no KVM. ✅ *(shipped:
@@ -387,3 +394,61 @@ type error.
   weakening T2/T3 isolation tests. T3 Firecracker still refuses without
   `/dev/kvm` and does not silently become this backend — the operator
   constructs `CsbSandbox` when they want remote.
+
+- **M14.10** Egress proxy: a non-empty `net` allowlist is enforced on T2, per domain, and every
+  tunnel is recorded.
+
+  The component §Policy describes and M14.2 deferred: one Rust proxy, in-process, reused by every
+  tier that can route through it. **No new crates** — tokio and the existing HTTP stack are enough
+  for `CONNECT`.
+
+  **Shape.**
+  - **HTTP `CONNECT` only in v1.** SOCKS5 (named in §Mechanism notes) and plain-HTTP forwarding
+    are not built and are refused by name, not ignored. Nearly every client that honours
+    `HTTPS_PROXY` speaks `CONNECT`, and TLS stays end to end — the proxy never sees plaintext.
+  - **The proxy resolves, not the guest.** The allowlist is matched on the `CONNECT` host
+    (exact name, or a `*.` suffix pattern); the port must be 443 unless the pattern names one. The
+    proxy resolves the name and connects to *that* address — it never re-resolves.
+  - **Resolved addresses are checked, not just names.** Loopback, RFC 1918, link-local (including
+    `169.254.169.254`), CGNAT, multicast and unspecified addresses are refused even for an
+    allowlisted name. That is the DNS-rebind case the escape suite names. An IP-literal `CONNECT`
+    is refused unless that literal is itself on the allowlist.
+  - **Bounded.** Connect timeout, idle timeout, and a cap on concurrent tunnels per session, each
+    visible in a metric.
+  - **Recorded.** Every tunnel, allowed or refused, produces a record of (session, tool, domain,
+    bytes up, bytes down, verdict) through a sink trait with a discarding default, as
+    `SandboxUsageSink` does. Exfiltration attempts are *visible*.
+
+  **Reaching it from each tier.**
+  - **T2 macOS:** Seatbelt keeps `(deny network*)` and adds exactly one
+    `(allow network-outbound (remote ip "localhost:<port>"))` for the proxy port — the
+    single-endpoint pin was verified by probe on 2026-08-23 (allowed port rc=0, neighbouring port
+    rc=7, remote IP rc=7). `HTTPS_PROXY` / `HTTP_PROXY` are set in the jail's env.
+  - **T2 Linux:** `--unshare-net` stays unconditional; the jail keeps loopback only. The proxy
+    listens on a unix socket bind-mounted into the jail, and a **relay inside the jail** listens on
+    `127.0.0.1:<port>` and copies bytes to that socket. **The relay is the host binary itself,
+    re-executed** through a hidden entry point and bind-mounted read-only — so there is no second
+    artifact to install, and `cargo install` and `deploy/Dockerfile` keep working. The library
+    takes the relay's path from its caller; each binary that constructs a T2 sandbox passes its own
+    (libraries take traits, binaries do the wiring). A T2 Linux sandbox built without a relay
+    path keeps refusing a non-empty allowlist by name.
+  - **T1, T3, T3-remote: unchanged.** T1 links no sockets. T3 needs KVM to test. T3-remote cannot
+    jail a guest it does not own. Each keeps the M14.8 refusal.
+
+  `NetPolicy::enforceable` becomes tier-aware: a non-empty `allow` is accepted only by a tier with
+  a proxy wired, and refused everywhere else exactly as today.
+
+  **Plugins.** `plugin.toml`'s `net:` reaches `SandboxPolicy.net`, and the consent prompt says
+  *granted* only on a tier that enforces it; elsewhere it still says *requested* (docs/16).
+
+  **Acceptance — the escape suite, on both T2 tiers (Linux in CI):**
+  1. An allowlisted host is reachable through the proxy (positive control; skips itself when the
+     host has no egress, as the existing network test does).
+  2. A non-allowlisted domain is refused, and the refusal is recorded.
+  3. A direct connection that bypasses the proxy (to an IP, and to a non-proxy loopback port)
+     fails.
+  4. An allowlisted name that resolves to `127.0.0.1` or `169.254.169.254` is refused (resolver
+     seam, so this needs no real DNS).
+  5. A non-empty `allow` on a tier without a proxy, or on T2 Linux without a relay path, is still
+     refused at `create`.
+  6. Each new must-fail case is shown red against a deliberately broken proxy before it is trusted.
