@@ -373,25 +373,27 @@ in-process, not a product surface. The gateway is stateless apart from cache
   fails for reasons unrelated to the code, and a flaky test gets muted — which is
   worse than one that must be run deliberately.
 
-  | | 2026-08-20 | 2026-08-24 | budget |
+  | | 2026-08-19 | 2026-08-24 | budget |
   |---|---|---|---|
   | establishment p50 | 21.6µs | 49.6µs | — |
   | establishment p99 | 52.0µs | 99.1µs | 3ms |
   | per stream frame p50 | 41ns | 167ns | — |
   | per stream frame p99 | 1.17µs | 2.21µs | 1ms |
 
-  **The budget holds with roughly thirty times the headroom, and the figures
-  doubled.** Both are true and the second is not dismissed by the first: a number
+  **The budget holds — roughly 30x headroom at establishment p99 and 450x per
+  frame — and the figures doubled.** Both are true and the second is not dismissed by the first: a number
   that moves 2x is worth noticing while the margin is large, because that is the
   only time it is cheap to.
 
   **What the doubling cannot be attributed to, honestly.** Two things changed
   between the runs and this measurement cannot separate them. The gateway gained
-  real work on the establishment path — `ExactCache` became async with a bounded
-  lookup (M11.10), per-route TTL resolution (M11.11), and the classifier's
-  confidence now rides to the audit (M12.5 groundwork). And the host was not
+  real work on the establishment path — `ExactCache` became async and every
+  lookup now runs under a `tokio::time::timeout` (M11.10), and cache writes
+  resolve a per-route TTL (M11.11). (M12.5 groundwork is on the path too, but the
+  benchmark keeps the default `DiscardRoutes`, so it adds two fields to a record
+  that is thrown away — too little to be a candidate.) And the host was not
   quiet: load average ~4 with another application at ~68% of a core, where the
-  2026-08-20 figures came from an idle machine. Attributing the change to either
+  2026-08-19 figures came from an idle machine. Attributing the change to either
   would be inventing a cause, so both are named and neither is chosen. A clean
   re-measurement on an idle host is what would settle it, and it has not been
   done.
