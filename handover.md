@@ -118,15 +118,15 @@ session's TCC grants, which made the repository unreadable for hours.
 
 ## 2. Where the project stands
 
-**HEAD (`main`):** `6c3159b` — *deps: clear three RustSec advisories — rustls 0.23.45, wasmtime 47.0.4 (#54)*
+**HEAD (`main`):** `41c67bb` — *docs(handover): the autonomous run is done (#44)*
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit — **seven** jobs now, not six: `airgap.yml` adds a path-filtered
 `install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
-**Open:** #43 (overhead re-measurement), #44 (this handover), #53 (M14.8 declared, M14.10
-specified), and Dependabot's #46–#49 and #52, which are undecided.
+**Open:** only Dependabot's #46–#49 and #52, which are undecided. Two are major bumps
+(wasmtime 48, chacha20poly1305 0.11), which change what `docs/02` pins.
 
-**109 milestones total: 101 shipped ✅, 8 remaining** at `6c3159b` — **110 / 102 / 8** once the M14.8
-PR lands (M14.8 closes, M14.10 is added). Recounted programmatically, not quoted.
+**112 milestones total: 102 shipped ✅, 10 remaining.** Recounted programmatically, not quoted.
+M14.8 closed (#53); M14.10, M12.6 and M14.11 were numbered on 2026-09-26 from the run's questions.
 M14.9 (T3-remote CodeSandbox) landed from another session mid-run; M11.11 was added and closed
 earlier. M22.5 is *less* partial than it was but still not
 ✅ — see §2.1. The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
@@ -137,8 +137,9 @@ count too.
 
 | Spec | Shipped |
 |---|---|
-| 02-workspace, 03-protocol, 10-sdk, 11-gateway (incl. M11.10/M11.11), 12-router, 13-harness, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
-| 14-sandbox | all but M14.8 until its PR lands; then all but M14.10 (the egress proxy, specified 2026-09-26) |
+| 02-workspace, 03-protocol, 10-sdk, 11-gateway (incl. M11.10/M11.11), 13-harness, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
+| 12-router | all but M12.6 (honour `CallMeta.task`, specified 2026-09-26) |
+| 14-sandbox | all but M14.10 (the egress proxy) and M14.11 (T3-remote no-egress acknowledgement), both specified 2026-09-26 |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial — M22.5 now needs one real disconnected box, nothing more. |
 | 25-credentials | **12 / 12 shipped** (M25.11 in PR #31). M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.11 hosted Postgres ciphertext, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). M25.11 was never blocked on "needs a Postgres" — `deploy/integration-compose.yml` has run one all along. |
@@ -206,11 +207,12 @@ catalog for a tuned GGUF (M18.2).
 
 ---
 
-## 3. In-flight — two docs PRs; one decision waiting on the user
+## 3. In-flight — nothing; three milestones specified and ready
 
-`main` is at `6c3159b`. Open: **#43** (overhead re-measurement), **#53** (M14.8) and this one.
-**#54** cleared three RustSec advisories that had turned `cargo deny` red on every PR. **#39 was closed as
-superseded** — its content is folded into `RUN-REPORT.md`.
+The run's PRs are merged: #43 (overhead re-measurement), #44 (this handover), #53 (M14.8), and
+**#54**, which cleared three RustSec advisories that had turned `cargo deny` red on every PR.
+**#39 was closed as superseded** — its content is folded into `RUN-REPORT.md`. All five of
+RUN-REPORT's questions are answered.
 
 ### M14.8 is decided; M14.10 is next
 
@@ -396,18 +398,14 @@ An autonomous run (2026-08-23/24, brief in `GOAL.prompt.md`, log in `RUN-REPORT.
 laptop-doable list to exhaustion. What is left is genuinely gated on decisions, hardware, or you.
 
 0. **M14.10 — the egress proxy**, specified in docs/14. The next buildable milestone; see §3.
-   Questions 2–4 at the top of `RUN-REPORT.md` are still open.
 1. **Phase 1 dogfood (yours, not an agent's).** Use the agent on a real repo under `dev` and decide
    whether you reach for it the next day. This is the critical path and always was: M19.4/M19.5/
    M19.7 need transcript volume that only daily use produces, and nine milestones of infrastructure
    do not move it.
-2. **`CallMeta.task` — decide and land.** docs/12 promises callers can declare a task class;
-   nothing reads the field. Honouring it changes routing, so it wants its own commit and a moment's
-   thought about what a wrong declaration should cost.
-3. **M14.9's T3-remote and the no-egress contract.** `NetPolicy`'s doc says an empty allowlist means
-   "no egress at all"; `t3_remote.rs` does nothing to make that true on a hosted microVM. Either
-   make it refuse, or say in docs/14 that the tier cannot honour it. (That a CodeSandbox VM has
-   internet is inferred, not tested — no token, no live calls.)
+2. **M12.6 — honour `CallMeta.task`**, specified in docs/12. Small; one session.
+3. **M14.11 — T3-remote refuses a no-egress policy unless the caller acknowledges it's
+   unenforced**, specified in docs/14. Small; one session. (That a CodeSandbox VM has internet is
+   inferred, not tested — no token, no live calls.)
 4. **M22.5's last mile** — one physically disconnected box, installed from `INSTALL.md` by someone
    who has not read this repo. Read `docs/22-deployment.md` under M22.5 before touching the kit:
    its first version asserted only string properties of generated files and could not answer a

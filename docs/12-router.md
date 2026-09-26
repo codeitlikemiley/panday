@@ -20,7 +20,8 @@ pub struct RouteQuery {
 ```
 
 `TaskClass` v1 is deliberately coarse: `chat`, `code`, `summarize`,
-`extract`, `route`, `embed`, `background`. Callers that know, say; otherwise
+`extract`, `route`, `embed`, `background`. Callers that know, say (honoured
+since M12.6 — until then the field was never read); otherwise
 a heuristic classifier guesses (regex + length + tools-present rules to
 start). The trained classifier (19) replaces the heuristic behind the same
 trait — `Classifier: fn classify(&ChatRequest) -> (TaskClass, f32)` — and its
@@ -246,3 +247,23 @@ not know the model, which reads as "no claim", not as "no capabilities".
   (M12.3's misclassification harness). A test makes that explicit by shadowing a
   useless classifier with a copy of itself — perfect agreement, both wrong, and the
   report cannot tell.
+
+- **M12.6** Honour `CallMeta.task`: a declared task class skips the classifier.
+
+  docs/12 said "Callers that know, say" from the start, and `Gateway::resolve` never read the
+  field — a caller declaring `Code` got whatever the heuristic guessed, possibly `Chat` through the
+  confidence fallback. Latent, because no ingress populates it. Found in the autonomous run and
+  decided by the builder on 2026-09-26 (RUN-REPORT question 2): honour it rather than delete it.
+
+  **Acceptance:**
+  1. When `CallMeta.task` is `Some`, `resolve` routes on it and does not call the classifier.
+  2. The route audit records the declared class with a `source` of *declared* (not *classified*),
+     so M19.3's training labels can tell a caller's word from a guess. It is recorded as trusted
+     but not given a confidence: a declaration is not a probability.
+  3. `None` behaves exactly as today, pinned by the existing classifier tests.
+  4. A declared class whose rules match nothing falls through to the default route like any other
+     class. A declaration picks the class, never a model.
+  5. The new test goes red when `resolve` ignores the field again.
+
+  A wrong declaration costs the caller their own routing and nothing else. That is the price of
+  "callers that know, say", and it is why the audit keeps the source.

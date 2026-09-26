@@ -28,8 +28,8 @@ binary re-executed inside the jail. Declared in the M14.8 PR.
 docs/12 says "Callers that know, say". `Gateway::resolve` never reads the field, so a caller
 declaring `Code` gets whatever the heuristic guesses — possibly `Chat` via the confidence fallback.
 Latent: no ingress populates it. Honouring it changes routing, so it was left as a question rather
-than smuggled into an unrelated commit. **Answer: "honour it" or "remove the field and the docs/12
-sentence".**
+than smuggled into an unrelated commit. **Answered 2026-09-26: honour it**, as **M12.6** in docs/12
+(a declared class skips the classifier, and the audit records it as *declared*).
 
 **3. M14.9's T3-remote accepts a no-egress policy it does not honour. Known and fine?**
 `NetPolicy`'s doc says an empty allowlist "means no egress at all", every caller passes
@@ -38,12 +38,14 @@ the fork/start payload, nothing asserted in its suite. It *does* call `enforceab
 non-empty case is refused correctly; the empty case is the gap. **That a CodeSandbox microVM has
 internet is my inference, not something I tested** — no token, no live calls. Not fixed: it merged
 mid-run and was not one of the nine tasks. **Answer: "known and fine, the operator chose a hosted
-VM" or "make it refuse, or say in docs/14 that the tier cannot honour no-egress".**
+VM" or "make it refuse, or say in docs/14 that the tier cannot honour no-egress".** **Answered
+2026-09-26: say so in code**, as **M14.11** in docs/14. `CsbSandbox` refuses a policy that doesn't
+explicitly acknowledge egress is unenforced, and works as before once it does.
 
 **4. Should a released air-gap kit default to packing an inference runner?**
 `xtask airgap --runner <path>` exists and the README adapts either way. Defaulting means vendoring
 a third-party binary per architecture, with a licensing surface `cargo deny` cannot see.
-**Answer: yes / no.**
+**Answered 2026-09-26: no.** The runner stays opt-in (`--runner`); recorded in docs/18 M18.7.
 
 **5. Do doc-only commits need the full local gate?**
 CLAUDE.md §3 says `cargo test` and `clippy` must be green before *every* commit. During the run,
@@ -86,7 +88,7 @@ Found separately, one per task, and only visible as a class in hindsight.
    `network: api.github.com`, which a person reads as a grant. It never reached `SandboxPolicy`.
    `panday_plugins`' own comment names this failure: *"a capability that grants nothing in the
    sandbox is a lie told at the consent prompt."* Fixed in #38.
-3. **`CallMeta.task`** — question 2 above. Open.
+3. **`CallMeta.task`** — question 2 above. To be honoured as M12.6.
 
 A lint that fails when a policy or manifest field has no reader would have caught all three.
 
