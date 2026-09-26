@@ -90,8 +90,10 @@ session's TCC grants, which made the repository unreadable for hours.
   status output gave the wrong answer twice on 2026-08-23; asking GitHub who you
   are does not.
 - **`cfg`-gated code cannot be verified locally, so plan a CI round trip.**
-  `x86_64-unknown-linux-gnu` is installed, but cross-compiling still fails —
-  `ring` wants `x86_64-linux-gnu-gcc` and there is no C cross-toolchain here.
+  `x86_64-unknown-linux-gnu` is installed, but even `cargo check --target
+  x86_64-unknown-linux-gnu` fails — not at link time but in `zstd-sys`'s build
+  script (via wasmtime), which compiles C with no cross-toolchain here. So there
+  is no local Linux verification of any kind, not even a check.
   M25.12 was written entirely under `cfg(target_os = "macos")`, the local gate
   only ever compiled the macOS half, and the Linux branch reached CI having never
   been built. Five of six jobs passed; the one that failed was the only one that
@@ -102,6 +104,10 @@ session's TCC grants, which made the repository unreadable for hours.
   anything an HTTP status assertion could observe:
   `docker compose -f deploy/integration-compose.yml up -d --wait`, then
   `PANDAY_TEST_DATABASE_URL=… cargo nextest run --run-ignored all -E 'package(panday-platform)'`.
+  Use nextest, not `cargo test --test one_file`: nextest gives each test its own
+  process, concurrently, and that difference shipped one red CI (#34, a schema
+  sweep deleting schemas sibling tests were using). Run it twice — one green pass
+  says nothing about order dependence.
 - **Never `pkill -f "cargo test"`.** It is not scoped to this repo and will reach
   another project's run on the same machine. Kill by recorded PID.
 - **If `git fetch` fails, start the ssh-agent — do not reach for HTTPS** (§4.2). A failed fetch
@@ -116,7 +122,7 @@ session's TCC grants, which made the repository unreadable for hours.
 **Remote:** `git@github.com:codeitlikemiley/panday.git` (public, user `codeitlikemiley`)
 **CI:** green on that commit — **seven** jobs now, not six: `airgap.yml` adds a path-filtered
 `install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
-**Open:** nothing.
+**Open:** #43 (overhead re-measurement) and #44 (this handover).
 
 **109 milestones total: 101 shipped ✅, 8 remaining.** Recounted programmatically, not quoted.
 M14.9 (T3-remote CodeSandbox) landed from another session mid-run; M11.11 was added and closed
@@ -205,32 +211,17 @@ superseded** — its content is folded into `RUN-REPORT.md`.
 
 ### The one thing blocking the rest: M14.8
 
-Tasks 2 and 3 of the autonomous run delivered most of the fail-closed option — the refusal exists,
-both permissive branches are deleted, the consent prompt and docs no longer claim enforcement that
-does not exist. What remains is the *decision*: declare that M14.8, or build the CONNECT proxy.
+The fail-closed half has landed (#36, #38); what remains is the *decision* — declare fail-closed
+the milestone, or build the CONNECT proxy. Recommendation: **declare fail-closed.** The argument
+(CI gates only T2 Linux, where a proxy would be refused either way) is question 1 in
+`RUN-REPORT.md`.
 
-Recommendation: **declare fail-closed the milestone.** The judge panel scored it 7.0 against the
-proxy's 6.8, the proxy is enforceable only on macOS (verified: a Seatbelt profile pins egress to
-one endpoint — allowed port rc=0, neighbouring port rc=7, remote IP rc=7), and T2 Linux — the only
-tier CI gates — would get a refusal either way. Building it ships enforcement on the tier CI cannot
-check and nothing on the tier it can.
+### A pattern worth naming: fields that read like controls and control nothing
 
-### A pattern worth naming, found three times in one run
-
-Three protocol/manifest fields that read like controls and control nothing:
-
-1. **`NetPolicy::allow`** — a non-empty allowlist did not narrow egress, it *removed* the network
-   namespace on Linux and emitted `(allow network-outbound)` plus inbound bind on macOS. Asking for
-   one host granted every host. Fixed (#36).
-2. **`plugin.toml`'s `net:`** — parsed, validated, shown at the consent prompt, never reaching
-   `SandboxPolicy`. The user consented to something that could not happen. Fixed (#38).
-3. **`CallMeta.task`** — docs/12 says "Callers that know, say"; `resolve()` never reads it, so a
-   caller declaring `Code` gets whatever the heuristic guesses. **Open** — honouring it changes
-   routing and needs its own commit.
-
-Each was individually latent. Together they say the manifest and policy layer has been written
-ahead of the enforcement layer more than once, and nothing catches that class automatically. A lint
-that fails when a policy field has no reader would have caught all three.
+`NetPolicy::allow` (fixed, #36), `plugin.toml`'s `net:` (fixed, #38), and `CallMeta.task` (open —
+§6 step 2). The manifest and policy layer has been written ahead of the enforcement layer more than
+once; a lint that fails when a policy field has no reader would have caught all three. Details in
+`RUN-REPORT.md` §Found outside the task list.
 
 ## 4. Known problems
 
@@ -414,10 +405,17 @@ laptop-doable list to exhaustion. What is left is genuinely gated on decisions, 
    make it refuse, or say in docs/14 that the tier cannot honour it. (That a CodeSandbox VM has
    internet is inferred, not tested — no token, no live calls.)
 4. **M22.5's last mile** — one physically disconnected box, installed from `INSTALL.md` by someone
-   who has not read this repo.
+   who has not read this repo. Read `docs/22-deployment.md` under M22.5 before touching the kit:
+   its first version asserted only string properties of generated files and could not answer a
+   prompt.
 5. **A host (M22.3)**, **KVM (M22.4, M14.5–14.6)**, **Stripe (M17.4)**, **GPUs (M19.3/5/7)** — each
-   blocked on the thing named. The training *gates* are now executable (#40), so a model can be
-   judged the day one exists; do not fabricate a score in the meantime.
+   blocked on the thing named. Do not rent a VM with the user's money unasked; do not invent p95s
+   without KVM nodes; do not add a Stripe crate without a live key the user already set. The
+   training *gates* are now executable (#40), so a model can be judged the day one exists; do not
+   fabricate a score in the meantime.
+6. **If growing agent-bench back toward 50 tasks**, take them from mined traffic (M19.4), not from
+   invention — and re-read §1.1 first. The twelve tasks removed were the destructive classes; they
+   are not coming back.
 
 ### Two known-flaky tests, neither fixed
 
