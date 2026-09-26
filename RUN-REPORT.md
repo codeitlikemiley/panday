@@ -20,7 +20,9 @@ neighbouring port rc=7, remote IP rc=7) — but T2 Linux is the only tier CI gat
 proxy is unreachable under `--unshare-net` without a veth pair or a relay binary shipped into the
 jail, which is a distribution problem rather than a sandbox one. Building it ships enforcement on
 the tier CI cannot check and nothing on the tier it can.
-**Answer: "fail-closed is the milestone" or "build the proxy anyway".**
+**Answered 2026-09-26: both, in order.** Fail closed is declared M14.8; the proxy is specified
+as M14.10 in docs/14 and will be built in its own session, with the T2 Linux relay being the host
+binary re-executed inside the jail. Declared in the M14.8 PR.
 
 **2. `CallMeta.task` is a protocol field that does nothing. Honour it, or drop it?**
 docs/12 says "Callers that know, say". `Gateway::resolve` never reads the field, so a caller
@@ -60,7 +62,7 @@ merge bar. It names paths, not `.md` — tests load `SKILL.md` fixtures.
 | 1 | Merge handover docs | shipped | #35 | `e40d4fb` |
 | 2 | Fail-closed egress in T2 | shipped — commit titled `M14.8: …`, but it advances M14.8 and does not close it (still open, `docs/14`) | #36 | `54d94ce` |
 | 3 | `plugin.toml` `net:` honesty | shipped | #38 | `1e13624` |
-| 4 | M14.8 decide and land | **blocked on question 1** | — | — |
+| 4 | M14.8 decide and land | **decided** — fail closed declared M14.8; proxy is M14.10 | M14.8 PR | — |
 | 5 | Training gates executable | shipped | #40 | `124029f` |
 | 6 | `training/` layout | shipped | #41 | `aaf3fea` |
 | 7 | Shadow wiring | **reframed** — shadow wiring not done; routing evidence shipped instead (see Deviations) | #42 | `4e1ce9c` |

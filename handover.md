@@ -124,7 +124,8 @@ session's TCC grants, which made the repository unreadable for hours.
 `install-air-gapped` that builds the kit in Docker and installs it under `--network none`.
 **Open:** #43 (overhead re-measurement) and #44 (this handover).
 
-**109 milestones total: 101 shipped ✅, 8 remaining.** Recounted programmatically, not quoted.
+**109 milestones total: 101 shipped ✅, 8 remaining** at `4e1ce9c` — **110 / 102 / 8** once the M14.8
+PR lands (M14.8 closes, M14.10 is added). Recounted programmatically, not quoted.
 M14.9 (T3-remote CodeSandbox) landed from another session mid-run; M11.11 was added and closed
 earlier. M22.5 is *less* partial than it was but still not
 ✅ — see §2.1. The total rose from 104 without any work being added: M0.2, M11.10 and M14.8
@@ -136,7 +137,7 @@ count too.
 | Spec | Shipped |
 |---|---|
 | 02-workspace, 03-protocol, 10-sdk, 11-gateway (incl. M11.10/M11.11), 12-router, 13-harness, 15-reducer, 16-plugins, 17-platform, 18-local, 20-security, 21-observability | **all** |
-| 14-sandbox | all but M14.8 (egress proxy — numbered 2026-08-23, never built) |
+| 14-sandbox | all but M14.8 until its PR lands; then all but M14.10 (the egress proxy, specified 2026-09-26) |
 | 19-training | 4 / 7 (M19.1, M19.2, M19.4, M19.6). M19.3 / M19.5 / M19.7 not started. |
 | 22-deployment | 2 / 5 shipped (M22.1, M22.2). M22.3 / M22.4 / M22.5 partial — M22.5 now needs one real disconnected box, nothing more. |
 | 25-credentials | **12 / 12 shipped** (M25.11 in PR #31). M25.1 vault, M25.2 `panday creds`, M25.3 transport headers, M25.4 pooled adapter, M25.5 per-credential breakers + sticky sessions, M25.6 ceiling/counters/remaining %, M25.7 header overlay, M25.8 `most_remaining` + funnel, M25.9 vault-as-boot-source, M25.10 Codex importer proven, M25.11 hosted Postgres ciphertext, M25.12 Keychain-wrapped KEK (`keyring` approved 2026-08-22). M25.11 was never blocked on "needs a Postgres" — `deploy/integration-compose.yml` has run one all along. |
@@ -209,12 +210,13 @@ catalog for a tuned GGUF (M18.2).
 `main` is at `4e1ce9c`. Open: **#43** (overhead re-measurement) and this one. **#39 was closed as
 superseded** — its content is folded into `RUN-REPORT.md`.
 
-### The one thing blocking the rest: M14.8
+### M14.8 is decided; M14.10 is next
 
-The fail-closed half has landed (#36, #38); what remains is the *decision* — declare fail-closed
-the milestone, or build the CONNECT proxy. Recommendation: **declare fail-closed.** The argument
-(CI gates only T2 Linux, where a proxy would be refused either way) is question 1 in
-`RUN-REPORT.md`.
+The builder declared fail closed (#36, #38) the milestone M14.8 and asked for the proxy as well.
+It is specified as **M14.10** in `docs/14-sandbox.md`, with acceptance criteria. Build it in a
+fresh session: CONNECT only, proxy-side resolution, and on T2 Linux a relay inside the jail that is
+the host binary re-executed. It is Phase 1 work (M14.2 names the proxy), so CLAUDE.md §4 does not
+stand in the way.
 
 ### A pattern worth naming: fields that read like controls and control nothing
 
@@ -391,8 +393,8 @@ just bench    # json-bench against a running gateway (Grok CLI OAuth is enough)
 An autonomous run (2026-08-23/24, brief in `GOAL.prompt.md`, log in `RUN-REPORT.md`) worked the
 laptop-doable list to exhaustion. What is left is genuinely gated on decisions, hardware, or you.
 
-0. **Answer the four questions at the top of `RUN-REPORT.md`.** Every one blocks work that is
-   otherwise ready. The first — M14.8 fail-closed vs proxy — is nearly done either way.
+0. **M14.10 — the egress proxy**, specified in docs/14. The next buildable milestone; see §3.
+   Questions 2–4 at the top of `RUN-REPORT.md` are still open.
 1. **Phase 1 dogfood (yours, not an agent's).** Use the agent on a real repo under `dev` and decide
    whether you reach for it the next day. This is the critical path and always was: M19.4/M19.5/
    M19.7 need transcript volume that only daily use produces, and nine milestones of infrastructure
