@@ -892,9 +892,9 @@
     {
       "type": "library",
       "name": "cap-fs-ext",
-      "version": "4.0.2",
-      "purl": "pkg:cargo/cap-fs-ext@4.0.2",
-      "bom-ref": "cap-fs-ext@4.0.2",
+      "version": "4.0.3",
+      "purl": "pkg:cargo/cap-fs-ext@4.0.3",
+      "bom-ref": "cap-fs-ext@4.0.3",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
@@ -911,9 +911,9 @@
     {
       "type": "library",
       "name": "cap-primitives",
-      "version": "4.0.2",
-      "purl": "pkg:cargo/cap-primitives@4.0.2",
-      "bom-ref": "cap-primitives@4.0.2",
+      "version": "4.0.3",
+      "purl": "pkg:cargo/cap-primitives@4.0.3",
+      "bom-ref": "cap-primitives@4.0.3",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
@@ -930,9 +930,9 @@
     {
       "type": "library",
       "name": "cap-std",
-      "version": "4.0.2",
-      "purl": "pkg:cargo/cap-std@4.0.2",
-      "bom-ref": "cap-std@4.0.2",
+      "version": "4.0.3",
+      "purl": "pkg:cargo/cap-std@4.0.3",
+      "bom-ref": "cap-std@4.0.3",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
@@ -1519,9 +1519,9 @@
     {
       "type": "library",
       "name": "cranelift-assembler-x64",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-assembler-x64@0.134.3",
-      "bom-ref": "cranelift-assembler-x64@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-assembler-x64@0.134.4",
+      "bom-ref": "cranelift-assembler-x64@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1538,9 +1538,9 @@
     {
       "type": "library",
       "name": "cranelift-assembler-x64-meta",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-assembler-x64-meta@0.134.3",
-      "bom-ref": "cranelift-assembler-x64-meta@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-assembler-x64-meta@0.134.4",
+      "bom-ref": "cranelift-assembler-x64-meta@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1557,9 +1557,9 @@
     {
       "type": "library",
       "name": "cranelift-bforest",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-bforest@0.134.3",
-      "bom-ref": "cranelift-bforest@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-bforest@0.134.4",
+      "bom-ref": "cranelift-bforest@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1576,9 +1576,9 @@
     {
       "type": "library",
       "name": "cranelift-bitset",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-bitset@0.134.3",
-      "bom-ref": "cranelift-bitset@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-bitset@0.134.4",
+      "bom-ref": "cranelift-bitset@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1595,9 +1595,9 @@
     {
       "type": "library",
       "name": "cranelift-codegen",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-codegen@0.134.3",
-      "bom-ref": "cranelift-codegen@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-codegen@0.134.4",
+      "bom-ref": "cranelift-codegen@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1614,9 +1614,9 @@
     {
       "type": "library",
       "name": "cranelift-codegen-meta",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-codegen-meta@0.134.3",
-      "bom-ref": "cranelift-codegen-meta@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-codegen-meta@0.134.4",
+      "bom-ref": "cranelift-codegen-meta@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1633,9 +1633,9 @@
     {
       "type": "library",
       "name": "cranelift-codegen-shared",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-codegen-shared@0.134.3",
-      "bom-ref": "cranelift-codegen-shared@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-codegen-shared@0.134.4",
+      "bom-ref": "cranelift-codegen-shared@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1652,9 +1652,9 @@
     {
       "type": "library",
       "name": "cranelift-control",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-control@0.134.3",
-      "bom-ref": "cranelift-control@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-control@0.134.4",
+      "bom-ref": "cranelift-control@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1671,9 +1671,9 @@
     {
       "type": "library",
       "name": "cranelift-entity",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-entity@0.134.3",
-      "bom-ref": "cranelift-entity@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-entity@0.134.4",
+      "bom-ref": "cranelift-entity@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1690,9 +1690,9 @@
     {
       "type": "library",
       "name": "cranelift-frontend",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-frontend@0.134.3",
-      "bom-ref": "cranelift-frontend@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-frontend@0.134.4",
+      "bom-ref": "cranelift-frontend@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1709,9 +1709,9 @@
     {
       "type": "library",
       "name": "cranelift-isle",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-isle@0.134.3",
-      "bom-ref": "cranelift-isle@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-isle@0.134.4",
+      "bom-ref": "cranelift-isle@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1728,9 +1728,9 @@
     {
       "type": "library",
       "name": "cranelift-native",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-native@0.134.3",
-      "bom-ref": "cranelift-native@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-native@0.134.4",
+      "bom-ref": "cranelift-native@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -1747,9 +1747,9 @@
     {
       "type": "library",
       "name": "cranelift-srcgen",
-      "version": "0.134.3",
-      "purl": "pkg:cargo/cranelift-srcgen@0.134.3",
-      "bom-ref": "cranelift-srcgen@0.134.3",
+      "version": "0.134.4",
+      "purl": "pkg:cargo/cranelift-srcgen@0.134.4",
+      "bom-ref": "cranelift-srcgen@0.134.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -6242,9 +6242,9 @@
     {
       "type": "library",
       "name": "pulley-interpreter",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/pulley-interpreter@47.0.3",
-      "bom-ref": "pulley-interpreter@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/pulley-interpreter@47.0.4",
+      "bom-ref": "pulley-interpreter@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -6261,9 +6261,9 @@
     {
       "type": "library",
       "name": "pulley-macros",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/pulley-macros@47.0.3",
-      "bom-ref": "pulley-macros@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/pulley-macros@47.0.4",
+      "bom-ref": "pulley-macros@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -7040,9 +7040,9 @@
     {
       "type": "library",
       "name": "rustls",
-      "version": "0.23.43",
-      "purl": "pkg:cargo/rustls@0.23.43",
-      "bom-ref": "rustls@0.23.43",
+      "version": "0.23.45",
+      "purl": "pkg:cargo/rustls@0.23.45",
+      "bom-ref": "rustls@0.23.45",
       "licenses": [
         {
           "expression": "Apache-2.0 OR ISC OR MIT"
@@ -9871,9 +9871,9 @@
     {
       "type": "library",
       "name": "wasmtime",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime@47.0.3",
-      "bom-ref": "wasmtime@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime@47.0.4",
+      "bom-ref": "wasmtime@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9890,9 +9890,9 @@
     {
       "type": "library",
       "name": "wasmtime-environ",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-environ@47.0.3",
-      "bom-ref": "wasmtime-environ@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-environ@47.0.4",
+      "bom-ref": "wasmtime-environ@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9909,9 +9909,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-cache",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-cache@47.0.3",
-      "bom-ref": "wasmtime-internal-cache@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-cache@47.0.4",
+      "bom-ref": "wasmtime-internal-cache@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9928,9 +9928,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-component-macro",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-component-macro@47.0.3",
-      "bom-ref": "wasmtime-internal-component-macro@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-component-macro@47.0.4",
+      "bom-ref": "wasmtime-internal-component-macro@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9947,9 +9947,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-component-util",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-component-util@47.0.3",
-      "bom-ref": "wasmtime-internal-component-util@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-component-util@47.0.4",
+      "bom-ref": "wasmtime-internal-component-util@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9966,9 +9966,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-core",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-core@47.0.3",
-      "bom-ref": "wasmtime-internal-core@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-core@47.0.4",
+      "bom-ref": "wasmtime-internal-core@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -9985,9 +9985,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-cranelift",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-cranelift@47.0.3",
-      "bom-ref": "wasmtime-internal-cranelift@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-cranelift@47.0.4",
+      "bom-ref": "wasmtime-internal-cranelift@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10004,9 +10004,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-fiber",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-fiber@47.0.3",
-      "bom-ref": "wasmtime-internal-fiber@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-fiber@47.0.4",
+      "bom-ref": "wasmtime-internal-fiber@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10023,9 +10023,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-jit-debug",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-jit-debug@47.0.3",
-      "bom-ref": "wasmtime-internal-jit-debug@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-jit-debug@47.0.4",
+      "bom-ref": "wasmtime-internal-jit-debug@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10042,9 +10042,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-jit-icache-coherence",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-jit-icache-coherence@47.0.3",
-      "bom-ref": "wasmtime-internal-jit-icache-coherence@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-jit-icache-coherence@47.0.4",
+      "bom-ref": "wasmtime-internal-jit-icache-coherence@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10061,9 +10061,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-unwinder",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-unwinder@47.0.3",
-      "bom-ref": "wasmtime-internal-unwinder@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-unwinder@47.0.4",
+      "bom-ref": "wasmtime-internal-unwinder@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10080,9 +10080,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-versioned-export-macros",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-versioned-export-macros@47.0.3",
-      "bom-ref": "wasmtime-internal-versioned-export-macros@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-versioned-export-macros@47.0.4",
+      "bom-ref": "wasmtime-internal-versioned-export-macros@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10099,9 +10099,9 @@
     {
       "type": "library",
       "name": "wasmtime-internal-wit-bindgen",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-internal-wit-bindgen@47.0.3",
-      "bom-ref": "wasmtime-internal-wit-bindgen@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-internal-wit-bindgen@47.0.4",
+      "bom-ref": "wasmtime-internal-wit-bindgen@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10118,9 +10118,9 @@
     {
       "type": "library",
       "name": "wasmtime-wasi",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-wasi@47.0.3",
-      "bom-ref": "wasmtime-wasi@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-wasi@47.0.4",
+      "bom-ref": "wasmtime-wasi@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10137,9 +10137,9 @@
     {
       "type": "library",
       "name": "wasmtime-wasi-io",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wasmtime-wasi-io@47.0.3",
-      "bom-ref": "wasmtime-wasi-io@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wasmtime-wasi-io@47.0.4",
+      "bom-ref": "wasmtime-wasi-io@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10308,9 +10308,9 @@
     {
       "type": "library",
       "name": "wiggle",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wiggle@47.0.3",
-      "bom-ref": "wiggle@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wiggle@47.0.4",
+      "bom-ref": "wiggle@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10327,9 +10327,9 @@
     {
       "type": "library",
       "name": "wiggle-generate",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wiggle-generate@47.0.3",
-      "bom-ref": "wiggle-generate@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wiggle-generate@47.0.4",
+      "bom-ref": "wiggle-generate@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
@@ -10346,9 +10346,9 @@
     {
       "type": "library",
       "name": "wiggle-macro",
-      "version": "47.0.3",
-      "purl": "pkg:cargo/wiggle-macro@47.0.3",
-      "bom-ref": "wiggle-macro@47.0.3",
+      "version": "47.0.4",
+      "purl": "pkg:cargo/wiggle-macro@47.0.4",
+      "bom-ref": "wiggle-macro@47.0.4",
       "licenses": [
         {
           "expression": "Apache-2.0 WITH LLVM-exception"
