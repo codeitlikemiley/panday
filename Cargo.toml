@@ -91,7 +91,7 @@ sha2 = "0.11"
 # `std` on chacha20poly1305 pulls `alloc` + `getrandom`; we do not enable `heapless`.
 chacha20poly1305 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
-rand = "0.8"
+rand = "0.10"
 # grep tool (docs/13 native set) and the reducer's error-line matching.
 regex = "1"
 # Proc-macro toolchain for `#[tool]` (docs/10 M10.4). `syn`/`quote`/`proc-macro2` are
