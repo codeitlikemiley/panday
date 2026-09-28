@@ -67,7 +67,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # rustls only — docs/02: "no openssl linkage".
 axum = { version = "0.8", features = ["ws", "form"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "stream",
